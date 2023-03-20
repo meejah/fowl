@@ -26,7 +26,7 @@ dependencies = [
 ]
 
 [tool.hatch.version]
-path = "fow/__init__.py"
+path = "src/fow/__init__.py"
 
 [tool.hatch.build.targets.sdist]
 include = [
