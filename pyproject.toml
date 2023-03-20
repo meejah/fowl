@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "fow"
 dynamic = ["version"]
-description = "\nForward Over Wormhole pipes streaming data over Dilated Magic\nWormhole subchannels. Secure communication with easy setup"
+description = "\nForward Over Wormhole provides Bi-directional streaming data over secure and durable Dilated magic-wormhole connections. Secure communication with easy setup."
 readme = "README.rst"
 license = "MIT"
 authors = [
