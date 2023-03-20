@@ -2,12 +2,12 @@ import click
 
 
 @click.group()
-@click.pass_context()
+@click.pass_context
 def fow(ctx):
     """
     Forward Over Wormhole
 
-    Bi-direction streaming data over secure and durable Dilated
+    Bi-directional streaming data over secure and durable Dilated
     magic-wormhole connections.
     """
 
