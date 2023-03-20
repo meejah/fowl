@@ -32,3 +32,13 @@ It is usually the first message.
 Keys included:
 
 - ``"code"``: the allocated Wormhole code, like ``42-universe-everything``.
+
+
+``{"message": "connected"}``
+````````````````````````````
+
+This message is emitted to both sides once per session, after the Dilation connection has been successfully set up.
+There is no other information in this message.
+
+
+
