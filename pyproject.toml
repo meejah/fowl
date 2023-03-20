@@ -28,6 +28,7 @@ dependencies = [
 
 [project.optional-dependencies]
 test = ["pytest"]
+dev = ["twine", "sphinx"]
 
 [project.scripts]
 fow = "fow.cli:_entry"
