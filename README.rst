@@ -59,6 +59,7 @@ To create a virtualenv in your checkout of ``fow``, for example::
     python -m venv venv
     ./venv/bin/pip install --upgrade pip
     ./venv/bin/pip install fow
+    # or: ./venv/bin/pip install --editable .
     ./venv/bin/fow
 
 
