@@ -32,12 +32,15 @@ After this, an E2E-encrypted direct P2P connection (or, in some cases, via a "tr
 
 The key encrypting messages on this connection is only known to the two computers; the Mailbox server cannot see contents. (It, like any attacker, could try a single guess at the wormhole code). See the `Magic Wormhole documentation <https://magic-wormhole.readthedocs.io/en/latest/welcome.html#design>`_ for more details on this.
 
-The "Dilation" feature further extends the above protocol to provide subchannesl and "durability" -- this means the overall connection survives network changes, disconnections, etc. You can change WiFi networks and remain connected.
+The "Dilation" feature further extends the above protocol to provide subchannels and "durability" -- this means the overall connection survives network changes, disconnections, etc. You can change WiFi networks or put one computer to sleep yet remain connected.
 
 What ``fow`` adds is a way to set up any number of localhost listeners on either end, forwarding data over subchannels.
 The always-present "control" subchannel is used to co-ordinate opening and closing such listeners.
 
 With some higher-level co-ordination, ``fow`` may be used to set up complex workflows between participants, integrating services that would "traditionally" demand a server on a public IP address.
+
+Another way to view this: streaming network services can integrate the Magic Wormhole protocol without having to find, link, and use a magic-wormhole library (along with the implied code-changes) -- all integration is via local streams.
+(There *are* implementations in a few languages so you could take that route if you prefer).
 
 
 Installation and Basic Usage
