@@ -38,6 +38,7 @@ dev = [
     "twine",
     "sphinx",
     "dulwich",
+    "gpg",  # should use isis lovecruft's version?
 ]
 
 [project.scripts]
