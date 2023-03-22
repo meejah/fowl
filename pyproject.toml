@@ -4,7 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "fow"
-dynamic = ["version"]
+#dynamic = ["version"]
+version = "23.3.0"
 description = "\nForward Over Wormhole provides bi-directional streaming data over secure and durable Dilated magic-wormhole connections. Secure communication with easy setup."
 readme = "README.rst"
 license.text = "MIT"
@@ -24,6 +25,12 @@ classifiers = [
 dependencies = [
     "click",
     "wormhole",
+    "attrs",
+    "six",
+    "msgpack",
+    "humanize",
+    "twisted",
+    "magic-wormhole[dilate]",
 ]
 
 [project.optional-dependencies]
@@ -33,8 +40,8 @@ dev = ["twine", "sphinx"]
 [project.scripts]
 fow = "fow.cli:_entry"
 
-[tool.hatch.version]
-path = "src/fow/__init__.py"
+#[tool.hatch.version]
+#path = "src/fow/__init__.py"
 
 #[tool.hatch.build.targets.sdist]
 #include = [

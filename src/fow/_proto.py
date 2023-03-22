@@ -12,10 +12,11 @@ import tempfile
 import zipfile
 from functools import partial
 
+from attrs import define, frozen
+
 import six
 import msgpack
 from humanize import naturalsize
-from tqdm import tqdm
 from twisted.internet import reactor
 from twisted.internet.defer import inlineCallbacks, returnValue, Deferred, succeed
 from twisted.internet.endpoints import serverFromString, clientFromString
@@ -26,11 +27,11 @@ from twisted.protocols.basic import LineReceiver
 from twisted.python import log
 from twisted.python.failure import Failure
 from wormhole import __version__, create
+from wormhole.cli import public_relay
 
-from ..errors import TransferError, UnsendableFileError
-from ..transit import TransitSender
-from ..util import bytes_to_dict, bytes_to_hexstr, dict_to_bytes
-from .welcome import handle_welcome
+from wormhole.errors import TransferError, UnsendableFileError
+from wormhole.transit import TransitSender
+from wormhole.util import bytes_to_dict, bytes_to_hexstr, dict_to_bytes
 
 APPID = u"meejah.ca/wormhole/forward"
 
@@ -48,38 +49,49 @@ def _sequential_id():
 allocate_connection_id = partial(next, _sequential_id())
 
 
+@frozen
+class _Config:
+    """
+    Represents a set of validated configuration
+    """
+
+    relay_url: str = public_relay.RENDEZVOUS_RELAY
+    code: str = None
+    code_length: int = 2
+    appid: str = APPID
+    debug_state: bool = False
+
+
+async def create_wormhole(config):
+    """
+    Given proposed configuration we create a suitable wormhole
+    """
+
+
 @inlineCallbacks
-def forward(args, reactor=reactor):
+def forward(config, reactor=reactor):
     """
     I implement 'wormhole forward'.
     """
-    assert isinstance(args.relay_url, type(u""))
-    if args.tor:
-        from ..tor_manager import get_tor
-        tor = yield get_tor(
-            reactor,
-            args.launch_tor,
-            args.tor_control_port,
-            timing=args.timing,
-        )
-    else:
-        tor = None
+    print("DING", config.relay_url)
+    # XXX fixme
+    tor = None
 
     w = create(
-        args.appid or APPID,
-        args.relay_url,
+        config.appid or APPID,
+        config.relay_url,
         reactor,
         tor=tor,
-        timing=args.timing,
+        timing=None,##args.timing,
         _enable_dilate=True,
     )
-    if args.debug_state:
-        w.debug_set_trace("forward", which=" ".join(args.debug_state), file=args.stdout)
+    if config.debug_state:
+        w.debug_set_trace("forward", which=" ".join(config.debug_state), file=config.stdout)
 
     try:
         # if we succeed, we should close and return the w.close results
         # (which might be an error)
-        res = yield _forward_loop(args, w)
+        res = yield _forward_loop(config, w)
         yield w.close()  # wait for ack
         returnValue(res)
 
@@ -364,7 +376,7 @@ class Incoming(Protocol):
 
 
 @inlineCallbacks
-def _forward_loop(args, w):
+def _forward_loop(config, w):
     """
     Run the main loop of the forward:
        - perform setup (version stuff etc)
@@ -414,10 +426,10 @@ def _forward_loop(args, w):
         })
     )
 
-    if args.code:
-        w.set_code(args.code)
+    if config.code:
+        w.set_code(config.code)
     else:
-        w.allocate_code(args.code_length)
+        w.allocate_code(config.code_length)
 
     code = yield w.get_code()
     print(
@@ -464,9 +476,6 @@ def _forward_loop(args, w):
 
     yield w.get_unverified_key()
     verifier_bytes = yield w.get_verifier()  # might WrongPasswordError
-
-    if args.verify:
-        raise NotImplementedError()
 
     @inlineCallbacks
     def _local_to_remote_forward(cmd):
