@@ -1,4 +1,6 @@
 
+pin:
+	pip-compile --upgrade --allow-unsafe --generate-hashes --resolver=backtracking --output-file requirements-pinned.txt
 
 release:
 	python update-version.py

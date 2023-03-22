@@ -23,6 +23,7 @@ classifiers = [
     "Programming Language :: Python :: 3",
 ]
 dependencies = [
+    "setuptools",
     "click",
     "wormhole",
     "attrs",
