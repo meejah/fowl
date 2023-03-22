@@ -46,7 +46,7 @@ Another way to view this: streaming network services can integrate the Magic Wor
 Installation and Basic Usage
 ----------------------------
 
-``fow`` is a Python program using the `Twisted <>`_ asynchronous networking library.
+``fow`` is a Python program using the `Twisted <https://twistedmatrix.org>`_ asynchronous networking library.
 
 You may install it with ``pip``::
 
