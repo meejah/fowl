@@ -58,6 +58,7 @@ include = [
     "Makefile",
     "README.rst",
     "pyproject.toml",
+    "requirements-pinned.txt",
 ]
 exclude = [
     "*~",
