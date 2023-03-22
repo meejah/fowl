@@ -34,7 +34,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-test = ["pytest"]
+test = [
+    "pytest",
+]
 dev = [
     "twine",
     "sphinx",
@@ -48,7 +50,15 @@ fow = "fow.cli:_entry"
 [tool.hatch.version]
 path = "src/fow/__init__.py"
 
-#[tool.hatch.build.targets.sdist]
-#include = [
-#    "src",
-#]
+[tool.hatch.build.targets.sdist]
+include = [
+    "src",
+    "docs",
+    "Makefile",
+    "README.rst",
+    "pyproject.toml",
+]
+exclude = [
+    "*~",
+    "*.egg-info*",
+]
