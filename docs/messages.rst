@@ -1,20 +1,54 @@
 
 .. messages:
 
-Valid Messages
-==============
+Control Messages
+================
+
+External programs control ``fow`` by running it as a subprocess and exchanging messages via ``stdin`` and ``stdout``.
 
 Every message is valid JSON.
 All messages MUST include a ``"message"`` key which indicates what sort of message it is.
 
-We differentiate between "stdin" and "stdout" messages -- that is, things the program tells the user and things the user tells the program.
+We differentiate between "stdout" and "stdin" messages -- that is, things the program tells the user and things the user tells the program.
 Here, "user" is often another program.
+
+Note that there is a lightweight protocol spoken via Dilation; see :ref:`dilation-protocol` for an explanation, but do not confuse that protocol with this document.
 
 
 .. stdin_messages:
 
 Valid ``stdin`` Messages
 ------------------------
+
+``message=local``
+`````````````````
+
+This listens on a local port and establishes a :ref:`forwarding-subchannel` to the other side (making a client-type connection on that side).
+
+Example::
+
+    {
+        "message": "local",
+        "endpoint": "<Twisted server-style endpoint-string>",
+        "local-endpoint": "<Twisted client-style endpoint-string>",
+    }
+
+# XXX should match keys above with below...
+
+``message=remote``
+``````````````````
+
+This asks the *other* side to listen on a local port, establishing :ref:`forwarding-subchannels` back to this side upon connections.
+That is, the inverse of the ``message=local`` kind.
+
+Example::
+
+    {
+        "message": "remote",
+        "listen-endpoint": "<Twisted server-style endpoint-string>",
+        "connect-endpoint": "<Twisted client-style endpoint-string>",
+    }
+    }
 
 
 .. stdout_messages:
@@ -23,7 +57,7 @@ Valid ``stdout`` Messages
 -------------------------
 
 
-``"message": "code"``
+``message=code``
 `````````````````````
 
 This message is emitted once per session by the side that starts the interaction.
@@ -34,15 +68,15 @@ Keys included:
 - ``"code"``: the allocated Wormhole code, like ``42-universe-everything``.
 
 
-``{"message": "connected"}``
-````````````````````````````
+``message=connected``
+`````````````````````
 
 This message is emitted to both sides once per session, after the Dilation connection has been successfully set up.
 There is no other information in this message.
 
 
-``{"message": "forward"}``
-``````````````````````````
+``message=forward``
+```````````````````
 
 When this message is sent, it instructs the client to ask the *other* side to open a listener.
 It also tells the client how to forward connections it gets upon that listener.
