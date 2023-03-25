@@ -338,11 +338,14 @@ class Incoming(Protocol):
         try:
             self._local_connection = await ep.connect(factory)
         except Exception as e:
-            print(json.dumps({
-                "kind": "error",
-                "id": self._conn_id,
-                "message": str(e),
-            }))
+            print(
+                json.dumps({
+                    "kind": "error",
+                    "id": self._conn_id,
+                    "message": str(e),
+                }),
+                file=self.factory.config.stdout,
+            )
             self.transport.loseConnection()
             return
         # this one doesn't have to wait for an incoming message
@@ -402,7 +405,8 @@ async def _forward_loop(config, w):
     print(
         json.dumps({
             "welcome": welcome
-        })
+        }),
+        file=config.stdout,
     )
 
     if config.code:
@@ -415,7 +419,8 @@ async def _forward_loop(config, w):
         json.dumps({
             "kind": "wormhole-code",
             "code": code,
-        })
+        }),
+        file=config.stdout,
     )
 
     control_ep, connect_ep, listen_ep = w.dilate()
@@ -432,8 +437,13 @@ async def _forward_loop(config, w):
 
         def dataReceived(self, data):
             # XXX can we depend on data being "one message"? or do we need length-prefixed?
-            msg = json.loads(data)
-            if (msg["kind"] == "remote-to-local"):
+            bsize = len(data)
+            assert bsize >= 2, "expected at least 2 bytes"
+            expected_size, = struct.unpack("!H", data[:2])
+            assert bsize == expected_size + 2, "data has more than the message"
+            msg = msgpack.unpackb(data[2:])
+            if msg["kind"] == "remote-to-local":
+                # XXX ask for permission
                 listen_ep = serverFromString(reactor, msg["listen-endpoint"])
                 factory = Factory.forProtocol(LocalServer)
                 factory.config = config
@@ -465,10 +475,13 @@ async def _forward_loop(config, w):
         factory.endpoint_str = cmd["local-endpoint"]
         factory.connect_ep = connect_ep
         proto = await ep.listen(factory)
-        print(json.dumps({
-            "kind": "listening",
-            "endpoint": cmd["local-endpoint"],
-        }))
+        print(
+            json.dumps({
+                "kind": "listening",
+                "endpoint": cmd["local-endpoint"],
+            }),
+            file=config.stdout,
+        )
 
     def _remote_to_local_forward(cmd):
         """
@@ -476,14 +489,13 @@ async def _forward_loop(config, w):
         (where our Incoming subchannel will be told what to connect
         to).
         """
-        msg = json.dumps({
+        msg = msgpack.packb({
             "kind": "remote-to-local",
             "listen-endpoint": cmd["remote-endpoint"],
             "connect-endpoint": cmd["local-endpoint"],
-        }).encode("utf8")
-        # XXX need framing!
-        control_proto.transport.write(msg)
-        print("wrote command")
+        })
+        prefix = struct.pack("!H", len(msg))
+        control_proto.transport.write(prefix + msg)
         return succeed(None)
 
     async def process_command(cmd):
@@ -505,15 +517,17 @@ async def _forward_loop(config, w):
         delimiter = b"\n"
 
         def connectionMade(self):
-            print(json.dumps({
-                "kind": "connected",
-            }))
+            print(
+                json.dumps({
+                    "kind": "connected",
+                }),
+                file=self.factory.config.stdout,
+            )
 
         def lineReceived(self, line):
             try:
                 cmd = json.loads(line)
                 d = ensureDeferred(process_command(cmd))
-                print("CCCC", d)
                 d.addErrback(print)
                 return d
             except Exception as e:
