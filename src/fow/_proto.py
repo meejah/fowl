@@ -200,6 +200,7 @@ class LocalServer(Protocol):
         factory = Factory.forProtocol(ForwardConnecter)
         factory.other_proto = self
         d = self.factory.connect_ep.connect(factory)
+        print("ZZZ", d)
         d.addCallback(got_proto)
 
         def err(f):
@@ -486,11 +487,11 @@ async def _forward_loop(config, w):
         print("wrote command")
         return succeed(None)
 
-    def process_command(cmd):
+    async def process_command(cmd):
         if "kind" not in cmd:
             raise ValueError("no 'kind' in command")
 
-        return {
+        return await {
             # listens locally, conencts to other side
             "local": _local_to_remote_forward,
 
@@ -513,6 +514,7 @@ async def _forward_loop(config, w):
             try:
                 cmd = json.loads(line)
                 d = process_command(cmd)
+                print("CCCC", d)
                 d.addErrback(print)
                 return d
             except Exception as e:
