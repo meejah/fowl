@@ -2,6 +2,7 @@ from __future__ import print_function
 
 import sys
 import json
+from typing import IO
 
 import struct
 from functools import partial
