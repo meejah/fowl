@@ -29,11 +29,9 @@ Example::
 
     {
         "message": "local",
-        "endpoint": "<Twisted server-style endpoint-string>",
-        "local-endpoint": "<Twisted client-style endpoint-string>",
+        "listen-endpoint": "<Twisted server-style endpoint-string>",
+        "connect-endpoint": "<Twisted client-style endpoint-string>",
     }
-
-**FIXME**: should match keys above with below...
 
 **FIXME**: requests should have a unique ID (replys must match them) ... OR we have to block reading stdin until we're done each request (so there aren't two in-flight) OR we have to keep track internally and answer in the correct order?
 

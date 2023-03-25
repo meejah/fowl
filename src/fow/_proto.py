@@ -468,7 +468,7 @@ async def _forward_loop(config, w):
         Listen locally, and for each local connection create an Outgoing
         subchannel which will connect on the other end.
         """
-        ep = serverFromString(reactor, cmd["endpoint"])
+        ep = serverFromString(reactor, cmd["listen-endpoint"])
         factory = Factory.forProtocol(LocalServer)
         factory.config = config
         factory.endpoint_str = cmd["local-endpoint"]
