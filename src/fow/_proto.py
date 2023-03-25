@@ -541,6 +541,11 @@ async def _forward_loop(config, w):
             )
 
         def lineReceived(self, line):
+            # XXX FIXME since we don't have req/resp IDs etc we should
+            # only allow ONE command to be run at a time, and then its
+            # answer printed (so e.g. even if our controller gets
+            # ahead and issues 3 commands without waiting for the
+            # answer, we need to do them in order)
             try:
                 cmd = json.loads(line)
                 d = ensureDeferred(process_command(cmd))
