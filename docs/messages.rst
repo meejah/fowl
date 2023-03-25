@@ -33,7 +33,10 @@ Example::
         "local-endpoint": "<Twisted client-style endpoint-string>",
     }
 
-# XXX should match keys above with below...
+**FIXME**: should match keys above with below...
+
+**FIXME**: requests should have a unique ID (replys must match them) ... OR we have to block reading stdin until we're done each request (so there aren't two in-flight) OR we have to keep track internally and answer in the correct order?
+
 
 ``message=remote``
 ``````````````````
