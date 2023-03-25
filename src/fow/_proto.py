@@ -51,15 +51,12 @@ class _Config:
     stdout: IO = sys.stdout
     stdin: IO = sys.stdin
 
-async def create_wormhole(config):
-    """
-    Given proposed configuration we create a suitable wormhole
-    """
 
-
-async def forward(config, reactor=reactor):
+def create_wormhole(config):
     """
-    Set up a wormhole and process commands relating to forwarding.
+    Create a suitable wormhole for the given configuration.
+
+    :returns DeferredWormhole: a wormhole API
     """
     # XXX fixme
     tor = None
@@ -74,6 +71,14 @@ async def forward(config, reactor=reactor):
     )
     if config.debug_state:
         w.debug_set_trace("forward", which=" ".join(config.debug_state), file=config.stdout)
+    return w
+
+
+async def forward(config, reactor=reactor):
+    """
+    Set up a wormhole and process commands relating to forwarding.
+    """
+    w = create_wormhole(reactor, config)
 
     try:
         # if we succeed, we should close and return the w.close results
