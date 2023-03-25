@@ -17,8 +17,11 @@ from twisted.internet.protocol import Factory, Protocol
 from twisted.internet.stdio import StandardIO
 from twisted.protocols.basic import LineReceiver
 from twisted.python.failure import Failure
+from zope.interface import directlyProvides
 from wormhole import create
 from wormhole.cli import public_relay
+from wormhole._interfaces import ITorManager
+
 
 
 APPID = u"meejah.ca/wormhole/forward"
@@ -46,6 +49,7 @@ class _Config:
     relay_url: str = public_relay.RENDEZVOUS_RELAY
     code: str = None
     code_length: int = 2
+    use_tor: bool = False
     appid: str = APPID
     debug_state: bool = False
     stdout: IO = sys.stdout
@@ -78,7 +82,16 @@ async def forward(config, reactor=reactor):
     """
     Set up a wormhole and process commands relating to forwarding.
     """
-    w = create_wormhole(reactor, config)
+    if config.use_tor:
+        tor = await get_tor(reactor)
+        print(
+            json.dumps({
+                "kind": "tor",
+                "version": tor.version,
+            }),
+            file=config.stdout,
+        )
+    w = create_wormhole(config)
 
     try:
         # if we succeed, we are done ane should close
@@ -509,7 +522,7 @@ async def _forward_loop(config, w):
             "remote": _remote_to_local_forward,
         }[cmd["kind"]](cmd)
 
-    class CommandDispatch(LineReceiver):
+    class LocalCommandDispatch(LineReceiver):
         """
         Wait for incoming commands (as lines of JSON) and dispatch them.
         """
@@ -517,7 +530,7 @@ async def _forward_loop(config, w):
 
         def __init__(self, cfg):
             self.config = cfg
-            super(CommandDispatch, self).__init__()
+            super(LocalCommandDispatch, self).__init__()
 
         def connectionMade(self):
             print(
@@ -537,5 +550,62 @@ async def _forward_loop(config, w):
                 print(f"{line.strip()}: failed: {e}")
 
     # arrange to read incoming commands from stdin
-    x = StandardIO(CommandDispatch(config))
+    x = StandardIO(LocalCommandDispatch(config))
     await Deferred()
+
+
+async def get_tor(
+        reactor,
+        tor_control_port=None,
+        stderr=sys.stderr):
+    """
+    Create an ITorManager suitable for use with wormhole.create()
+
+    This will attempt to connect to well-known ports and failing that
+    will launch its own tor subprocess.
+    """
+
+    try:
+        import txtorcon
+    except ImportError:
+        raise click.UsageError(
+            'Cannot find txtorcon library (try "pip istall txtorcon")'
+        )
+
+    # Connect to an existing Tor, or create a new one. If we need to
+    # launch an onion service, then we need a working control port (and
+    # authentication cookie). If we're only acting as a client, we don't
+    # need the control port.
+
+    # we could add a way for the user to configure the Tor endpoint if
+    # desired .. but for now we just try the usual suspects, then
+    # launch one if that fails.
+
+    # control_ep = clientFromString(reactor, tor_control_port)
+    # with all defaults, tries:
+    # unix:/var/run/tor/control, localhost:9051, localhost:9151
+    try:
+        tor = await txtorcon.connect(reactor)
+    except Exception as e:
+        print(
+            f"Failed to connect to Tor: {e}\nAttempting to run Tor",
+            file=stderr,
+        )
+
+        def progress(done, tag, summary):
+            print(f"Tor: {done}: {tag}: {summary}", file=stderr)
+
+        try:
+            tor = await txtorcon.launch(
+                reactor,
+                progress_updates=progress,
+                # data_directory=,
+                # tor_binary=,
+            )
+        except Exception as e:
+            raise click.UsageError(
+                f"Failed to connect to Tor, then failed to launch: {e}",
+            )
+
+    directlyProvides(tor, ITorManager)
+    return tor

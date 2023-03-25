@@ -1,5 +1,4 @@
 
-
 import click
 from attr import evolve
 
@@ -16,16 +15,23 @@ from ._proto import (
 # XXX need to replicate a bunch of "wormhole *" args?
 # e.g. tor stuff, mailbox url, ..
 
+@click.option(
+    "--ip-privacy/--clearnet",
+    default=False,
+    help="Enable operation over Tor (default is public Internet)",
+)
 @click.group()
 @click.pass_context
-def fow(ctx):
+def fow(ctx, ip_privacy):
     """
     Forward Over Wormhole
 
     Bi-directional streaming data over secure and durable Dilated
     magic-wormhole connections.
     """
-    ctx.obj = _Config()
+    ctx.obj = _Config(
+        use_tor=bool(ip_privacy),
+    )
 
 
 @fow.command()
