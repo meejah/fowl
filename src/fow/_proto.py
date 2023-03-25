@@ -1,5 +1,6 @@
 from __future__ import print_function
 
+import sys
 import json
 
 import struct
@@ -46,7 +47,8 @@ class _Config:
     code_length: int = 2
     appid: str = APPID
     debug_state: bool = False
-
+    stdout: IO = sys.stdout
+    stdin: IO = sys.stdin
 
 async def create_wormhole(config):
     """
@@ -56,7 +58,7 @@ async def create_wormhole(config):
 
 async def forward(config, reactor=reactor):
     """
-    I implement 'wormhole forward'.
+    Set up a wormhole and process commands relating to forwarding.
     """
     # XXX fixme
     tor = None
@@ -187,10 +189,13 @@ class LocalServer(Protocol):
             prefix = struct.pack("!H", len(msg))
             proto.transport.write(prefix + msg)
 
-            print(json.dumps({
-                "kind": "local-connection",
-                "id": self._conn_id,
-            }))
+            print(
+                json.dumps({
+                    "kind": "local-connection",
+                    "id": self._conn_id,
+                }),
+                file=self.factory.config.stdout,
+            )
 
             # MUST wait for reply first -- queueing all data until
             # then
@@ -200,15 +205,17 @@ class LocalServer(Protocol):
         factory = Factory.forProtocol(ForwardConnecter)
         factory.other_proto = self
         d = self.factory.connect_ep.connect(factory)
-        print("ZZZ", d)
         d.addCallback(got_proto)
 
         def err(f):
-            print(json.dumps({
-                "kind": "error",
-                "id": self._conn_id,
-                "message": str(f.value),
-            }))
+            print(
+                json.dumps({
+                    "kind": "error",
+                    "id": self._conn_id,
+                    "message": str(f.value),
+                }),
+                file=self.factory.config.stdout,
+            )
         d.addErrback(err)
         return d
 
@@ -270,29 +277,38 @@ class Incoming(Protocol):
 
     def connectionMade(self):
         self._conn_id = allocate_connection_id()
-        print(json.dumps({
-            "kind": "incoming-connect",
-            "id": self._conn_id,
-        }))
+        print(
+            json.dumps({
+                "kind": "incoming-connect",
+                "id": self._conn_id,
+            }),
+            file=self.factory.config.stdout,
+        )
         # XXX first message should tell us where to connect, locally
         # (want some kind of opt-in on this side, probably)
         self._buffer = b""
         self._local_connection = None
 
     def connectionLost(self, reason):
-        print(json.dumps({
-            "kind": "incoming-lost",
-            "id": self._conn_id,
-        }))
+        print(
+            json.dumps({
+                "kind": "incoming-lost",
+                "id": self._conn_id,
+            }),
+            file=self.factory.config.stdout,
+        )
         if self._local_connection and self._local_connection.transport:
             self._local_connection.transport.loseConnection()
 
     def forward(self, data):
-        print(json.dumps({
-            "kind": "forward-bytes",
-            "id": self._conn_id,
-            "bytes": len(data),
-        }))
+        print(
+            json.dumps({
+                "kind": "forward-bytes",
+                "id": self._conn_id,
+                "bytes": len(data),
+            }),
+            file=self.factory.config.stdout,
+        )
 
         # XXX handle in Dilation? or something?
         max_noise = 65000
@@ -304,11 +320,14 @@ class Incoming(Protocol):
     async def _establish_local_connection(self, first_msg):
         data = msgpack.unpackb(first_msg)
         ep = clientFromString(reactor, data["local-destination"])
-        print(json.dumps({
-            "kind": "connect-local",
-            "id": self._conn_id,
-            "endpoint": data["local-destination"],
-        }))
+        print(
+            json.dumps({
+                "kind": "connect-local",
+                "id": self._conn_id,
+                "endpoint": data["local-destination"],
+            }),
+            file=self.factory.config.stdout,
+        )
         factory = Factory.forProtocol(Forwarder)
         factory.other_proto = self
         try:
@@ -371,39 +390,7 @@ async def _forward_loop(config, w):
        - write results to stdout (as single-line JSON messages)
        - service subchannels
 
-    The following commands are understood:
-
-    {
-        "kind": "local",
-        "endpoint": "tcp:8888",
-        "local-endpoint": "tcp:localhost:8888",
-    }
-
-    {
-        "kind": "remote",
-        ...
-    }
-
-    This instructs us to listen on `endpoint` (any Twisted server-type
-    endpoint string). On any connection to that listener, we open a
-    subchannel through the wormhome and send an opening message
-    (length-prefixed msgpack) like:
-
-    {
-        "local-destination": "tcp:localhost:8888",
-    }
-
-    This instructs the other end of the subchannel to open a local
-    connection to the Twisted client-type endpoint `local-destination`
-    .. after this, all traffic to either end is forwarded.
-
-    Before forwarding anything, the listening end waits for permission
-    to continue in a reply message (also length-prefixed msgpack)
-    like:
-
-    {
-        "connected": True,
-    }
+    See docs/messages.rst for more
     """
 
     welcome = await w.get_welcome()
@@ -444,6 +431,7 @@ async def _forward_loop(config, w):
             if (msg["kind"] == "remote-to-local"):
                 listen_ep = serverFromString(reactor, msg["listen-endpoint"])
                 factory = Factory.forProtocol(LocalServer)
+                factory.config = config
                 factory.endpoint_str = msg["connect-endpoint"]
                 factory.connect_ep = connect_ep
                 proto = listen_ep.listen(factory)
@@ -454,6 +442,7 @@ async def _forward_loop(config, w):
     control_proto = await control_ep.connect(Factory.forProtocol(Commands))
 
     in_factory = Factory.forProtocol(Incoming)
+    in_factory.config = config
     in_factory.connect_ep = connect_ep
     listen_ep.listen(in_factory)
 
@@ -467,6 +456,7 @@ async def _forward_loop(config, w):
         """
         ep = serverFromString(reactor, cmd["endpoint"])
         factory = Factory.forProtocol(LocalServer)
+        factory.config = config
         factory.endpoint_str = cmd["local-endpoint"]
         factory.connect_ep = connect_ep
         proto = await ep.listen(factory)
