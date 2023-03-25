@@ -1,37 +1,23 @@
 from __future__ import print_function
 
-import hashlib
-import os
-import sys
 import json
-import itertools
 
-import stat
 import struct
-import tempfile
-import zipfile
 from functools import partial
 
-from attrs import define, frozen
+from attrs import frozen
 
-import six
 import msgpack
-from humanize import naturalsize
 from twisted.internet import reactor
 from twisted.internet.defer import inlineCallbacks, returnValue, Deferred, succeed
 from twisted.internet.endpoints import serverFromString, clientFromString
 from twisted.internet.protocol import Factory, Protocol
-from twisted.internet.process import ProcessWriter, ProcessReader
 from twisted.internet.stdio import StandardIO
 from twisted.protocols.basic import LineReceiver
-from twisted.python import log
 from twisted.python.failure import Failure
-from wormhole import __version__, create
+from wormhole import create
 from wormhole.cli import public_relay
 
-from wormhole.errors import TransferError, UnsendableFileError
-from wormhole.transit import TransitSender
-from wormhole.util import bytes_to_dict, bytes_to_hexstr, dict_to_bytes
 
 APPID = u"meejah.ca/wormhole/forward"
 
