@@ -518,7 +518,7 @@ async def _forward_loop(config, w):
 
         def __init__(self, cfg):
             self.config = cfg
-            super(self, CommandDispatch).__init__()
+            super(CommandDispatch, self).__init__()
 
         def connectionMade(self):
             print(
