@@ -9,7 +9,7 @@ from attrs import frozen
 
 import msgpack
 from twisted.internet import reactor
-from twisted.internet.defer import returnValue, Deferred, succeed
+from twisted.internet.defer import returnValue, Deferred, succeed, ensureDeferred
 from twisted.internet.endpoints import serverFromString, clientFromString
 from twisted.internet.protocol import Factory, Protocol
 from twisted.internet.stdio import StandardIO
@@ -513,7 +513,7 @@ async def _forward_loop(config, w):
         def lineReceived(self, line):
             try:
                 cmd = json.loads(line)
-                d = process_command(cmd)
+                d = ensureDeferred(process_command(cmd))
                 print("CCCC", d)
                 d.addErrback(print)
                 return d
