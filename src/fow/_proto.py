@@ -516,6 +516,10 @@ async def _forward_loop(config, w):
         """
         delimiter = b"\n"
 
+        def __init__(self, cfg):
+            self.config = cfg
+            super(self, CommandDispatch).__init__()
+
         def connectionMade(self):
             print(
                 json.dumps({
@@ -534,5 +538,5 @@ async def _forward_loop(config, w):
                 print(f"{line.strip()}: failed: {e}")
 
     # arrange to read incoming commands from stdin
-    x = StandardIO(CommandDispatch())
+    x = StandardIO(CommandDispatch(self.factory.config))
     await Deferred()
