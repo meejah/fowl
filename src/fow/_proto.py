@@ -9,7 +9,7 @@ from attrs import frozen
 
 import msgpack
 from twisted.internet import reactor
-from twisted.internet.defer import inlineCallbacks, returnValue, Deferred, succeed
+from twisted.internet.defer import returnValue, Deferred, succeed
 from twisted.internet.endpoints import serverFromString, clientFromString
 from twisted.internet.protocol import Factory, Protocol
 from twisted.internet.stdio import StandardIO
@@ -54,12 +54,10 @@ async def create_wormhole(config):
     """
 
 
-@inlineCallbacks
-def forward(config, reactor=reactor):
+async def forward(config, reactor=reactor):
     """
     I implement 'wormhole forward'.
     """
-    print("DING", config.relay_url)
     # XXX fixme
     tor = None
 
@@ -68,7 +66,7 @@ def forward(config, reactor=reactor):
         config.relay_url,
         reactor,
         tor=tor,
-        timing=None,##args.timing,
+        timing=None,  # args.timing,
         _enable_dilate=True,
     )
     if config.debug_state:
@@ -77,8 +75,8 @@ def forward(config, reactor=reactor):
     try:
         # if we succeed, we should close and return the w.close results
         # (which might be an error)
-        res = yield _forward_loop(config, w)
-        yield w.close()  # wait for ack
+        res = await _forward_loop(config, w)
+        await w.close()  # wait for ack
         returnValue(res)
 
     except Exception:
@@ -86,7 +84,7 @@ def forward(config, reactor=reactor):
         # error (the close might give us an error, but it isn't as important
         # as the original one)
         try:
-            yield w.close()  # might be an error too
+            await w.close()  # might be an error too
         except Exception:
             pass
         f = Failure()
@@ -302,8 +300,7 @@ class Incoming(Protocol):
             data = data[max_noise:]
             self._local_connection.transport.write(d)
 
-    @inlineCallbacks
-    def _establish_local_connection(self, first_msg):
+    async def _establish_local_connection(self, first_msg):
         data = msgpack.unpackb(first_msg)
         ep = clientFromString(reactor, data["local-destination"])
         print(json.dumps({
@@ -314,7 +311,7 @@ class Incoming(Protocol):
         factory = Factory.forProtocol(Forwarder)
         factory.other_proto = self
         try:
-            self._local_connection = yield ep.connect(factory)
+            self._local_connection = await ep.connect(factory)
         except Exception as e:
             print(json.dumps({
                 "kind": "error",
@@ -361,8 +358,7 @@ class Incoming(Protocol):
                     self._buffer = None
 
 
-@inlineCallbacks
-def _forward_loop(config, w):
+async def _forward_loop(config, w):
     """
     Run the main loop of the forward:
        - perform setup (version stuff etc)
@@ -405,7 +401,7 @@ def _forward_loop(config, w):
     }
     """
 
-    welcome = yield w.get_welcome()
+    welcome = await w.get_welcome()
     print(
         json.dumps({
             "welcome": welcome
@@ -417,7 +413,7 @@ def _forward_loop(config, w):
     else:
         w.allocate_code(config.code_length)
 
-    code = yield w.get_code()
+    code = await w.get_code()
     print(
         json.dumps({
             "kind": "wormhole-code",
@@ -426,7 +422,6 @@ def _forward_loop(config, w):
     )
 
     control_ep, connect_ep, listen_ep = w.dilate()
-    print("control", control_ep)
 
     class Commands(Protocol):
         """
@@ -434,37 +429,33 @@ def _forward_loop(config, w):
         """
 
         def connectionMade(self):
-            print("command connection")
+            pass
 
         # XXX make these msgpack too, for consistency!
 
         def dataReceived(self, data):
             # XXX can we depend on data being "one message"? or do we need length-prefixed?
             msg = json.loads(data)
-            print("command data", msg)
             if (msg["kind"] == "remote-to-local"):
                 listen_ep = serverFromString(reactor, msg["listen-endpoint"])
                 factory = Factory.forProtocol(LocalServer)
                 factory.endpoint_str = msg["connect-endpoint"]
                 factory.connect_ep = connect_ep
                 proto = listen_ep.listen(factory)
-                print("accepted forward request")
 
         def connectionLost(self, reason):
             print("command connectionLost", reason)
 
-    control_proto = yield control_ep.connect(Factory.forProtocol(Commands))
-    print("ZZZZ", control_proto)
+    control_proto = await control_ep.connect(Factory.forProtocol(Commands))
 
     in_factory = Factory.forProtocol(Incoming)
     in_factory.connect_ep = connect_ep
     listen_ep.listen(in_factory)
 
-    yield w.get_unverified_key()
-    verifier_bytes = yield w.get_verifier()  # might WrongPasswordError
+    await w.get_unverified_key()
+    verifier_bytes = await w.get_verifier()  # might WrongPasswordError
 
-    @inlineCallbacks
-    def _local_to_remote_forward(cmd):
+    async def _local_to_remote_forward(cmd):
         """
         Listen locally, and for each local connection create an Outgoing
         subchannel which will connect on the other end.
@@ -473,7 +464,7 @@ def _forward_loop(config, w):
         factory = Factory.forProtocol(LocalServer)
         factory.endpoint_str = cmd["local-endpoint"]
         factory.connect_ep = connect_ep
-        proto = yield ep.listen(factory)
+        proto = await ep.listen(factory)
         print(json.dumps({
             "kind": "listening",
             "endpoint": cmd["local-endpoint"],
@@ -529,4 +520,4 @@ def _forward_loop(config, w):
 
     # arrange to read incoming commands from stdin
     x = StandardIO(CommandDispatch())
-    yield Deferred()
+    await Deferred()
