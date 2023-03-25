@@ -129,7 +129,6 @@ class ForwardConnecter(Protocol):
             self.factory.other_proto.transport.write(data)
 
     def connectionLost(self, reason):
-        print("QWER connectionLost", reason)
         if self.factory.other_proto:
             self.factory.other_proto.transport.loseConnection()
 
@@ -167,7 +166,6 @@ class Forwarder(Protocol):
                 self.factory.other_proto.transport.write(d)
 
     def connectionLost(self, reason):
-        print("PPPP connectionLost", reason)
         if self.factory.other_proto:
             self.factory.other_proto.transport.loseConnection()
 
@@ -229,7 +227,6 @@ class LocalServer(Protocol):
         self.queue = None
 
     def connectionLost(self, reason):
-        print("LocalServer.connectionLost", reason)
         pass # print("local connection lost")
 
     def dataReceived(self, data):
@@ -386,7 +383,6 @@ class Incoming(Protocol):
                         )
                     )
                     # XXX this "d" getting dropped
-                    print("RRRR", d)
                     self._buffer = None
 
 
@@ -453,7 +449,7 @@ async def _forward_loop(config, w):
                 proto = listen_ep.listen(factory)
 
         def connectionLost(self, reason):
-            print("command connectionLost", reason)
+            pass  # print("command connectionLost", reason)
 
     control_proto = await control_ep.connect(Factory.forProtocol(Commands))
 
