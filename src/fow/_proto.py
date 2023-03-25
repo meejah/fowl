@@ -129,6 +129,7 @@ class ForwardConnecter(Protocol):
             self.factory.other_proto.transport.write(data)
 
     def connectionLost(self, reason):
+        print("QWER connectionLost", reason)
         if self.factory.other_proto:
             self.factory.other_proto.transport.loseConnection()
 
@@ -166,6 +167,7 @@ class Forwarder(Protocol):
                 self.factory.other_proto.transport.write(d)
 
     def connectionLost(self, reason):
+        print("PPPP connectionLost", reason)
         if self.factory.other_proto:
             self.factory.other_proto.transport.loseConnection()
 
@@ -227,6 +229,7 @@ class LocalServer(Protocol):
         self.queue = None
 
     def connectionLost(self, reason):
+        print("LocalServer.connectionLost", reason)
         pass # print("local connection lost")
 
     def dataReceived(self, data):
@@ -291,6 +294,7 @@ class Incoming(Protocol):
         self._local_connection = None
 
     def connectionLost(self, reason):
+        print("GGGG connectionLost", reason)
         print(
             json.dumps({
                 "kind": "incoming-lost",
