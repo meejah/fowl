@@ -538,5 +538,5 @@ async def _forward_loop(config, w):
                 print(f"{line.strip()}: failed: {e}")
 
     # arrange to read incoming commands from stdin
-    x = StandardIO(CommandDispatch(self.factory.config))
+    x = StandardIO(CommandDispatch(config))
     await Deferred()
