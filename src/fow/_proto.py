@@ -81,22 +81,19 @@ async def forward(config, reactor=reactor):
     w = create_wormhole(reactor, config)
 
     try:
-        # if we succeed, we should close and return the w.close results
-        # (which might be an error)
-        res = await _forward_loop(config, w)
-        await w.close()  # wait for ack
-        returnValue(res)
+        # if we succeed, we are done ane should close
+        await _forward_loop(config, w)
+        await w.close()  # waits for ack
 
     except Exception:
-        # if we raise an error, we should close and then return the original
+        # if we catch an error, we should close and then return the original
         # error (the close might give us an error, but it isn't as important
         # as the original one)
         try:
             await w.close()  # might be an error too
         except Exception:
             pass
-        f = Failure()
-        returnValue(f)
+        raise
 
 
 class ForwardConnecter(Protocol):
