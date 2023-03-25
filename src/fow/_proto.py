@@ -525,7 +525,7 @@ async def _forward_loop(config, w):
                 json.dumps({
                     "kind": "connected",
                 }),
-                file=self.factory.config.stdout,
+                file=self.config.stdout,
             )
 
         def lineReceived(self, line):
