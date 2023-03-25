@@ -404,7 +404,8 @@ async def _forward_loop(config, w):
     welcome = await w.get_welcome()
     print(
         json.dumps({
-            "welcome": welcome
+            "kind": "welcome",
+            "welcome": welcome,
         }),
         file=config.stdout,
     )
