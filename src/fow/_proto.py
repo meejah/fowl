@@ -353,9 +353,12 @@ class Incoming(Protocol):
                     if bsize > 2 + expected_size:
                         raise RuntimeError("protocol error: more than opening message sent")
 
-                    d = self._establish_local_connection(
-                        first_msg,
+                    d = ensuredeferred(
+                        self._establish_local_connection(
+                            first_msg,
+                        )
                     )
+                    print("RRRR", d)
                     self._buffer = None
 
 
