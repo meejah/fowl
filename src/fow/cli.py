@@ -5,6 +5,10 @@ from attr import evolve
 from twisted.internet.task import react
 from twisted.internet.defer import ensureDeferred
 
+from wormhole.cli.public_relay import (
+    RENDEZVOUS_RELAY as PUBLIC_MAILBOX_URL,
+)
+
 from ._proto import (
     _Config,
     create_wormhole,
@@ -20,9 +24,14 @@ from ._proto import (
     default=False,
     help="Enable operation over Tor (default is public Internet)",
 )
+@click.option(
+    "--mailbox",
+    default=PUBLIC_MAILBOX_URL,
+    help="URL for the mailbox server to use",
+)
 @click.group()
 @click.pass_context
-def fow(ctx, ip_privacy):
+def fow(ctx, ip_privacy, mailbox):
     """
     Forward Over Wormhole
 
@@ -30,6 +39,7 @@ def fow(ctx, ip_privacy):
     magic-wormhole connections.
     """
     ctx.obj = _Config(
+        relay_url=mailbox,
         use_tor=bool(ip_privacy),
     )
 
