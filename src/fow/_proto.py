@@ -437,35 +437,6 @@ async def _forward_loop(config, w):
 
     control_ep, connect_ep, listen_ep = w.dilate()
 
-    class Commands(Protocol):
-        """
-        Listen for (and send) commands over the command subchannel
-        """
-
-        def connectionMade(self):
-            pass
-
-        # XXX make these msgpack too, for consistency!
-
-        def dataReceived(self, data):
-            # XXX can we depend on data being "one message"? or do we need length-prefixed?
-            bsize = len(data)
-            assert bsize >= 2, "expected at least 2 bytes"
-            expected_size, = struct.unpack("!H", data[:2])
-            assert bsize == expected_size + 2, "data has more than the message"
-            msg = msgpack.unpackb(data[2:])
-            if msg["kind"] == "remote-to-local":
-                # XXX ask for permission
-                listen_ep = serverFromString(reactor, msg["listen-endpoint"])
-                factory = Factory.forProtocol(LocalServer)
-                factory.config = config
-                factory.endpoint_str = msg["connect-endpoint"]
-                factory.connect_ep = connect_ep
-                proto = listen_ep.listen(factory)
-
-        def connectionLost(self, reason):
-            pass  # print("command connectionLost", reason)
-
     control_proto = await control_ep.connect(Factory.forProtocol(Commands))
 
     in_factory = Factory.forProtocol(Incoming)
@@ -525,6 +496,36 @@ async def _forward_loop(config, w):
     # arrange to read incoming commands from stdin
     x = StandardIO(LocalCommandDispatch(config))
     await Deferred()
+
+
+class Commands(Protocol):
+    """
+    Listen for (and send) commands over the command subchannel
+    """
+
+    def connectionMade(self):
+        pass
+
+    # XXX make these msgpack too, for consistency!
+
+    def dataReceived(self, data):
+        # XXX can we depend on data being "one message"? or do we need length-prefixed?
+        bsize = len(data)
+        assert bsize >= 2, "expected at least 2 bytes"
+        expected_size, = struct.unpack("!H", data[:2])
+        assert bsize == expected_size + 2, "data has more than the message"
+        msg = msgpack.unpackb(data[2:])
+        if msg["kind"] == "remote-to-local":
+            # XXX ask for permission
+            listen_ep = serverFromString(reactor, msg["listen-endpoint"])
+            factory = Factory.forProtocol(LocalServer)
+            factory.config = config
+            factory.endpoint_str = msg["connect-endpoint"]
+            factory.connect_ep = connect_ep
+            proto = listen_ep.listen(factory)
+
+    def connectionLost(self, reason):
+        pass  # print("command connectionLost", reason)
 
 
 class LocalCommandDispatch(LineReceiver):
