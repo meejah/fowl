@@ -447,55 +447,60 @@ async def _forward_loop(config, w):
     await w.get_unverified_key()
     verifier_bytes = await w.get_verifier()  # might WrongPasswordError
 
-    async def _local_to_remote_forward(cmd):
-        """
-        Listen locally, and for each local connection create an Outgoing
-        subchannel which will connect on the other end.
-        """
-        ep = serverFromString(reactor, cmd["listen-endpoint"])
-        factory = Factory.forProtocol(LocalServer)
-        factory.config = config
-        factory.endpoint_str = cmd["local-endpoint"]
-        factory.connect_ep = connect_ep
-        proto = await ep.listen(factory)
-        print(
-            json.dumps({
-                "kind": "listening",
-                "endpoint": cmd["local-endpoint"],
-            }),
-            file=config.stdout,
-        )
-
-    def _remote_to_local_forward(cmd):
-        """
-        Ask the remote side to listen on a port, forwarding back here
-        (where our Incoming subchannel will be told what to connect
-        to).
-        """
-        msg = msgpack.packb({
-            "kind": "remote-to-local",
-            "listen-endpoint": cmd["remote-endpoint"],
-            "connect-endpoint": cmd["local-endpoint"],
-        })
-        prefix = struct.pack("!H", len(msg))
-        control_proto.transport.write(prefix + msg)
-        return succeed(None)
-
-    async def process_command(cmd):
-        if "kind" not in cmd:
-            raise ValueError("no 'kind' in command")
-
-        return await {
-            # listens locally, conencts to other side
-            "local": _local_to_remote_forward,
-
-            # asks the other side to listen, connecting back to us
-            "remote": _remote_to_local_forward,
-        }[cmd["kind"]](cmd)
-
     # arrange to read incoming commands from stdin
     x = StandardIO(LocalCommandDispatch(config))
     await Deferred()
+
+
+async def _local_to_remote_forward(reactor, cmd):
+    """
+    Listen locally, and for each local connection create an Outgoing
+    subchannel which will connect on the other end.
+    """
+    ep = serverFromString(reactor, cmd["listen-endpoint"])
+    factory = Factory.forProtocol(LocalServer)
+    factory.config = config
+    factory.endpoint_str = cmd["local-endpoint"]
+    factory.connect_ep = connect_ep
+    proto = await ep.listen(factory)
+    print(
+        json.dumps({
+            "kind": "listening",
+            "endpoint": cmd["local-endpoint"],
+        }),
+        file=config.stdout,
+    )
+
+
+async def _remote_to_local_forward(control_proto, cmd):
+    """
+    Ask the remote side to listen on a port, forwarding back here
+    (where our Incoming subchannel will be told what to connect
+    to).
+    """
+    msg = msgpack.packb({
+        "kind": "remote-to-local",
+        "listen-endpoint": cmd["remote-endpoint"],
+        "connect-endpoint": cmd["local-endpoint"],
+    })
+    prefix = struct.pack("!H", len(msg))
+    control_proto.transport.write(prefix + msg)
+    return None
+
+async def _process_command(reactor, control_proto, cmd):
+    if "kind" not in cmd:
+        raise ValueError("no 'kind' in command")
+
+    if cmd["kind"] == "local":
+        # listens locally, conencts to other side
+        return await _local_to_remote_forward(reactor, cmd)
+    elif cmd["kind"] == "remote":
+        # asks the other side to listen, connecting back to us
+        return await _remote_to_local_forward(control_proto, cmd)
+
+    raise KeyError(
+        "Unknown command '{}'".format(cmd["kind"])
+    )
 
 
 class Commands(Protocol):
@@ -554,7 +559,7 @@ class LocalCommandDispatch(LineReceiver):
         # answer, we need to do them in order)
         try:
             cmd = json.loads(line)
-            d = ensureDeferred(process_command(cmd))
+            d = ensureDeferred(_process_command(reactor, control_proto, cmd))
             d.addErrback(print)
             return d
         except Exception as e:
