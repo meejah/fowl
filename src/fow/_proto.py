@@ -448,11 +448,11 @@ async def _forward_loop(config, w):
     verifier_bytes = await w.get_verifier()  # might WrongPasswordError
 
     # arrange to read incoming commands from stdin
-    x = StandardIO(LocalCommandDispatch(reactor, config, control_proto))
+    x = StandardIO(LocalCommandDispatch(reactor, config, control_proto, connect_ep))
     await Deferred()
 
 
-async def _local_to_remote_forward(reactor, config, cmd):
+async def _local_to_remote_forward(reactor, config, connect_ep, cmd):
     """
     Listen locally, and for each local connection create an Outgoing
     subchannel which will connect on the other end.
@@ -487,13 +487,13 @@ async def _remote_to_local_forward(control_proto, cmd):
     control_proto.transport.write(prefix + msg)
     return None
 
-async def _process_command(reactor, control_proto, cmd):
+async def _process_command(reactor, config, control_proto, connect_ep, cmd):
     if "kind" not in cmd:
         raise ValueError("no 'kind' in command")
 
     if cmd["kind"] == "local":
         # listens locally, conencts to other side
-        return await _local_to_remote_forward(reactor, config, cmd)
+        return await _local_to_remote_forward(reactor, config, connect_ep, cmd)
     elif cmd["kind"] == "remote":
         # asks the other side to listen, connecting back to us
         return await _remote_to_local_forward(control_proto, cmd)
@@ -539,11 +539,12 @@ class LocalCommandDispatch(LineReceiver):
     """
     delimiter = b"\n"
 
-    def __init__(self, reactor, cfg, control_proto):
+    def __init__(self, reactor, cfg, control_proto, connect_ep):
         super(LocalCommandDispatch, self).__init__()
         self.config = cfg
         self._reactor = reactor
         self._control_proto = control_proto
+        self._connect_ep = connect_ep
 
     def connectionMade(self):
         print(
@@ -561,7 +562,9 @@ class LocalCommandDispatch(LineReceiver):
         # answer, we need to do them in order)
         try:
             cmd = json.loads(line)
-            d = ensureDeferred(_process_command(self._reactor, self._control_proto, cmd))
+            d = ensureDeferred(
+                _process_command(self._reactor, self.config, self._control_proto, self._connect_ep, cmd)
+            )
             d.addErrback(print)
             return d
         except Exception as e:
