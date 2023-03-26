@@ -438,8 +438,10 @@ async def _forward_loop(config, w):
 
     control_ep, connect_ep, listen_ep = w.dilate()
 
+    # listen for commands from the other side on the control channel
     control_proto = await control_ep.connect(Factory.forProtocol(Commands))
 
+    # listen for incoming subchannel opens
     in_factory = Factory.forProtocol(Incoming)
     in_factory.config = config
     in_factory.connect_ep = connect_ep
