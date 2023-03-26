@@ -398,6 +398,7 @@ class Incoming(Protocol):
                         )
                     )
                     # XXX this "d" getting dropped
+                    d.addErrback(print)
                     self._buffer = None
 
 
