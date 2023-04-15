@@ -27,7 +27,7 @@ async def fow(reactor, request, subcommand, mailbox=None):
         executable=sys.executable,
         args=args,
     )
-    print(transport)
+    return _Fow(transport)
 
 
 @pytest_twisted.ensureDeferred

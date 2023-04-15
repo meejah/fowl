@@ -11,7 +11,7 @@ from wormhole.cli.public_relay import (
 
 from ._proto import (
     _Config,
-    create_wormhole,
+    wormhole_from_config,
     forward,
 )
 
@@ -52,7 +52,12 @@ def invite(ctx):
     on another computer to join a forwarding session
     """
     def run(reactor):
-        return ensureDeferred(forward(ctx.obj))
+        return ensureDeferred(
+            forward(
+                ctx.obj,
+                wormhole_from_config(ctx.obj),  # coroutine
+            )
+        )
     return react(run)
 
 
@@ -66,7 +71,7 @@ def accept(ctx, code):
     """
     ctx.obj = evolve(ctx.obj, code=code)
     def run(reactor):
-        return ensureDeferred(forward(ctx.obj))
+        return ensureDeferred(forward(ctx.obj, wormhole_from_config(ctx.obj)))
     return react(run)
 
 

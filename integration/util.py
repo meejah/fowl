@@ -23,6 +23,10 @@ class _MagicTextProtocol(ProcessProtocol):
         self._magic_text = magic_text
         self._output = StringIO()
         self._print_logs = print_logs
+        self._stdout_listeners = []
+
+    def add_stdout_listener(self, listener):
+        self._stdout_listeners.append(listener)
 
     def processEnded(self, reason):
         if self.magic_seen is not None:
@@ -33,6 +37,8 @@ class _MagicTextProtocol(ProcessProtocol):
     def childDataReceived(self, childFD, data):
         if childFD == 1:
             self.out_received(data)
+            for x in self._stdout_listeners:
+                x.stdout_received(data)
         elif childFD == 2:
             self.err_received(data)
         else:

@@ -18,9 +18,7 @@ from twisted.internet.stdio import StandardIO
 from twisted.protocols.basic import LineReceiver
 from twisted.python.failure import Failure
 from zope.interface import directlyProvides
-from wormhole import create
-from wormhole.cli import public_relay
-from wormhole._interfaces import ITorManager
+from wormhole.cli.public_relay import RENDEZVOUS_RELAY as default_mailbox_url
 
 
 
@@ -46,7 +44,7 @@ class _Config:
     Represents a set of validated configuration
     """
 
-    relay_url: str = public_relay.RENDEZVOUS_RELAY
+    relay_url: str = default_mailbox_url
     code: str = None
     code_length: int = 2
     use_tor: bool = False
@@ -56,16 +54,27 @@ class _Config:
     stdin: IO = sys.stdin
 
 
-def create_wormhole(config):
+async def wormhole_from_config(config, wormhole_create=None):
     """
     Create a suitable wormhole for the given configuration.
 
     :returns DeferredWormhole: a wormhole API
     """
-    # XXX fixme
-    tor = None
+    if wormhole_create is None:
+        from wormhole import create as wormhole_create
 
-    w = create(
+    tor = None
+    if config.use_tor:
+        tor = await get_tor(reactor)
+        print(
+            json.dumps({
+                "kind": "tor",
+                "version": tor.version,
+            }),
+            file=config.stdout,
+        )
+
+    w = wormhole_create(
         config.appid or APPID,
         config.relay_url,
         reactor,
@@ -78,23 +87,14 @@ def create_wormhole(config):
     return w
 
 
-async def forward(config, reactor=reactor):
+async def forward(config, wormhole_coro, reactor=reactor):
     """
     Set up a wormhole and process commands relating to forwarding.
     """
-    if config.use_tor:
-        tor = await get_tor(reactor)
-        print(
-            json.dumps({
-                "kind": "tor",
-                "version": tor.version,
-            }),
-            file=config.stdout,
-        )
-    w = create_wormhole(config)
+    w = await wormhole_coro
 
     try:
-        # if we succeed, we are done ane should close
+        # if we succeed, we are done and should close
         await _forward_loop(config, w)
         await w.close()  # waits for ack
 
@@ -428,20 +428,23 @@ async def _forward_loop(config, w):
         w.allocate_code(config.code_length)
 
     code = await w.get_code()
-    print(
-        json.dumps({
-            "kind": "wormhole-code",
-            "code": code,
-        }),
-        file=config.stdout,
-    )
+    # it's kind of weird to see this on "fow accept" so only show it
+    # if we actually allocated a code
+    if not config.code:
+        print(
+            json.dumps({
+                "kind": "wormhole-code",
+                "code": code,
+            }),
+            file=config.stdout,
+        )
 
     control_ep, connect_ep, listen_ep = w.dilate()
 
     # listen for commands from the other side on the control channel
     control_proto = await control_ep.connect(Factory.forProtocol(Commands))
 
-    # listen for incoming subchannel opens
+    # listen for incoming subchannel OPENs
     in_factory = Factory.forProtocol(Incoming)
     in_factory.config = config
     in_factory.connect_ep = connect_ep
@@ -584,6 +587,7 @@ async def get_tor(
     This will attempt to connect to well-known ports and failing that
     will launch its own tor subprocess.
     """
+    from wormhole._interfaces import ITorManager
 
     try:
         import txtorcon
