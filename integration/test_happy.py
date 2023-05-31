@@ -30,10 +30,12 @@ class _FowProtocol(ProcessProtocol):
         self.exited.callback(None)
 
     def childDataReceived(self, childFD, data):
-        print("DING", data)
-        js = json.loads(data)
-        print("MSG", js)
-        self._maybe_notify(js)
+        try:
+            js = json.loads(data)
+        except Exception as e:
+            print(f"Not JSON: {data}")
+        else:
+            self._maybe_notify(js)
 
     def _maybe_notify(self, js):
         kind = js["kind"]
@@ -80,7 +82,6 @@ async def fow(reactor, request, subcommand, *extra_args, mailbox=None, startup=T
         ])
     args.append(subcommand)
     args.extend(extra_args)
-    print(args)
     proto = _FowProtocol()
     transport = await run_service(
         reactor,
@@ -101,15 +102,14 @@ async def test_happy_path(reactor, request, wormhole):
 
     (if this fails, nothing else will succeed)
     """
-    print(wormhole)
     f0 = await fow(reactor, request, "invite", mailbox=wormhole.url, startup=False)
-    print(f0)
     code_msg = await f0.protocol.next_message(kind="wormhole-code")
+
     f1 = await fow(
         reactor, request, "accept", code_msg["code"],
         mailbox=wormhole.url, startup=False,
     )
-    print(f1)
+    # open a listener of some sort
     f1.transport.write(
         json.dumps({
             "kind": "remote",
@@ -120,3 +120,11 @@ async def test_happy_path(reactor, request, wormhole):
 
     await f0.protocol.next_message("connected")
     await f1.protocol.next_message("connected")
+
+    # f1 send a remote-listen request, so f0 should receive it
+    x = await f0.protocol.next_message("listening")
+    print("XX", x)
+
+    print(f0.protocol.all_messages())
+    print("ZZ")
+    print(f1.protocol.all_messages())

@@ -531,6 +531,15 @@ class Commands(Protocol):
         assert bsize == expected_size + 2, "data has more than the message"
         msg = msgpack.unpackb(data[2:])
         if msg["kind"] == "remote-to-local":
+
+            print(
+                json.dumps({
+                    "kind": "listening",
+                    "endpoint": msg["listen-endpoint"],
+                }),
+                file=self.factory.config.stdout,
+            )
+
             # XXX ask for permission
             listen_ep = serverFromString(reactor, msg["listen-endpoint"])
             factory = Factory.forProtocol(LocalServer)
