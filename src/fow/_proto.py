@@ -83,7 +83,7 @@ async def wormhole_from_config(config, wormhole_create=None):
         _enable_dilate=True,
     )
     if config.debug_state:
-        w.debug_set_trace("forward", which=" ".join(config.debug_state), file=config.stdout)
+        w.debug_set_trace("forward", file=config.stdout)
     return w
 
 
