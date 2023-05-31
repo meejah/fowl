@@ -70,11 +70,12 @@ class _MagicTextProtocol(ProcessProtocol):
 def run_service(
     reactor,
     request,
-    magic_text,
     executable,
     args,
+    magic_text=None,
     cwd=None,
     print_logs=True,
+    protocol=None,
 ):
     """
     Start a service, and capture the output from the service in an eliot
@@ -93,7 +94,12 @@ def run_service(
 
     :return Deferred[IProcessTransport]: The started process.
     """
-    protocol = _MagicTextProtocol(magic_text, print_logs=print_logs)
+    if protocol is None:
+        protocol = _MagicTextProtocol(magic_text, print_logs=print_logs)
+        saw_magic = protocol.magic_seen
+    else:
+        saw_magic = Deferred()
+        saw_magic.callback(None)
 
     env = os.environ.copy()
     env['PYTHONUNBUFFERED'] = '1'
@@ -108,7 +114,7 @@ def run_service(
         env=env,
     )
     request.addfinalizer(partial(_cleanup_service_process, process, protocol.exited))
-    return protocol.magic_seen.addCallback(lambda ignored: process)
+    return saw_magic.addCallback(lambda ignored: process)
 
 
 def _cleanup_service_process(process, exited):
@@ -154,9 +160,9 @@ class WormholeMailboxServer:
         transport = await run_service(
             reactor,
             request,
-            magic_text="Starting reactor...",
             executable=sys.executable,
             args=args,
+            magic_text="Starting reactor...",
             print_logs=False,  # twisted json struct-log
         )
         return cls(
