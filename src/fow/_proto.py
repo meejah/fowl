@@ -444,7 +444,9 @@ async def _forward_loop(config, w):
     )
 
     # listen for commands from the other side on the control channel
-    control_proto = await control_ep.connect(Factory.forProtocol(Commands))
+    fac = Factory.forProtocol(Commands)
+    fac.config = config
+    control_proto = await control_ep.connect(fac)
 
     # listen for incoming subchannel OPENs
     in_factory = Factory.forProtocol(Incoming)
@@ -532,9 +534,8 @@ class Commands(Protocol):
             # XXX ask for permission
             listen_ep = serverFromString(reactor, msg["listen-endpoint"])
             factory = Factory.forProtocol(LocalServer)
-            factory.config = config
+            factory.config = self.factory.config
             factory.endpoint_str = msg["connect-endpoint"]
-            factory.connect_ep = connect_ep
             proto = listen_ep.listen(factory)
 
     def connectionLost(self, reason):
