@@ -439,7 +439,9 @@ async def _forward_loop(config, w):
             file=config.stdout,
         )
 
-    control_ep, connect_ep, listen_ep = w.dilate()
+    control_ep, connect_ep, listen_ep = w.dilate(
+        transit_relay_location="tcp:magic-wormhole-transit.debian.net:4001",
+    )
 
     # listen for commands from the other side on the control channel
     control_proto = await control_ep.connect(Factory.forProtocol(Commands))
