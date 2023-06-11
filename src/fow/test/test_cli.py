@@ -124,7 +124,7 @@ async def test_forward(reactor, mailbox):
     d0 = ensureDeferred(forward(config0, wormhole_from_config(config0), reactor=reactor))
 
     msg = await find_message(reactor, config0, kind="wormhole-code")
-    print(msg)
+    assert 'code' in msg, "Missing code"
 
     config1 = _Config(
         relay_url=mailbox.url,
@@ -133,8 +133,6 @@ async def test_forward(reactor, mailbox):
         code=msg["code"],
     )
     d1 = ensureDeferred(forward(config1, wormhole_from_config(config1), reactor=reactor))
-    print(d1)
     msg = await find_message(reactor, config1, kind="connected")
-    print(msg)
     d0.cancel()
     d1.cancel()

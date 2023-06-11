@@ -306,7 +306,6 @@ class Incoming(Protocol):
         self._local_connection = None
 
     def connectionLost(self, reason):
-        print("GGGG connectionLost", reason)
         print(
             json.dumps({
                 "kind": "incoming-lost",
@@ -586,7 +585,9 @@ class LocalCommandDispatch(LineReceiver):
             d = ensureDeferred(
                 _process_command(self._reactor, self.config, self._control_proto, self._connect_ep, cmd)
             )
-            d.addErrback(print)
+            def err(f):
+                print("ERR: {}".format(f))
+            d.addErrback(err)
             return d
         except Exception as e:
             print(f"{line.strip()}: failed: {e}")
