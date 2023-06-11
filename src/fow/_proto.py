@@ -11,7 +11,7 @@ from attrs import frozen
 
 import msgpack
 from twisted.internet import reactor
-from twisted.internet.defer import returnValue, Deferred, succeed, ensureDeferred
+from twisted.internet.defer import returnValue, Deferred, succeed, ensureDeferred, maybeDeferred, CancelledError
 from twisted.internet.endpoints import serverFromString, clientFromString
 from twisted.internet.protocol import Factory, Protocol
 from twisted.internet.stdio import StandardIO
@@ -459,7 +459,10 @@ async def _forward_loop(config, w):
 
     # arrange to read incoming commands from stdin
     x = StandardIO(LocalCommandDispatch(reactor, config, control_proto, connect_ep))
-    await Deferred()
+    try:
+        await Deferred(canceller=lambda _: None)
+    except CancelledError:
+        pass
 
 
 async def _local_to_remote_forward(reactor, config, connect_ep, cmd):
