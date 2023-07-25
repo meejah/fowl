@@ -6,6 +6,7 @@ Why?
 
 We sometimes pair-program but don't like the idea of sending keystrokes over a third-party server.
 
+
 What?
 ------
 
@@ -25,16 +26,22 @@ Key features:
 Motivational Example
 --------------------
 
-We sometimes pair-program while using `tty-share <https://tty-share.com/>`_, but don't like the idea of sending keystrokes over a third-party server.
+When pair-programming using `tty-share <https://tty-share.com/>`_ one handy option is to use the default, public server.
+However, I don't like the idea of sending keystrokes over a third-party server.
+
 With ``fow``, one side can run a localhost ``tty-share`` server and the other side can run a ``tty-share`` client that connects to a ``localhost`` endpoint -- data flows over the wormhole connection (only).
 
 Key advantage: *no need to expose keystrokes to a third-party server*.
 
 
-How Did We Get Here?
------------------------
+Why is This Particular Yak Being Shorn?
+---------------------------------------
 
-I wanted to write a pair-programming application in Haskell, but didn't
+I wanted to write a pair-programming application in Haskell, but didn't want to implement Dilation in the Magic Wormhole Haskell library (maybe one day!)
+
+It also occurred to me that other people might like to experiment with Magic Wormhole (and advanced features like Dilation) in languages that lack a Magic Wormhole implementation -- that is, most of them!
+
+So, the first step in "write a Haskell pair-programming utility" became "write and release a Python program" :)
 
 
 How Does It Work?
@@ -59,6 +66,23 @@ With some higher-level co-ordination, ``fow`` may be used to set up complex work
 
 Another way to view this: streaming network services can integrate the Magic Wormhole protocol without having to find, link, and use a magic-wormhole library (along with the implied code-changes) -- all integration is via local streams.
 (There *are* implementations in a few languages so you could take that route if you prefer).
+
+Who Should Use This?
+--------------------
+
+While it's definitely possible to use ``fow`` "directly", the intent is that some other program -- some "glue" code -- is running ``fow`` as a sub-process.
+
+The line-based JSON communication facilitates this.
+
+This means the main users of ``fow`` are expected to be other programmers who know how to start a long-running subprocess and communicate with it via stdin and stdout.
+
+This program will also co-ordinate the running of client-type or server-type networking applications that accomplish some goal useful to users. For example, "pair-programming" (for my case).
+
+Some other ideas to get you started:
+
+- "private" / invite-only streaming (one side runs video source, invited sides see it)
+- on-demand tech support or server access (e.g. set up limited-time SSH, VNC, etc)
+- ...
 
 
 Installation and Basic Usage
