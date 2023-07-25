@@ -40,7 +40,6 @@ class _FowProtocol(ProcessProtocol):
     def childDataReceived(self, childFD, data):
         try:
             js = json.loads(data)
-            print(f"recv: {js}")
         except Exception as e:
             print(f"Not JSON: {data}")
         else:
@@ -114,38 +113,40 @@ class HappyListener(Protocol):
         return d
 
     def dataReceived(self, data):
-        print("client DATA", data)
+        print(f"unexpected client data: {data}")
 
     def connectionMade(self):
-        print("MADE listener", self._waiting)
-        x = self.transport.write(b"some test data" * 1000)
-        print(self.transport)
-        print(dir(self.transport))
-        print("write", x)
+        self.transport.write(b"some test data" * 1000)
         self._waiting, waiting = [], self._waiting
         for d in waiting:
             d.callback(None)
+        self.transport.loseConnection()
 
 
 class HappyConnector(Protocol):
-
-    def __init__(self):
-        self._data = b""
-        self._waiting = []
+    """
+    A client-type protocol for testing. Collects all data.
+    """
 
     def connectionMade(self):
-        print("MADE client", self._waiting)
+        self._data = b""
+        self._waiting_exit = []
 
     def dataReceived(self, data):
-        print("DATA", data, self._waiting)
         self._data += data
-        self._waiting, waiting = [], self._waiting
+
+    def connectionLost(self, reason):
+        self._waiting_exit, waiting = [], self._waiting_exit
         for d in waiting:
             d.callback(self._data)
 
-    def when_received(self):
+    def when_done(self):
+        """
+        :returns Deferred: fires when the connection closes and delivers
+            all data so far
+        """
         d = Deferred()
-        self._waiting.append(d)
+        self._waiting_exit.append(d)
         return d
 
 
@@ -155,7 +156,6 @@ async def test_happy_remote(reactor, request, wormhole):
     A session forwarding a single connection using the
     ``kind="remote"`` command.
     """
-    print("WORM", wormhole.url)
     f0 = await fow(reactor, request, "invite", mailbox=wormhole.url, startup=False)
     code_msg = await f0.protocol.next_message(kind="wormhole-code")
 
@@ -184,23 +184,16 @@ async def test_happy_remote(reactor, request, wormhole):
     ep0 = serverFromString(reactor, "tcp:8888:interface=localhost")
     ep1 = clientFromString(reactor, "tcp:localhost:1111")
 
-    # XXX this is getting the msgpack intro packet
+    # we listen on the "real" server interface
     port = await ep0.listen(Factory.forProtocol(HappyListener))
-    print("PORT", port)
-    for _ in range(5):
-        await deferLater(reactor, 0.5, lambda: None)
-        print(".")
+    request.addfinalizer(port.stopListening)
+    # ...and connect via the "local" proxy/listener (so this
+    # connection goes over the wormhole)
     client = await ep1.connect(Factory.forProtocol(HappyConnector))
-    print("client", client)
 
-    data0 = await client.when_received()
-
-    # XXX open an actual connection, locally on 8888 and see it try to
-    # connect to 1111
-    print("----")
-    print(f0.protocol.all_messages())
-    print("----")
-    print(f1.protocol.all_messages())
+    # extract the data
+    data0 = await client.when_done()
+    assert data0 == b"some test data" * 1000
 
 
 @pytest_twisted.ensureDeferred
@@ -237,20 +230,13 @@ async def test_happy_local(reactor, request, wormhole):
     ep0 = serverFromString(reactor, "tcp:1111:interface=localhost")
     ep1 = clientFromString(reactor, "tcp:localhost:8888")
 
-    # XXX this is getting the msgpack intro packet
+    # listen on the "real" server address
     port = await ep0.listen(Factory.forProtocol(HappyListener))
-    print("PORT", port)
-    for _ in range(5):
-        await deferLater(reactor, 0.5, lambda: None)
-        print(".")
+    request.addfinalizer(port.stopListening)
+    # ...and connect via the configured "local listener" (so this goes
+    # via the wormhole)
     client = await ep1.connect(Factory.forProtocol(HappyConnector))
-    print("client", client)
 
-    data0 = await client.when_received()
+    data0 = await client.when_done()
 
-    # XXX open an actual connection, locally on 8888 and see it try to
-    # connect to 1111
-    print("----")
-    print(f0.protocol.all_messages())
-    print("----")
-    print(f1.protocol.all_messages())
+    assert data0 == b"some test data" * 1000

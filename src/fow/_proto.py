@@ -124,7 +124,6 @@ class ForwardConnecter(Protocol):
         self._buffer = b""
 
     def dataReceived(self, data):
-        print(f"DATA [{data}]")
         if self._buffer is not None:
             self._buffer += data
             bsize = len(self._buffer)
@@ -134,7 +133,6 @@ class ForwardConnecter(Protocol):
                     raise RuntimeError("leftover data in first message")
                 elif bsize == msgsize + 2:
                     msg = msgpack.unpackb(self._buffer[2:2 + msgsize])
-                    print(f"MSG: {msg}")
                     if not msg.get("connected", False):
                         self.transport.loseConnection()
                         raise RuntimeError("Other side failed to connect")
