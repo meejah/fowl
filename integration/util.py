@@ -52,7 +52,7 @@ class _MagicTextProtocol(ProcessProtocol):
             sys.stdout.write(data.decode("utf8"))
         self._output.write(data.decode("utf8"))
         if self.magic_seen is not None and self._magic_text in self._output.getvalue():
-            print("Saw '{}' in the logs".format(self._magic_text))
+            # print("Saw '{}' in the logs".format(self._magic_text))
             d, self.magic_seen = self.magic_seen, None
             d.callback(self)
 
@@ -78,8 +78,7 @@ def run_service(
     protocol=None,
 ):
     """
-    Start a service, and capture the output from the service in an eliot
-    action.
+    Start a service, and capture the output from the service.
 
     This will start the service, and the returned deferred will fire with
     the process, once the given magic text is seeen.
@@ -108,9 +107,6 @@ def run_service(
         executable,
         args,
         path=cwd,
-        # Twisted on Windows doesn't support customizing FDs
-        # _MagicTextProtocol will collect eliot logs from FD 3 and stderr.
-        childFDs={0: 'w', 1: 'r', 2: 'r', 3: 'r'} if sys.platform != "win32" else None,
         env=env,
     )
     request.addfinalizer(partial(_cleanup_service_process, process, protocol.exited))
@@ -129,11 +125,10 @@ def _cleanup_service_process(process, exited):
     """
     try:
         if process.pid is not None:
-            print(f"signaling {process.pid} with TERM")
+            # print(f"signaling {process.pid} with TERM")
             process.signalProcess('TERM')
-            print("signaled, blocking on exit")
+            # print("signaled, blocking on exit")
             pytest_twisted.blockon(exited)
-        print("exited, goodbye")
     except ProcessExitedAlready:
         pass
 
