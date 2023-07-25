@@ -38,7 +38,9 @@ dependencies = [
 test = [
     "pytest",
     "pytest-twisted",
+    "pytest-cov",
     "magic-wormhole-mailbox-server",
+    "cuvner",
 ]
 dev = [
     "twine",
