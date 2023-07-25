@@ -22,16 +22,20 @@ Key features:
 - secure (full-strength keys via SPAKE2)
 - integrate with tools that can listen on or connect to localhost
 
+This allows an author to write a "glue" program in *any language* that ties together unchanged networked progams. The communcation channel is: set up *without pre-shared secrets*; *fully encrypted*; and *survives IP address changes or outages*. All this with *no action required at the application level*, it is just a normal localhost TCP (or UNIX) streaming socket.
+
 
 Motivational Example
 --------------------
 
 When pair-programming using `tty-share <https://tty-share.com/>`_ one handy option is to use the default, public server.
-However, I don't like the idea of sending keystrokes over a third-party server.
+However, *I don't like the idea of sending keystrokes over a third-party server* that I don't run.
 
-With ``fow``, one side can run a localhost ``tty-share`` server and the other side can run a ``tty-share`` client that connects to a ``localhost`` endpoint -- data flows over the wormhole connection (only).
+I could fire up such a server myself and use it with my friends, but with ``fow``, one side can run a localhost ``tty-share`` server and the other side can run a ``tty-share`` client that connects to a ``localhost`` endpoint -- data flows over the wormhole connection (only).
 
 Key advantage: *no need to expose keystrokes to a third-party server*.
+
+Additional advantage: *no need to set up a server on a public IP address*.
 
 
 Why is This Particular Yak Being Shorn?
