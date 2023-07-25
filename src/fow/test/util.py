@@ -1,32 +1,48 @@
-import os
 import sys
-import attr
+import time
+import json
+import os
+from io import (
+    BytesIO,
+    StringIO,
+)
+from os.path import exists, join
 from functools import partial
-from io import StringIO
 
+import attr
+
+from twisted.internet.defer import (
+    returnValue,
+    Deferred,
+    maybeDeferred,
+)
+from twisted.internet.task import (
+    deferLater,
+)
+from twisted.internet.protocol import (
+    ProcessProtocol,
+)
+from twisted.internet.error import (
+    ProcessExitedAlready,
+    ProcessDone,
+)
 import pytest_twisted
-
-from twisted.internet.protocol import ProcessProtocol
-from twisted.internet.error import ProcessExitedAlready, ProcessDone
-from twisted.internet.defer import Deferred
 
 
 class _MagicTextProtocol(ProcessProtocol):
     """
-    Internal helper. Monitors all stdout looking for a magic string,
-    and then .callback()s on self.done or .errback's if the process exits
+    Internal helper.
+
+    Monitors all stdout looking for a magic string, and then
+    .callback()s on self.done and .errback's if the process exits
     """
 
-    def __init__(self, magic_text, print_logs=True):
+    def __init__(self, magic_text, log_function):
         self.magic_seen = Deferred()
         self.exited = Deferred()
         self._magic_text = magic_text
         self._output = StringIO()
-        self._print_logs = print_logs
-        self._stdout_listeners = []
-
-    def add_stdout_listener(self, listener):
-        self._stdout_listeners.append(listener)
+        self._log_function = log_function
 
     def processEnded(self, reason):
         if self.magic_seen is not None:
@@ -37,8 +53,6 @@ class _MagicTextProtocol(ProcessProtocol):
     def childDataReceived(self, childFD, data):
         if childFD == 1:
             self.out_received(data)
-            for x in self._stdout_listeners:
-                x.stdout_received(data)
         elif childFD == 2:
             self.err_received(data)
         else:
@@ -48,17 +62,17 @@ class _MagicTextProtocol(ProcessProtocol):
         """
         Called with output from stdout.
         """
-        if self._print_logs:
-            sys.stdout.write(data.decode("utf8"))
         self._output.write(data.decode("utf8"))
+        if self._log_function:
+            self._log_function(data.decode("utf8"))
         if self.magic_seen is not None and self._magic_text in self._output.getvalue():
-            # print("Saw '{}' in the logs".format(self._magic_text))
+            print("Saw '{}' in the logs".format(self._magic_text))
             d, self.magic_seen = self.magic_seen, None
             d.callback(self)
 
     def err_received(self, data):
         """
-        Called when non-JSON lines are received on stderr.
+        Output on stderr
         """
         sys.stdout.write(data.decode("utf8"))
 
@@ -66,20 +80,17 @@ class _MagicTextProtocol(ProcessProtocol):
 def run_service(
     reactor,
     request,
+    magic_text,
     executable,
     args,
-    magic_text=None,
     cwd=None,
-    print_logs=True,
-    protocol=None,
+    log_collector=print,
 ):
     """
-    Start a service, and capture the output from the service.
+    Start a service, and capture the output from the service
 
-    This will start the service.
-
-    The returned deferred will fire (with the IProcessTransport for
-    the child) once the given magic text is seeen.
+    This will start the service, and the returned deferred will fire with
+    the process, once the given magic text is seeen.
 
     :param reactor: The reactor to use to launch the process.
     :param request: The pytest request object to use for cleanup.
@@ -91,12 +102,7 @@ def run_service(
 
     :return Deferred[IProcessTransport]: The started process.
     """
-    if protocol is None:
-        protocol = _MagicTextProtocol(magic_text, print_logs=print_logs)
-        saw_magic = protocol.magic_seen
-    else:
-        saw_magic = Deferred()
-        saw_magic.callback(None)
+    protocol = _MagicTextProtocol(magic_text, log_collector)
 
     env = os.environ.copy()
     env['PYTHONUNBUFFERED'] = '1'
@@ -105,10 +111,12 @@ def run_service(
         executable,
         args,
         path=cwd,
+        # Twisted on Windows doesn't support customizing FDs
+        childFDs={0: 'w', 1: 'r', 2: 'r',} if sys.platform != "win32" else None,
         env=env,
     )
     request.addfinalizer(partial(_cleanup_service_process, process, protocol.exited))
-    return saw_magic.addCallback(lambda ignored: process)
+    return protocol.magic_seen.addCallback(lambda ignored: process)
 
 
 def _cleanup_service_process(process, exited):
@@ -123,10 +131,11 @@ def _cleanup_service_process(process, exited):
     """
     try:
         if process.pid is not None:
-            # print(f"signaling {process.pid} with TERM")
+            print("signaling {} with TERM".format(process.pid))
             process.signalProcess('TERM')
-            # print("signaled, blocking on exit")
+            print("signaled, blocking on exit")
             pytest_twisted.blockon(exited)
+        print("exited, goodbye")
     except ProcessExitedAlready:
         pass
 
@@ -134,11 +143,12 @@ def _cleanup_service_process(process, exited):
 @attr.s
 class WormholeMailboxServer:
     """
-    A locally-running Magic Wormhole mailbox server (on port 4000)
+    A locally-running Magic Wormhole mailbox server
     """
     reactor = attr.ib()
     process_transport = attr.ib()
     url = attr.ib()
+    logs = attr.ib()
 
     @classmethod
     async def create(cls, reactor, request):
@@ -150,16 +160,20 @@ class WormholeMailboxServer:
             # note, this tied to "url" below
             "--port", "tcp:4000:interface=localhost",
         ]
+        logs = list()
         transport = await run_service(
             reactor,
             request,
+            magic_text="Starting reactor...",
             executable=sys.executable,
             args=args,
-            magic_text="Starting reactor...",
-            print_logs=False,  # twisted json struct-log
+            log_collector=lambda d: logs.append(d),
         )
+        # XXX some sort of cleanup
+        #request.addfinalizer(partial(_cleanup_service_process, transport, protocol.exited, ctx))
         return cls(
             reactor,
             transport,
-            url="ws://localhost:4000/v1",
+            "ws://localhost:4000/v1",
+            logs,
         )

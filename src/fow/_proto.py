@@ -11,7 +11,7 @@ from attrs import frozen
 
 import msgpack
 from twisted.internet import reactor
-from twisted.internet.defer import returnValue, Deferred, succeed, ensureDeferred
+from twisted.internet.defer import returnValue, Deferred, succeed, ensureDeferred, maybeDeferred, CancelledError
 from twisted.internet.endpoints import serverFromString, clientFromString
 from twisted.internet.protocol import Factory, Protocol
 from twisted.internet.stdio import StandardIO
@@ -83,7 +83,7 @@ async def wormhole_from_config(config, wormhole_create=None):
         _enable_dilate=True,
     )
     if config.debug_state:
-        w.debug_set_trace("forward", which=" ".join(config.debug_state), file=config.stdout)
+        w.debug_set_trace("forward", file=config.stdout)
     return w
 
 
@@ -220,6 +220,10 @@ class LocalServer(Protocol):
         # XXX do we need registerProducer somewhere here?
         factory = Factory.forProtocol(ForwardConnecter)
         factory.other_proto = self
+        # Note: connect_ep here is the Wormhole provided
+        # IClientEndpoint that lets us create new subchannels -- not
+        # to be confused with the endpoint created from the "local
+        # endpoint string"
         d = self.factory.connect_ep.connect(factory)
         d.addCallback(got_proto)
 
@@ -306,7 +310,6 @@ class Incoming(Protocol):
         self._local_connection = None
 
     def connectionLost(self, reason):
-        print("GGGG connectionLost", reason)
         print(
             json.dumps({
                 "kind": "incoming-lost",
@@ -439,10 +442,15 @@ async def _forward_loop(config, w):
             file=config.stdout,
         )
 
-    control_ep, connect_ep, listen_ep = w.dilate()
+    control_ep, connect_ep, listen_ep = w.dilate(
+        transit_relay_location="tcp:magic-wormhole-transit.debian.net:4001",
+    )
 
     # listen for commands from the other side on the control channel
-    control_proto = await control_ep.connect(Factory.forProtocol(Commands))
+    fac = Factory.forProtocol(Commands)
+    fac.config = config
+    fac.connect_ep = connect_ep  # so we can pass it command handlers
+    control_proto = await control_ep.connect(fac)
 
     # listen for incoming subchannel OPENs
     in_factory = Factory.forProtocol(Incoming)
@@ -455,7 +463,10 @@ async def _forward_loop(config, w):
 
     # arrange to read incoming commands from stdin
     x = StandardIO(LocalCommandDispatch(reactor, config, control_proto, connect_ep))
-    await Deferred()
+    try:
+        await Deferred(canceller=lambda _: None)
+    except CancelledError:
+        pass
 
 
 async def _local_to_remote_forward(reactor, config, connect_ep, cmd):
@@ -472,7 +483,8 @@ async def _local_to_remote_forward(reactor, config, connect_ep, cmd):
     print(
         json.dumps({
             "kind": "listening",
-            "endpoint": cmd["local-endpoint"],
+            "endpoint": cmd["listen-endpoint"],
+            "connect-endpoint": cmd["local-endpoint"],
         }),
         file=config.stdout,
     )
@@ -492,6 +504,7 @@ async def _remote_to_local_forward(control_proto, cmd):
     prefix = struct.pack("!H", len(msg))
     control_proto.transport.write(prefix + msg)
     return None
+
 
 async def _process_command(reactor, config, control_proto, connect_ep, cmd):
     if "kind" not in cmd:
@@ -527,13 +540,31 @@ class Commands(Protocol):
         assert bsize == expected_size + 2, "data has more than the message"
         msg = msgpack.unpackb(data[2:])
         if msg["kind"] == "remote-to-local":
+
+            print(
+                json.dumps({
+                    "kind": "listening",
+                    "endpoint": msg["listen-endpoint"],
+                }),
+                file=self.factory.config.stdout,
+            )
+
             # XXX ask for permission
             listen_ep = serverFromString(reactor, msg["listen-endpoint"])
             factory = Factory.forProtocol(LocalServer)
-            factory.config = config
+            factory.config = self.factory.config
+            factory.connect_ep = self.factory.connect_ep
             factory.endpoint_str = msg["connect-endpoint"]
-            factory.connect_ep = connect_ep
             proto = listen_ep.listen(factory)
+        else:
+            print(
+                json.dumps({
+                    "kind": "error",
+                    f"message": "Unknown control command: {msg[kind]}",
+                    "endpoint": msg["listen-endpoint"],
+                }),
+                file=self.factory.config.stdout,
+            )
 
     def connectionLost(self, reason):
         pass  # print("command connectionLost", reason)
@@ -571,7 +602,9 @@ class LocalCommandDispatch(LineReceiver):
             d = ensureDeferred(
                 _process_command(self._reactor, self.config, self._control_proto, self._connect_ep, cmd)
             )
-            d.addErrback(print)
+            def err(f):
+                print("ERR: {}".format(f))
+            d.addErrback(err)
             return d
         except Exception as e:
             print(f"{line.strip()}: failed: {e}")
