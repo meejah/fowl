@@ -12,12 +12,14 @@ What?
 The command-line tool ``fow`` allows you use any client/server program over `Magic Wormhole <https://github.com/magic-wormhole/magic-wormhole>`_ which provides a *persistent*, strongly-encrypted session with no need for pre-shared keys.
 
 Conceptually, this is somewhat similar to combining ``ssh -R`` and ``ssh -L``.
+``fow`` may be used to set up complex workflows directly between participants, integrating services that would "traditionally" demand a server on a public IP address.
+
 Key features:
 
 - no need to pre-exchange keys
 - simple, one-time-use codes that are easy to transcribe
 - secure (full-strength keys via SPAKE2)
-- easily integrate with tools that listen on or connect to localhost
+- integrate with tools that can listen on or connect to localhost
 
 
 Motivational Example
@@ -41,12 +43,14 @@ How Does It Work?
 ``fow`` uses the "`Dilation <https://magic-wormhole.readthedocs.io/en/latest/api.html#dilation>`_" feature of the `Magic Wormhole <https://github.com/magic-wormhole/magic-wormhole>`_ protocol.
 
 This means that a Magic Wormhole Mailbox server is used to perform a SPAKE2 exchange via short (but one-time only) pairing codes.
-This is a secure method, but we don't repeat the arguments here.
-After this, an E2E-encrypted direct P2P connection (or, in some cases, via a "transit relay" service) is established between the two computers (the one that created the wormhole code, and the one that consumed it).
+For details on the security arguments, please refer to `the Magic Wormhole documentation <https://magic-wormhole.readthedocs.io/>`_.
+After this, an E2E-encrypted direct P2P connection (or, in some cases, via a "transit relay" service) is established between the two computers;
+that is, between the computer that created the wormhole code, and the one that consumed it.
 
 The key encrypting messages on this connection is only known to the two computers; the Mailbox server cannot see contents. (It, like any attacker, could try a single guess at the wormhole code). See the `Magic Wormhole documentation <https://magic-wormhole.readthedocs.io/en/latest/welcome.html#design>`_ for more details on this.
 
-The "Dilation" feature further extends the above protocol to provide subchannels and "durability" -- this means the overall connection survives network changes, disconnections, etc. You can change WiFi networks or put one computer to sleep yet remain connected.
+The "Dilation" feature further extends the above protocol to provide subchannels and "durability" -- this means the overall connection survives network changes, disconnections, etc.
+You can change WiFi networks or put one computer to sleep yet remain connected.
 
 What ``fow`` adds is a way to set up any number of localhost listeners on either end, forwarding data over subchannels.
 The always-present "control" subchannel is used to co-ordinate opening and closing such listeners.

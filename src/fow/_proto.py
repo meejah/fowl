@@ -11,16 +11,14 @@ from attrs import frozen
 
 import msgpack
 from twisted.internet import reactor
-from twisted.internet.defer import returnValue, Deferred, succeed, ensureDeferred
+from twisted.internet.defer import returnValue, Deferred, succeed, ensureDeferred, maybeDeferred, CancelledError
 from twisted.internet.endpoints import serverFromString, clientFromString
 from twisted.internet.protocol import Factory, Protocol
 from twisted.internet.stdio import StandardIO
 from twisted.protocols.basic import LineReceiver
 from twisted.python.failure import Failure
 from zope.interface import directlyProvides
-from wormhole import create
-from wormhole.cli import public_relay
-from wormhole._interfaces import ITorManager
+from wormhole.cli.public_relay import RENDEZVOUS_RELAY as default_mailbox_url
 
 
 
@@ -46,7 +44,7 @@ class _Config:
     Represents a set of validated configuration
     """
 
-    relay_url: str = public_relay.RENDEZVOUS_RELAY
+    relay_url: str = default_mailbox_url
     code: str = None
     code_length: int = 2
     use_tor: bool = False
@@ -56,32 +54,16 @@ class _Config:
     stdin: IO = sys.stdin
 
 
-def create_wormhole(config):
+async def wormhole_from_config(config, wormhole_create=None):
     """
     Create a suitable wormhole for the given configuration.
 
     :returns DeferredWormhole: a wormhole API
     """
-    # XXX fixme
+    if wormhole_create is None:
+        from wormhole import create as wormhole_create
+
     tor = None
-
-    w = create(
-        config.appid or APPID,
-        config.relay_url,
-        reactor,
-        tor=tor,
-        timing=None,  # args.timing,
-        _enable_dilate=True,
-    )
-    if config.debug_state:
-        w.debug_set_trace("forward", which=" ".join(config.debug_state), file=config.stdout)
-    return w
-
-
-async def forward(config, reactor=reactor):
-    """
-    Set up a wormhole and process commands relating to forwarding.
-    """
     if config.use_tor:
         tor = await get_tor(reactor)
         print(
@@ -91,10 +73,28 @@ async def forward(config, reactor=reactor):
             }),
             file=config.stdout,
         )
-    w = create_wormhole(config)
+
+    w = wormhole_create(
+        config.appid or APPID,
+        config.relay_url,
+        reactor,
+        tor=tor,
+        timing=None,  # args.timing,
+        _enable_dilate=True,
+    )
+    if config.debug_state:
+        w.debug_set_trace("forward", file=config.stdout)
+    return w
+
+
+async def forward(config, wormhole_coro, reactor=reactor):
+    """
+    Set up a wormhole and process commands relating to forwarding.
+    """
+    w = await wormhole_coro
 
     try:
-        # if we succeed, we are done ane should close
+        # if we succeed, we are done and should close
         await _forward_loop(config, w)
         await w.close()  # waits for ack
 
@@ -220,6 +220,10 @@ class LocalServer(Protocol):
         # XXX do we need registerProducer somewhere here?
         factory = Factory.forProtocol(ForwardConnecter)
         factory.other_proto = self
+        # Note: connect_ep here is the Wormhole provided
+        # IClientEndpoint that lets us create new subchannels -- not
+        # to be confused with the endpoint created from the "local
+        # endpoint string"
         d = self.factory.connect_ep.connect(factory)
         d.addCallback(got_proto)
 
@@ -306,7 +310,6 @@ class Incoming(Protocol):
         self._local_connection = None
 
     def connectionLost(self, reason):
-        print("GGGG connectionLost", reason)
         print(
             json.dumps({
                 "kind": "incoming-lost",
@@ -398,6 +401,7 @@ class Incoming(Protocol):
                         )
                     )
                     # XXX this "d" getting dropped
+                    d.addErrback(print)
                     self._buffer = None
 
 
@@ -427,18 +431,28 @@ async def _forward_loop(config, w):
         w.allocate_code(config.code_length)
 
     code = await w.get_code()
-    print(
-        json.dumps({
-            "kind": "wormhole-code",
-            "code": code,
-        }),
-        file=config.stdout,
+    # it's kind of weird to see this on "fow accept" so only show it
+    # if we actually allocated a code
+    if not config.code:
+        print(
+            json.dumps({
+                "kind": "wormhole-code",
+                "code": code,
+            }),
+            file=config.stdout,
+        )
+
+    control_ep, connect_ep, listen_ep = w.dilate(
+        transit_relay_location="tcp:magic-wormhole-transit.debian.net:4001",
     )
 
-    control_ep, connect_ep, listen_ep = w.dilate()
+    # listen for commands from the other side on the control channel
+    fac = Factory.forProtocol(Commands)
+    fac.config = config
+    fac.connect_ep = connect_ep  # so we can pass it command handlers
+    control_proto = await control_ep.connect(fac)
 
-    control_proto = await control_ep.connect(Factory.forProtocol(Commands))
-
+    # listen for incoming subchannel OPENs
     in_factory = Factory.forProtocol(Incoming)
     in_factory.config = config
     in_factory.connect_ep = connect_ep
@@ -449,7 +463,10 @@ async def _forward_loop(config, w):
 
     # arrange to read incoming commands from stdin
     x = StandardIO(LocalCommandDispatch(reactor, config, control_proto, connect_ep))
-    await Deferred()
+    try:
+        await Deferred(canceller=lambda _: None)
+    except CancelledError:
+        pass
 
 
 async def _local_to_remote_forward(reactor, config, connect_ep, cmd):
@@ -466,7 +483,8 @@ async def _local_to_remote_forward(reactor, config, connect_ep, cmd):
     print(
         json.dumps({
             "kind": "listening",
-            "endpoint": cmd["local-endpoint"],
+            "endpoint": cmd["listen-endpoint"],
+            "connect-endpoint": cmd["local-endpoint"],
         }),
         file=config.stdout,
     )
@@ -486,6 +504,7 @@ async def _remote_to_local_forward(control_proto, cmd):
     prefix = struct.pack("!H", len(msg))
     control_proto.transport.write(prefix + msg)
     return None
+
 
 async def _process_command(reactor, config, control_proto, connect_ep, cmd):
     if "kind" not in cmd:
@@ -521,13 +540,31 @@ class Commands(Protocol):
         assert bsize == expected_size + 2, "data has more than the message"
         msg = msgpack.unpackb(data[2:])
         if msg["kind"] == "remote-to-local":
+
+            print(
+                json.dumps({
+                    "kind": "listening",
+                    "endpoint": msg["listen-endpoint"],
+                }),
+                file=self.factory.config.stdout,
+            )
+
             # XXX ask for permission
             listen_ep = serverFromString(reactor, msg["listen-endpoint"])
             factory = Factory.forProtocol(LocalServer)
-            factory.config = config
+            factory.config = self.factory.config
+            factory.connect_ep = self.factory.connect_ep
             factory.endpoint_str = msg["connect-endpoint"]
-            factory.connect_ep = connect_ep
             proto = listen_ep.listen(factory)
+        else:
+            print(
+                json.dumps({
+                    "kind": "error",
+                    f"message": "Unknown control command: {msg[kind]}",
+                    "endpoint": msg["listen-endpoint"],
+                }),
+                file=self.factory.config.stdout,
+            )
 
     def connectionLost(self, reason):
         pass  # print("command connectionLost", reason)
@@ -565,7 +602,9 @@ class LocalCommandDispatch(LineReceiver):
             d = ensureDeferred(
                 _process_command(self._reactor, self.config, self._control_proto, self._connect_ep, cmd)
             )
-            d.addErrback(print)
+            def err(f):
+                print("ERR: {}".format(f))
+            d.addErrback(err)
             return d
         except Exception as e:
             print(f"{line.strip()}: failed: {e}")
@@ -581,6 +620,7 @@ async def get_tor(
     This will attempt to connect to well-known ports and failing that
     will launch its own tor subprocess.
     """
+    from wormhole._interfaces import ITorManager
 
     try:
         import txtorcon
