@@ -10,7 +10,7 @@ import pytest
 import pytest_twisted
 
 from twisted.internet.task import deferLater
-from twisted.internet.defer import ensureDeferred
+from twisted.internet.defer import ensureDeferred, Deferred
 
 from fow.cli import fow
 #from fow.cli import accept
@@ -114,9 +114,13 @@ async def find_message(reactor, config, kind=None, timeout=10):
 @pytest_twisted.ensureDeferred
 async def test_forward(reactor, mailbox):
     from fow._proto import forward
+    in0 = StringIO()
+    in1 = StringIO()
+
     config0 = _Config(
         relay_url=mailbox.url,
         use_tor=False,
+        stdin=in0,
         stdout=StringIO(),
     )
     # note: would like to get rid of this ensureDeferred, but it
@@ -129,10 +133,17 @@ async def test_forward(reactor, mailbox):
     config1 = _Config(
         relay_url=mailbox.url,
         use_tor=False,
+        stdin=in0,
         stdout=StringIO(),
         code=msg["code"],
     )
     d1 = ensureDeferred(forward(config1, wormhole_from_config(config1), reactor=reactor))
     msg = await find_message(reactor, config1, kind="connected")
-    d0.cancel()
-    d1.cancel()
+
+    # we're connected .. issue a "open listener" to one side
+
+    in0.write('{"error": "foo"}')
+
+    await Deferred()
+    #d0.cancel()
+    #d1.cancel()

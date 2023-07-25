@@ -37,6 +37,8 @@ dependencies = [
 [project.optional-dependencies]
 test = [
     "pytest",
+    "pytest-twisted",
+    "magic-wormhole-mailbox-server",
 ]
 dev = [
     "twine",

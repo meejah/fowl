@@ -124,6 +124,7 @@ class ForwardConnecter(Protocol):
         self._buffer = b""
 
     def dataReceived(self, data):
+        print(f"DATA [{data}]")
         if self._buffer is not None:
             self._buffer += data
             bsize = len(self._buffer)
@@ -133,6 +134,7 @@ class ForwardConnecter(Protocol):
                     raise RuntimeError("leftover data in first message")
                 elif bsize == msgsize + 2:
                     msg = msgpack.unpackb(self._buffer[2:2 + msgsize])
+                    print(f"MSG: {msg}")
                     if not msg.get("connected", False):
                         self.transport.loseConnection()
                         raise RuntimeError("Other side failed to connect")
@@ -220,6 +222,10 @@ class LocalServer(Protocol):
         # XXX do we need registerProducer somewhere here?
         factory = Factory.forProtocol(ForwardConnecter)
         factory.other_proto = self
+        # Note: connect_ep here is the Wormhole provided
+        # IClientEndpoint that lets us create new subchannels -- not
+        # to be confused with the endpoint created from the "local
+        # endpoint string"
         d = self.factory.connect_ep.connect(factory)
         d.addCallback(got_proto)
 
@@ -445,6 +451,7 @@ async def _forward_loop(config, w):
     # listen for commands from the other side on the control channel
     fac = Factory.forProtocol(Commands)
     fac.config = config
+    fac.connect_ep = connect_ep  # so we can pass it command handlers
     control_proto = await control_ep.connect(fac)
 
     # listen for incoming subchannel OPENs
@@ -478,7 +485,8 @@ async def _local_to_remote_forward(reactor, config, connect_ep, cmd):
     print(
         json.dumps({
             "kind": "listening",
-            "endpoint": cmd["local-endpoint"],
+            "endpoint": cmd["listen-endpoint"],
+            "connect-endpoint": cmd["local-endpoint"],
         }),
         file=config.stdout,
     )
@@ -498,6 +506,7 @@ async def _remote_to_local_forward(control_proto, cmd):
     prefix = struct.pack("!H", len(msg))
     control_proto.transport.write(prefix + msg)
     return None
+
 
 async def _process_command(reactor, config, control_proto, connect_ep, cmd):
     if "kind" not in cmd:
@@ -546,8 +555,18 @@ class Commands(Protocol):
             listen_ep = serverFromString(reactor, msg["listen-endpoint"])
             factory = Factory.forProtocol(LocalServer)
             factory.config = self.factory.config
+            factory.connect_ep = self.factory.connect_ep
             factory.endpoint_str = msg["connect-endpoint"]
             proto = listen_ep.listen(factory)
+        else:
+            print(
+                json.dumps({
+                    "kind": "error",
+                    f"message": "Unknown control command: {msg[kind]}",
+                    "endpoint": msg["listen-endpoint"],
+                }),
+                file=self.factory.config.stdout,
+            )
 
     def connectionLost(self, reason):
         pass  # print("command connectionLost", reason)
