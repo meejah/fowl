@@ -1,7 +1,17 @@
 Forward over Wormhole
 =====================
 
-The command-line tool ``fow`` allows you to forward any streaming connection over `Magic Wormhole <https://github.com/magic-wormhole/magic-wormhole>`_.
+Why?
+-----
+
+We sometimes pair-program but don't like the idea of sending keystrokes over a third-party server.
+
+What?
+------
+
+The command-line tool ``fow`` allows you to forward any streaming connection over `Magic Wormhole <https://github.com/magic-wormhole/magic-wormhole>`_ which is a *persistent*, strongly-encrypted session.
+
+The command-line tool ``fow`` allows you use any client/server program over `Magic Wormhole <https://github.com/magic-wormhole/magic-wormhole>`_ which provides a *persistent*, strongly-encrypted session with no need for pre-shared keys.
 
 Conceptually, this is somewhat similar to combining ``ssh -R`` and ``ssh -L``.
 Key features:
@@ -19,6 +29,12 @@ We sometimes pair-program while using `tty-share <https://tty-share.com/>`_, but
 With ``fow``, one side can run a localhost ``tty-share`` server and the other side can run a ``tty-share`` client that connects to a ``localhost`` endpoint -- data flows over the wormhole connection (only).
 
 Key advantage: *no need to expose keystrokes to a third-party server*.
+
+
+How Did We Get Here?
+-----------------------
+
+I wanted to write a pair-programming application in Haskell, but didn't
 
 
 How Does It Work?
