@@ -14,7 +14,7 @@ from twisted.internet.defer import Deferred
 class _MagicTextProtocol(ProcessProtocol):
     """
     Internal helper. Monitors all stdout looking for a magic string,
-    and then .callback()s on self.done and .errback's if the process exits
+    and then .callback()s on self.done or .errback's if the process exits
     """
 
     def __init__(self, magic_text, print_logs=True):
@@ -59,10 +59,6 @@ class _MagicTextProtocol(ProcessProtocol):
     def err_received(self, data):
         """
         Called when non-JSON lines are received on stderr.
-
-        On Windows we use stderr for eliot logs from magic-folder.
-        But neither magic-folder nor tahoe guarantee that there is
-        no other output there, so we treat it as expected.
         """
         sys.stdout.write(data.decode("utf8"))
 
@@ -80,8 +76,10 @@ def run_service(
     """
     Start a service, and capture the output from the service.
 
-    This will start the service, and the returned deferred will fire with
-    the process, once the given magic text is seeen.
+    This will start the service.
+
+    The returned deferred will fire (with the IProcessTransport for
+    the child) once the given magic text is seeen.
 
     :param reactor: The reactor to use to launch the process.
     :param request: The pytest request object to use for cleanup.
@@ -136,7 +134,7 @@ def _cleanup_service_process(process, exited):
 @attr.s
 class WormholeMailboxServer:
     """
-    A locally-running Magic Wormhole mailbox server
+    A locally-running Magic Wormhole mailbox server (on port 4000)
     """
     reactor = attr.ib()
     process_transport = attr.ib()
