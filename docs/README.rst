@@ -9,8 +9,6 @@ We sometimes pair-program but don't like the idea of sending keystrokes over a t
 What?
 ------
 
-The command-line tool ``fow`` allows you to forward any streaming connection over `Magic Wormhole <https://github.com/magic-wormhole/magic-wormhole>`_ which is a *persistent*, strongly-encrypted session.
-
 The command-line tool ``fow`` allows you use any client/server program over `Magic Wormhole <https://github.com/magic-wormhole/magic-wormhole>`_ which provides a *persistent*, strongly-encrypted session with no need for pre-shared keys.
 
 Conceptually, this is somewhat similar to combining ``ssh -R`` and ``ssh -L``.
