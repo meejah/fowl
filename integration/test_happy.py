@@ -15,12 +15,12 @@ from util import run_service
 
 
 @define
-class _Fow:
+class _Fowl:
     transport: ITransport
     protocol: ProcessProtocol
 
 
-class _FowProtocol(ProcessProtocol):
+class _FowlProtocol(ProcessProtocol):
     """
     This speaks to an underlying ``fow`` sub-process.
     ``fow`` consumes and emits a line-oriented JSON protocol.
@@ -74,15 +74,15 @@ class _FowProtocol(ProcessProtocol):
         ]
 
 
-async def fow(reactor, request, subcommand, *extra_args, mailbox=None, startup=True):
+async def fowl(reactor, request, subcommand, *extra_args, mailbox=None, startup=True):
     """
-    Run `fow` with a given subcommand
+    Run `fowl` with a given subcommand
     """
 
     args = [
         sys.executable,
         "-m",
-        "fow",
+        "fowl",
     ]
     if mailbox is not None:
         args.extend([
@@ -90,7 +90,7 @@ async def fow(reactor, request, subcommand, *extra_args, mailbox=None, startup=T
         ])
     args.append(subcommand)
     args.extend(extra_args)
-    proto = _FowProtocol()
+    proto = _FowlProtocol()
     transport = await run_service(
         reactor,
         request,
@@ -100,7 +100,7 @@ async def fow(reactor, request, subcommand, *extra_args, mailbox=None, startup=T
     )
     if startup:
         await proto.next_message(kind="welcome")
-    return _Fow(transport, proto)
+    return _Fowl(transport, proto)
 
 
 class HappyListener(Protocol):
@@ -156,12 +156,12 @@ async def test_happy_remote(reactor, request, wormhole):
     A session forwarding a single connection using the
     ``kind="remote"`` command.
     """
-    f0 = await fow(reactor, request, "invite", mailbox=wormhole.url, startup=False)
+    f0 = await fowl(reactor, request, "invite", mailbox=wormhole.url, startup=False)
     code_msg = await f0.protocol.next_message(kind="wormhole-code")
 
     # normally the "code" is shared via human interaction
 
-    f1 = await fow(
+    f1 = await fowl(
         reactor, request, "accept", code_msg["code"],
         mailbox=wormhole.url, startup=False,
     )
@@ -202,12 +202,12 @@ async def test_happy_local(reactor, request, wormhole):
     A session forwarding a single connection using the
     ``kind="local"`` command.
     """
-    f0 = await fow(reactor, request, "invite", mailbox=wormhole.url, startup=False)
+    f0 = await fowl(reactor, request, "invite", mailbox=wormhole.url, startup=False)
     code_msg = await f0.protocol.next_message(kind="wormhole-code")
 
     # normally the "code" is shared via human interaction
 
-    f1 = await fow(
+    f1 = await fowl(
         reactor, request, "accept", code_msg["code"],
         mailbox=wormhole.url, startup=False,
     )

@@ -1,16 +1,16 @@
-fow Usage
-=========
+fowl Usage
+==========
 
-``fow`` is a command-line tool intended to be run in a terminal session or as a subproecss by a higher-level co-ordination program (e.g. a GUI, or a WAMP client).
+``fowl`` is a command-line tool intended to be run in a terminal session or as a subprocess by a higher-level co-ordination program (e.g. a GUI, or a WAMP client).
 
 All interactions (besides CLI options) are via a line-based protocol: each line is a complete JSON object.
 
-The ``fow repl`` subcommand provides a user-friendly version that can translate "actually human-readable" commands to and from JSON.
+The ``fowl repl`` subcommand provides a user-friendly version that can translate "actually human-readable" commands to and from JSON.
 
-``fow invite``
---------------
+``fowl invite``
+---------------
 
-One side has to begin first, and this side runs ``fow invite``.
+One side has to begin first, and this side runs ``fowl invite``.
 This uses the Magic Wormhole protocol to allocate a short, one-time code.
 
 This results in one of the valid ``stdout`` messages being emitted::
@@ -19,7 +19,7 @@ This results in one of the valid ``stdout`` messages being emitted::
 
 For all valid messages, see :ref:`messages`.
 
-This code is used by the "other end" to join this forwarding session with ``fow accept``.
+This code is used by the "other end" to join this forwarding session with ``fowl accept``.
 Once that side has successfully set up, we will see a message::
 
     ``{"message": "connected"}``
@@ -29,11 +29,11 @@ After this, we reach the more "symmetric" state of the session: although under t
 See below.
 
 
-``fow accept``
---------------
+``fowl accept``
+---------------
 
 One side has to begin the session second, and they run this command.
-This command consumes a Wromhole code and must receive it from the human who ran the ``fow invite`` command.
+This command consumes a Wromhole code and must receive it from the human who ran the ``fowl invite`` command.
 
 Once the Magic Wormhole protocol has successfully set up a Dilation connection, a message will appear on ``stdout``::
 

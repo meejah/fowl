@@ -4,7 +4,7 @@
 Control Messages
 ================
 
-External programs control ``fow`` by running it as a subprocess and exchanging messages via ``stdin`` and ``stdout``.
+External programs control ``fowl`` by running it as a subprocess and exchanging messages via ``stdin`` and ``stdout``.
 
 Every message is valid JSON.
 All messages MUST include a ``"message"`` key which indicates what sort of message it is.
@@ -89,7 +89,7 @@ These messages look like this::
         "local-endpoint": "tcp:localhost:8000"
     }
 
-Since this is basically "the" core feature of ``fow`` lets consider an example:
+Since this is basically "the" core feature of ``fowl`` lets consider an example:
 
 The partners want to pair-program using ``tty-share``.
 So, one side has to set up a ``localhost`` server and the other side has to connect to it.
