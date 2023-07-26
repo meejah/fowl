@@ -150,6 +150,8 @@ class HappyConnector(Protocol):
         return d
 
 
+# could use hypothesis to try 'a bunch of ports' but fixed ports seem
+# easier to reason about to me
 @pytest_twisted.ensureDeferred
 async def test_happy_remote(reactor, request, wormhole):
     """
@@ -169,7 +171,7 @@ async def test_happy_remote(reactor, request, wormhole):
     f1.transport.write(
         json.dumps({
             "kind": "remote",
-            "remote-endpoint": "tcp:1111",
+            "remote-endpoint": "tcp:1111:interface=localhost",
             "local-endpoint": "tcp:localhost:8888",
         }).encode("utf8") + b"\n"
     )
@@ -179,7 +181,7 @@ async def test_happy_remote(reactor, request, wormhole):
 
     # f1 send a remote-listen request, so f0 should receive it
     msg = await f0.protocol.next_message("listening")
-    assert msg == {'kind': 'listening', 'endpoint': 'tcp:1111'}
+    assert msg == {'kind': 'listening', 'endpoint': 'tcp:1111:interface=localhost'}
 
     ep0 = serverFromString(reactor, "tcp:8888:interface=localhost")
     ep1 = clientFromString(reactor, "tcp:localhost:1111")
@@ -215,7 +217,7 @@ async def test_happy_local(reactor, request, wormhole):
     f1.transport.write(
         json.dumps({
             "kind": "local",
-            "listen-endpoint": "tcp:8888",
+            "listen-endpoint": "tcp:8888:interface=localhost",
             "local-endpoint": "tcp:localhost:1111",
         }).encode("utf8") + b"\n"
     )
@@ -225,7 +227,7 @@ async def test_happy_local(reactor, request, wormhole):
 
     # f1 send a remote-listen request, so f0 should receive it
     msg = await f1.protocol.next_message("listening")
-    assert msg == {'kind': 'listening', 'endpoint': 'tcp:8888', 'connect-endpoint': 'tcp:localhost:1111'}
+    assert msg == {'kind': 'listening', 'endpoint': 'tcp:8888:interface=localhost', 'connect-endpoint': 'tcp:localhost:1111'}
 
     ep0 = serverFromString(reactor, "tcp:1111:interface=localhost")
     ep1 = clientFromString(reactor, "tcp:localhost:8888")
