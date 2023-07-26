@@ -197,6 +197,9 @@ async def test_happy_remote(reactor, request, wormhole):
     data0 = await client.when_done()
     assert data0 == b"some test data" * 1000
 
+    forwarded = await f1.protocol.next_message("forward-bytes")
+    assert forwarded["bytes"] == len(b"some test data" * 1000)
+
 
 @pytest_twisted.ensureDeferred
 async def test_happy_local(reactor, request, wormhole):
@@ -240,5 +243,7 @@ async def test_happy_local(reactor, request, wormhole):
     client = await ep1.connect(Factory.forProtocol(HappyConnector))
 
     data0 = await client.when_done()
-
     assert data0 == b"some test data" * 1000
+
+    forwarded = await f0.protocol.next_message("forward-bytes")
+    assert forwarded["bytes"] == len(b"some test data" * 1000)
