@@ -178,6 +178,14 @@ class Forwarder(Protocol):
             while len(data):
                 d = data[:max_noise]
                 data = data[max_noise:]
+                print(
+                    json.dumps({
+                        "kind": "forward-bytes",
+                        "id": self.factory.conn_id,
+                        "bytes": len(d),
+                    }),
+                    file=self.factory.config.stdout,
+                )
                 self.factory.other_proto.transport.write(d)
 
     def connectionLost(self, reason):
@@ -338,6 +346,9 @@ class Incoming(Protocol):
             self._local_connection.transport.write(d)
 
     async def _establish_local_connection(self, first_msg):
+        """
+        FIXME
+        """
         data = msgpack.unpackb(first_msg)
         ep = clientFromString(reactor, data["local-destination"])
         print(
@@ -350,6 +361,8 @@ class Incoming(Protocol):
         )
         factory = Factory.forProtocol(Forwarder)
         factory.other_proto = self
+        factory.config = self.factory.config
+        factory.conn_id = self._conn_id
         try:
             self._local_connection = await ep.connect(factory)
         except Exception as e:
@@ -363,8 +376,7 @@ class Incoming(Protocol):
             )
             self.transport.loseConnection()
             return
-        # this one doesn't have to wait for an incoming message
-        self._local_connection._buffer = None
+
         # sending-reply maybe should move somewhere else?
         # XXX another section like this: pack_netstring() or something
         msg = msgpack.packb({
@@ -372,6 +384,9 @@ class Incoming(Protocol):
         })
         prefix = struct.pack("!H", len(msg))
         self.transport.write(prefix + msg)
+
+        # this one doesn't have to wait for an incoming message
+        self._local_connection._buffer = None
 
     def dataReceived(self, data):
         # we _should_ get only enough data to comprise the first
