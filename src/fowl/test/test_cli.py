@@ -12,10 +12,10 @@ import pytest_twisted
 from twisted.internet.task import deferLater
 from twisted.internet.defer import ensureDeferred, Deferred
 
-from fow.cli import fow
+from fowl.cli import fowl
 #from fow.cli import accept
-from fow.cli import invite
-from fow._proto import (
+from fowl.cli import invite
+from fowl._proto import (
     _Config,
     wormhole_from_config,
 )

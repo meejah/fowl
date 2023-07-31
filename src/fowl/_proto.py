@@ -10,6 +10,7 @@ from functools import partial
 from attrs import frozen
 
 import msgpack
+import automat
 from twisted.internet import reactor
 from twisted.internet.defer import returnValue, Deferred, succeed, ensureDeferred, maybeDeferred, CancelledError
 from twisted.internet.endpoints import serverFromString, clientFromString
@@ -148,49 +149,204 @@ class ForwardConnecter(Protocol):
             self.factory.other_proto.transport.loseConnection()
 
 
-class Forwarder(Protocol):
+class Responder(Protocol):
     """
-    Forwards data to the `.other_protocol` in the Factory.
+    This is the side of the protocol that was listening .. so it has
+    opened a subchannel and sent the initial message. So the
+    state-machine here is waiting for the reply before forwarding
+    data.
+
+    Forwards data to the `.other_protocol` from the Factory.
     """
+    m = automat.MethodicalMachine()
+
+    @m.state(initial=True)
+    def await_confirmation(self):
+        """
+        Waiting for the reply from the other side.
+        """
+
+    @m.state()
+    def evaluating(self):
+        """
+        Making the local connection.
+        """
+
+    @m.state()
+    def forwarding_bytes(self):
+        """
+        All bytes go to the other side.
+        """
+
+    @m.state()
+    def finished(self):
+        """
+        We are done (something went wrong or the wormhole session has been
+        closed)
+        """
+
+    @m.input()
+    def got_bytes(self, data):
+        """
+        received some number of bytes
+        """
+
+    @m.input()
+    def no_confirmation(self):
+        """
+        Don't need to wait for a message
+        """
+
+    @m.input()
+    def got_reply(self, msg):
+        """
+        Got a complete message (without length prefix)
+        """
+
+    @m.input()
+    def connected(self):
+        """
+        The reply message was positive
+        """
+
+    @m.input()
+    def not_connected(self):
+        """
+        The reply message was negative
+        """
+
+    @m.input()
+    def too_much_data(self):
+        """
+        Too many bytes sent in the reply.
+        """
+        # XXX is this really an error in this direction? i think only
+        # on the other side...
+
+    @m.input()
+    def subchannel_closed(self):
+        """
+        Our subchannel has closed
+        """
+
+    @m.output()
+    def find_message(self, data):
+        """
+        Buffer 'data' and determine if a complete message exists; if so,
+        inject that input.
+        """
+        print("QQQQ", len(data), self._buffer)
+        self._buffer += data
+        bsize = len(self._buffer)
+
+        if bsize >= 2:
+            msgsize, = struct.unpack("!H", self._buffer[:2])
+            if bsize > msgsize + 2:
+                self.too_much_data()
+            elif bsize == msgsize + 2:
+                msg = msgpack.unpackb(self._buffer[2:2 + msgsize])
+                print("ASDFASDF", msg)
+                from twisted.internet import reactor
+                reactor.callLater(0, lambda: self.got_reply(msg))
+        return
+
+    @m.output()
+    def check_message(self, msg):
+        """
+        Initiate the local connection
+        """
+        print("MSG", msg)
+
+    @m.output()
+    def send_queued_data(self):
+        """
+        Confirm to the other side that we've connected.
+        """
+        print("DRAINDRAING")
+        if not msg.get("connected", False):
+            self.transport.loseConnection()
+            raise RuntimeError("no connection")
+        self.factory.other_proto._maybe_drain_queue()
+        #self._buffer = None
+
+    @m.output()
+    def close_connection(self):
+        """
+        Shut down this subchannel.
+        """
+        self.loseConnection()
+
+    @m.output()
+    def forward_bytes(self, data):
+        """
+        Send bytes to the other side
+        """
+        max_noise = 65000
+        while len(data):
+            d = data[:max_noise]
+            data = data[max_noise:]
+            print(
+                json.dumps({
+                    "kind": "forward-bytes",
+                    "id": self.factory.conn_id,
+                    "bytes": len(d),
+                }),
+                file=self.factory.config.stdout,
+            )
+            self.factory.other_proto.transport.write(d)
+
+    await_confirmation.upon(
+        no_confirmation,
+        enter=forwarding_bytes,
+        outputs=[]
+    )
+    await_confirmation.upon(
+        got_bytes,
+        enter=await_confirmation,
+        outputs=[find_message]
+    )
+    await_confirmation.upon(
+        too_much_data,
+        enter=finished,
+        outputs=[close_connection]
+    )
+    await_confirmation.upon(
+        got_reply,
+        enter=evaluating,
+        outputs=[check_message]
+    )
+    evaluating.upon(
+        connected,
+        enter=forwarding_bytes,
+        outputs=[send_queued_data]
+    )
+    evaluating.upon(
+        not_connected,
+        enter=finished,
+        outputs=[close_connection]
+    )
+    forwarding_bytes.upon(
+        got_bytes,
+        enter=forwarding_bytes,
+        outputs=[forward_bytes]
+    )
+    forwarding_bytes.upon(
+        subchannel_closed,
+        enter=finished,
+        outputs=[]
+    )
 
     def connectionMade(self):
         self._buffer = b""
 
     def dataReceived(self, data):
-        if self._buffer is not None:
-            self._buffer += data
-            bsize = len(self._buffer)
-
-            if bsize >= 2:
-                msgsize, = struct.unpack("!H", self._buffer[:2])
-                if bsize > msgsize + 2:
-                    raise RuntimeError("leftover")
-                elif bsize == msgsize + 2:
-                    msg = msgpack.unpackb(self._buffer[2:2 + msgsize])
-                    if not msg.get("connected", False):
-                        self.transport.loseConnection()
-                        raise RuntimeError("no connection")
-                    self.factory.other_proto._maybe_drain_queue()
-                    self._buffer = None
-            return
-        else:
-            max_noise = 65000
-            while len(data):
-                d = data[:max_noise]
-                data = data[max_noise:]
-                print(
-                    json.dumps({
-                        "kind": "forward-bytes",
-                        "id": self.factory.conn_id,
-                        "bytes": len(d),
-                    }),
-                    file=self.factory.config.stdout,
-                )
-                self.factory.other_proto.transport.write(d)
+        self.got_bytes(data)
 
     def connectionLost(self, reason):
+        self.subchannel_closed()
         if self.factory.other_proto:
             self.factory.other_proto.transport.loseConnection()
+
 
 class LocalServer(Protocol):
     """
@@ -359,7 +515,8 @@ class Incoming(Protocol):
             }),
             file=self.factory.config.stdout,
         )
-        factory = Factory.forProtocol(Forwarder)
+        factory = Factory.forProtocol(Responder)
+        print("DOING FACTOR", factory)
         factory.other_proto = self
         factory.config = self.factory.config
         factory.conn_id = self._conn_id
@@ -386,7 +543,8 @@ class Incoming(Protocol):
         self.transport.write(prefix + msg)
 
         # this one doesn't have to wait for an incoming message
-        self._local_connection._buffer = None
+        # (XXX why?)
+        self._local_connection.no_confirmation()
 
     def dataReceived(self, data):
         # we _should_ get only enough data to comprise the first

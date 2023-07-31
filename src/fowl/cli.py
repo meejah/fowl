@@ -31,7 +31,7 @@ from ._proto import (
 )
 @click.group()
 @click.pass_context
-def fow(ctx, ip_privacy, mailbox):
+def fowl(ctx, ip_privacy, mailbox):
     """
     Forward Over Wormhole
 
@@ -44,7 +44,7 @@ def fow(ctx, ip_privacy, mailbox):
     )
 
 
-@fow.command()
+@fowl.command()
 @click.pass_context
 def invite(ctx):
     """
@@ -61,7 +61,7 @@ def invite(ctx):
     return react(run)
 
 
-@fow.command()
+@fowl.command()
 @click.pass_context
 @click.argument("code")
 def accept(ctx, code):
@@ -76,4 +76,4 @@ def accept(ctx, code):
 
 
 def _entry():
-    return fow()
+    return fowl()
