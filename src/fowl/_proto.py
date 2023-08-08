@@ -15,6 +15,7 @@ from twisted.internet import reactor
 from twisted.internet.defer import returnValue, Deferred, succeed, ensureDeferred, maybeDeferred, CancelledError
 from twisted.internet.endpoints import serverFromString, clientFromString
 from twisted.internet.protocol import Factory, Protocol
+from twisted.internet.error import ConnectionDone
 from twisted.internet.stdio import StandardIO
 from twisted.protocols.basic import LineReceiver
 from twisted.python.failure import Failure
@@ -149,7 +150,7 @@ class ForwardConnecter(Protocol):
             self.factory.other_proto.transport.loseConnection()
 
 
-class Responder(Protocol):
+class Foo(Protocol):
     """
     This is the side of the protocol that was listening .. so it has
     opened a subchannel and sent the initial message. So the
@@ -348,6 +349,84 @@ class Responder(Protocol):
             self.factory.other_proto.transport.loseConnection()
 
 
+class ConnectionForward(Protocol):
+    """
+    The protocol we speak on connections _we_ make to local
+    servers. So this basically _just_ forwards bytes.
+    """
+    m = automat.MethodicalMachine()
+
+    @m.state(initial=True)
+    def forwarding_bytes(self):
+        """
+        All bytes go to the other side.
+        """
+
+    @m.state()
+    def finished(self):
+        """
+        We are done (something went wrong or the wormhole session has been
+        closed)
+        """
+
+    @m.input()
+    def got_bytes(self, data):
+        """
+        received some number of bytes
+        """
+
+    @m.input()
+    def stream_closed(self):
+        """
+        The local server has closed our connection
+        """
+
+    @m.output()
+    def forward_bytes(self, data):
+        """
+        Send bytes to the other side.
+
+        This will be from the 'actual server' side to our local client
+        """
+        max_noise = 65000
+        while len(data):
+            d = data[:max_noise]
+            data = data[max_noise:]
+            print(
+                json.dumps({
+                    "kind": "forward-bytes",
+                    "id": self.factory.conn_id,
+                    "bytes": len(d),
+                    "hello": "foo",
+                }),
+                file=self.factory.config.stdout,
+            )
+            self.factory.other_proto.transport.write(d)
+
+    forwarding_bytes.upon(
+        got_bytes,
+        enter=forwarding_bytes,
+        outputs=[forward_bytes]
+    )
+    forwarding_bytes.upon(
+        stream_closed,
+        enter=finished,
+        outputs=[]
+    )
+
+    def connectionMade(self):
+        pass
+
+    def dataReceived(self, data):
+        self.got_bytes(data)
+
+    def connectionLost(self, reason):
+        print("ConnectionForward.lost", reason)
+        self.stream_closed()
+        if self.factory.other_proto:
+            self.factory.other_proto.transport.loseConnection()
+
+
 class LocalServer(Protocol):
     """
     Listen on an endpoint. On every connection: open a subchannel,
@@ -410,7 +489,10 @@ class LocalServer(Protocol):
         self.queue = None
 
     def connectionLost(self, reason):
-        pass # print("local connection lost")
+        print("local connection lost", self.remote, reason)
+        # XXX causes duplice local_close 'errors' in magic-wormhole ... do we not want to do this?)
+        if False and self.remote is not None and self.remote.transport:
+            self.remote.transport.loseConnection()
 
     def dataReceived(self, data):
         # XXX FIXME if len(data) >= 65535 must split "because noise"
@@ -459,32 +541,90 @@ class Incoming(Protocol):
     now: anything goes)
     """
 
-    def connectionMade(self):
-        self._conn_id = allocate_connection_id()
-        print(
-            json.dumps({
-                "kind": "incoming-connect",
-                "id": self._conn_id,
-            }),
-            file=self.factory.config.stdout,
-        )
-        # XXX first message should tell us where to connect, locally
-        # (want some kind of opt-in on this side, probably)
-        self._buffer = b""
-        self._local_connection = None
+    m = automat.MethodicalMachine()
 
-    def connectionLost(self, reason):
-        print(
-            json.dumps({
-                "kind": "incoming-lost",
-                "id": self._conn_id,
-            }),
-            file=self.factory.config.stdout,
-        )
+    @m.state(initial=True)
+    def await_message(self):
+        """
+        The other side must send us a message
+        """
+
+    @m.state()
+    def local_connect(self):
+        """
+        The initial message tells us where to connect locally
+        """
+
+    @m.state()
+    def forwarding_bytes(self):
+        """
+        We are connected and have done the proper information exchange;
+        now we merely forward bytes.
+        """
+
+    @m.state()
+    def finished(self):
+        """
+        Completed the task of forwarding (e.g. client closed connection,
+        subchannel closed, fatal error, etc)
+        """
+
+    @m.input()
+    def got_bytes(self, data):
+        """
+        We received some bytes
+        """
+
+    @m.input()
+    def too_much_data(self):
+        """
+        We received too many bytes (for the first message).
+        """
+
+    @m.input()
+    def got_initial_message(self, msg):
+        """
+        The entire initial message is received (`msg` excludes the
+        length-prefix but it is not yet parsed)
+        """
+
+    @m.input()
+    def subchannel_closed(self):
+        """
+        This subchannel has been closed
+        """
+
+    @m.input()
+    def connection_made(self):
+        """
+        We successfully made the local connection
+        """
+
+    @m.input()
+    def connection_failed(self):
+        """
+        Making the local connection failed
+        """
+
+    @m.output()
+    def close_connection(self):
+        """
+        We wish to close this subchannel
+        """
+        self.transport.loseConnection()
+
+    @m.output()
+    def close_local_connection(self):
+        """
+        We wish to close this subchannel
+        """
         if self._local_connection and self._local_connection.transport:
             self._local_connection.transport.loseConnection()
 
-    def forward(self, data):
+    @m.output()
+    def forward_data(self, data):
+        assert self._buffer is None, "Internal error: still buffering"
+        assert self._local_connection is not None, "expected local connection by now"
         print(
             json.dumps({
                 "kind": "forward-bytes",
@@ -501,11 +641,50 @@ class Incoming(Protocol):
             data = data[max_noise:]
             self._local_connection.transport.write(d)
 
-    async def _establish_local_connection(self, first_msg):
+
+    @m.output()
+    def find_message(self, data):
+        """
+        Buffer this data and determine if we have a single message yet
+        """
+        # state-machine shouldn't allow this, but just to be sure
+        assert self._buffer is not None, "Internal error: buffer is gone"
+
+        self._buffer += data
+        bsize = len(self._buffer)
+        if bsize >= 2:
+            expected_size, = struct.unpack("!H", self._buffer[:2])
+            if bsize >= expected_size + 2:
+                first_msg = self._buffer[2:2 + expected_size]
+                self._buffer = None
+                # there should be no "leftover" data
+                if bsize > 2 + expected_size:
+                    ##raise RuntimeError("protocol error: more than opening message sent")
+                    self.too_much_data()
+                    return
+                # warning: recursive state-machine message
+                self.got_initial_message(first_msg)
+
+    @m.output()
+    def send_positive_reply(self):
+        """
+        Reply to the other side that we've connected properly
+        """
+        # XXX another section like this: pack_netstring() or something
+        msg = msgpack.packb({
+            "connected": True,
+        })
+        prefix = struct.pack("!H", len(msg))
+        self.transport.write(prefix + msg)
+
+    @m.output()
+    def establish_local_connection(self, msg):
         """
         FIXME
         """
-        data = msgpack.unpackb(first_msg)
+        print("ESTAB", msg)
+        data = msgpack.unpackb(msg)
+        print(data)
         ep = clientFromString(reactor, data["local-destination"])
         print(
             json.dumps({
@@ -515,67 +694,132 @@ class Incoming(Protocol):
             }),
             file=self.factory.config.stdout,
         )
-        factory = Factory.forProtocol(Responder)
-        print("DOING FACTOR", factory)
+        factory = Factory.forProtocol(ConnectionForward)
         factory.other_proto = self
         factory.config = self.factory.config
         factory.conn_id = self._conn_id
-        try:
-            self._local_connection = await ep.connect(factory)
-        except Exception as e:
+        print("MAKING CONNECTIONFORWARD")
+
+        d = ep.connect(factory)
+
+        def bad(fail):
+            print("BAD", fail)
             print(
                 json.dumps({
                     "kind": "error",
                     "id": self._conn_id,
-                    "message": str(e),
+                    "message": fail.getErrorMessage(),
                 }),
                 file=self.factory.config.stdout,
             )
-            self.transport.loseConnection()
-            return
+            reactor.callLater(0, lambda: self.connection_failed())
+            return None
 
-        # sending-reply maybe should move somewhere else?
-        # XXX another section like this: pack_netstring() or something
-        msg = msgpack.packb({
-            "connected": True,
-        })
-        prefix = struct.pack("!H", len(msg))
-        self.transport.write(prefix + msg)
+        def assign(proto):
+            # if we hit the error-case above, we "handled" it so want
+            # to return None -- but this pushes us into the "success"
+            # / callback side, albiet with "None" as the value
+            print("assign", proto)
+            self._local_connection = proto
+            if self._local_connection is not None:
+                print("recursing to connected()")
+                reactor.callLater(0, lambda: self.connection_made())
+            return proto
+        d.addErrback(bad)
+        d.addCallback(assign)
 
-        # this one doesn't have to wait for an incoming message
-        # (XXX why?)
-        self._local_connection.no_confirmation()
+    await_message.upon(
+        got_bytes,
+        enter=await_message,
+        outputs=[find_message]
+    )
+    await_message.upon(
+        too_much_data,
+        enter=finished,
+        outputs=[close_connection]
+    )
+    await_message.upon(
+        got_initial_message,
+        enter=local_connect,
+        outputs=[establish_local_connection]
+    )
+    local_connect.upon(
+        connection_made,
+        enter=forwarding_bytes,
+        outputs=[send_positive_reply]
+    )
+    local_connect.upon(
+        connection_failed,
+        enter=finished,
+        outputs=[close_connection]  # send-negative-reply?
+    )
+#FIXME enable    local_connect.upon(
+#        subchannel_closed,
+#        enter=finished,
+#        outputs=[cancel_connect]
+#    )
+
+    forwarding_bytes.upon(
+        got_bytes,
+        enter=forwarding_bytes,
+        outputs=[forward_data]
+    )
+    forwarding_bytes.upon(
+        subchannel_closed,
+        enter=finished,
+        outputs=[close_local_connection]
+    )
+
+    finished.upon(
+        subchannel_closed,
+        enter=finished,
+        outputs=[]  # warning? why does this happen?
+    )
+
+    # logically kind-of makes sense, but how are we getting duplicate closes?
+    # finished.upon(
+    #     subchannel_closed,
+    #     enter=finished,
+    #     outputs=[],
+    # )
+
+    # API methods from Twisted
+    # Ideally all these should do is produce some input() to the machine
+    def connectionMade(self):
+        """
+        Twisted API
+        """
+        self._conn_id = allocate_connection_id()
+        print(
+            json.dumps({
+                "kind": "incoming-connect",
+                "id": self._conn_id,
+            }),
+            file=self.factory.config.stdout,
+        )
+        # XXX first message should tell us where to connect, locally
+        # (want some kind of opt-in on this side, probably)
+        self._buffer = b""
+        self._local_connection = None
+
+    def connectionLost(self, reason):
+        """
+        Twisted API
+        """
+        print(
+            json.dumps({
+                "kind": "incoming-lost",
+                "id": self._conn_id,
+            }),
+            file=self.factory.config.stdout,
+        )
+        self.subchannel_closed()
 
     def dataReceived(self, data):
-        # we _should_ get only enough data to comprise the first
-        # message, then we send a reply, and only then should the
-        # other side send us more data ... XXX so we need to produce
-        # an error if we get any data between "we got the message" and
-        # our reply is sent.
-
-        if self._buffer is None:
-            assert self._local_connection is not None, "expected local connection by now"
-            self.forward(data)
-
-        else:
-            self._buffer += data
-            bsize = len(self._buffer)
-            if bsize >= 2:
-                expected_size, = struct.unpack("!H", self._buffer[:2])
-                if bsize >= expected_size + 2:
-                    first_msg = self._buffer[2:2 + expected_size]
-                    # there should be no "leftover" data
-                    if bsize > 2 + expected_size:
-                        raise RuntimeError("protocol error: more than opening message sent")
-
-                    d = ensureDeferred(
-                        self._establish_local_connection(
-                            first_msg,
-                        )
-                    )
-                    # XXX this "d" getting dropped
-                    d.addErrback(print)
-                    self._buffer = None
+        """
+        Twisted API
+        """
+        self.got_bytes(data)
 
 
 async def _forward_loop(config, w):
