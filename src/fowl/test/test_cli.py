@@ -1,3 +1,4 @@
+import os
 import random
 import string
 import json
@@ -11,6 +12,9 @@ import pytest_twisted
 
 from twisted.internet.task import deferLater
 from twisted.internet.defer import ensureDeferred, Deferred
+from twisted.internet.protocol import ProcessProtocol, Protocol, Factory
+from twisted.internet.endpoints import serverFromString, clientFromString
+
 
 from fowl.cli import fowl
 #from fow.cli import accept
@@ -19,6 +23,11 @@ from fowl._proto import (
     _Config,
     wormhole_from_config,
     forward,
+)
+from fowl.observer import (
+    When,
+    Next,
+    Accumulate,
 )
 
 
@@ -142,8 +151,74 @@ async def test_forward(reactor, mailbox):
 
     # we're connected .. issue a "open listener" to one side
 
-    in0.write('{"error": "foo"}')
+    in0.write(
+        json.dumps({
+            "kind": "local",
+            "listen-endpoint": "tcp:8888",
+            "local-endpoint": "tcp:localhost:1111",
+        })
+    )
 
-    await Deferred()
-    #d0.cancel()
-    #d1.cancel()
+
+    class Server(Protocol):
+        _message = Accumulate(b"")
+
+        def dataReceived(self, data):
+            self._message.some_results(reactor, data)
+
+        async def next_message(self, expected_size):
+            return await self._message.next_item(reactor, expected_size)
+
+        def send(self, data):
+            self.transport.write(data)
+
+
+    class Client(Protocol):
+        _message = Accumulate(b"")
+
+        def dataReceived(self, data):
+            self._message.some_results(reactor, data)
+
+        async def next_message(self, expected_size):
+            return await self._message.next_item(reactor, expected_size)
+
+        def send(self, data):
+            self.transport.write(data)
+
+
+    class ServerFactory(Factory):
+        protocol = Server
+        noisy = True
+        _got_protocol = Next()
+
+        async def next_client(self):
+            return await self._got_protocol.next_item()
+
+        def buildProtocol(self, *args):
+            p = super().buildProtocol(*args)
+            self._got_protocol.trigger(reactor, p)
+            return p
+
+    listener = ServerFactory()
+    server_port = await serverFromString(reactor, "tcp:1111").listen(listener)
+
+    # if we do 'too many' test-cases debian complains about
+    # "twisted.internet.error.ConnectBindError: Couldn't bind: 24: Too
+    # many open files."
+    # gc.collect() doesn't fix it.
+    who = True
+    for size in range(2**6, 2**18, 2**10):
+        print("TEST", size, who)
+        client = clientFromString(reactor, "tcp:localhost:1111")
+        client_proto = await client.connect(Factory.forProtocol(Client))
+        server = await listener.next_client()
+
+        data = os.urandom(size)
+        if who:
+            client_proto.send(data)
+            msg = await server.next_message(len(data))
+        else:
+            server.send(data)
+            msg = await client_proto.next_message(len(data))
+        who = not who
+        assert msg == data, "Incorrect data transfer"

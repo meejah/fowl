@@ -151,7 +151,6 @@ async def main(reactor):
 
     listener = ServerFactory()
     server_port = await serverFromString(reactor, "tcp:1111").listen(listener)
-    print("serverport", server_port)
 
     # if we do 'too many' test-cases debian complains about
     # "twisted.internet.error.ConnectBindError: Couldn't bind: 24: Too
