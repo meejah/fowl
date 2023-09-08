@@ -8,7 +8,7 @@ from twisted.internet.task import react, deferLater
 from twisted.internet.protocol import ProcessProtocol, Protocol, Factory
 from twisted.internet.endpoints import serverFromString, clientFromString
 
-from fowl.observer import When, Next
+from fowl.observer import When, Next, Accumulate
 
 
 class _FowlProtocol(ProcessProtocol):
@@ -111,26 +111,26 @@ async def main(reactor):
 
 
     class Server(Protocol):
-        _message = Next()
+        _message = Accumulate(b"")
 
         def dataReceived(self, data):
-            self._message.trigger(reactor, data)
+            self._message.some_results(reactor, data)
 
-        async def next_message(self):
-            return await self._message.next_item()
+        async def next_message(self, expected_size):
+            return await self._message.next_item(reactor, expected_size)
 
         def send(self, data):
             self.transport.write(data)
 
 
     class Client(Protocol):
-        _message = Next()
+        _message = Accumulate(b"")
 
         def dataReceived(self, data):
-            self._message.trigger(reactor, data)
+            self._message.some_results(reactor, data)
 
-        async def next_message(self):
-            return await self._message.next_item()
+        async def next_message(self, expected_size):
+            return await self._message.next_item(reactor, expected_size)
 
         def send(self, data):
             self.transport.write(data)
@@ -167,16 +167,13 @@ async def main(reactor):
         data = os.urandom(size)
         if who:
             client_proto.send(data)
-            msg = await server.next_message()
+            msg = await server.next_message(len(data))
             print("QQQ", msg)
         else:
             server.send(data)
-            msg = await client_proto.next_message()
+            msg = await client_proto.next_message(len(data))
             print("CCC", msg)
         who = not who
         print(len(msg))
         print(len(data))
         assert msg == data, "Incorrect data transfer"
-
-
-    await Deferred()
