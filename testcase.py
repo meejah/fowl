@@ -154,8 +154,12 @@ async def main(reactor):
     server_port = await serverFromString(reactor, "tcp:1111").listen(listener)
     print("serverport", server_port)
 
+    # if we do 'too many' test-cases debian complains about
+    # "twisted.internet.error.ConnectBindError: Couldn't bind: 24: Too
+    # many open files."
+    # gc.collect() doesn't fix it.
     who = True
-    for size in [1024, 2**18]:#range(2**6, 2**18, 200):
+    for size in range(2**6, 2**18, 2**10):
         print("TEST", size, who)
         client = clientFromString(reactor, "tcp:localhost:1111")
         print("client", client)
