@@ -114,7 +114,7 @@ async def main(reactor):
         _message = Next()
 
         def dataReceived(self, data):
-            self._message.got_item(data)
+            self._message.trigger(reactor, data)
 
         async def next_message(self):
             return await self._message.next_item()
@@ -127,7 +127,7 @@ async def main(reactor):
         _message = Next()
 
         def dataReceived(self, data):
-            self._message.got_item(data)
+            self._message.trigger(reactor, data)
 
         async def next_message(self):
             return await self._message.next_item()
@@ -139,15 +139,15 @@ async def main(reactor):
     class ServerFactory(Factory):
         protocol = Server
         noisy = True
-        _got_protocol = When()
+        _got_protocol = Next()
 
         async def next_client(self):
-            return await self._got_protocol.when_triggered()
+            return await self._got_protocol.next_item()
 
         def buildProtocol(self, *args):
             print("buildprotocol", args)
             p = super().buildProtocol(*args)
-            self._got_protocol.trigger(p)
+            self._got_protocol.trigger(reactor, p)
             return p
 
     listener = ServerFactory()
@@ -168,9 +168,11 @@ async def main(reactor):
         if who:
             client_proto.send(data)
             msg = await server.next_message()
+            print("QQQ", msg)
         else:
             server.send(data)
             msg = await client_proto.next_message()
+            print("CCC", msg)
         who = not who
         print(len(msg))
         print(len(data))

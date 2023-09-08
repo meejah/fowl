@@ -1,5 +1,5 @@
 from attr import define
-from twisted.internet.defer import Deferred
+from twisted.internet.defer import Deferred, succeed
 
 
 @define
@@ -49,7 +49,7 @@ class Next:
     """
 
     _awaiters: list = []
-    _last_result: object = None
+    _unheard_result: object = None
 
     def next_item(self):
         """
@@ -57,21 +57,24 @@ class Next:
             triggered. This will always be 'in the future' even if we've
             triggered more than zero times already.
         """
-        if self._last_result is not None:
-            r, self._last_result = self._last_result, None
-            d.callback(r)
+        if self._unheard_result is not None:
+            d = succeed(self._unheard_result)
+            print("zinga", d)
+            self._unheard_result = None
         else:
             d = Deferred()
+            print("YO", d)
             self._awaiters.append(d)
-            return d
+        return d
 
-    def got_item(self, result):
+    def trigger(self, reactor, result):
         """
         Triggers all current observers and resets them to the empty list.
         """
-        assert self._awaiters is not None, "Observable triggered twice"
         listeners, self._awaiters = self._awaiters, []
-        print("ZZZ", listeners)
-        for d in listeners:
-            d.callback(result)
-        self._last_result = result
+        print("ZZZ", listeners, type(result))
+        if listeners:
+            for d in listeners:
+                reactor.callLater(0, d.callback, result)
+        else:
+            self._unheard_result = result
