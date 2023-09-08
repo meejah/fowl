@@ -18,6 +18,7 @@ from fowl.cli import invite
 from fowl._proto import (
     _Config,
     wormhole_from_config,
+    forward,
 )
 
 
@@ -113,7 +114,6 @@ async def find_message(reactor, config, kind=None, timeout=10):
 
 @pytest_twisted.ensureDeferred
 async def test_forward(reactor, mailbox):
-    from fow._proto import forward
     in0 = StringIO()
     in1 = StringIO()
 

@@ -111,7 +111,7 @@ async def forward(config, wormhole_coro, reactor=reactor):
         raise
 
 
-class ForwardConnecter(Protocol):
+class _ForwardConnecter(Protocol):
     """
     Incoming connections from the other side produce this protocol.
 
@@ -146,11 +146,12 @@ class ForwardConnecter(Protocol):
             self.factory.other_proto.transport.write(data)
 
     def connectionLost(self, reason):
+        print("QQQQQ", reason)
         if self.factory.other_proto:
             self.factory.other_proto.transport.loseConnection()
 
 
-class Foo(Protocol):
+class ForwardConnecter(Protocol):
     """
     This is the side of the protocol that was listening .. so it has
     opened a subchannel and sent the initial message. So the
@@ -205,13 +206,13 @@ class Foo(Protocol):
         """
 
     @m.input()
-    def connected(self):
+    def remote_connected(self):
         """
         The reply message was positive
         """
 
     @m.input()
-    def not_connected(self):
+    def remote_not_connected(self):
         """
         The reply message was negative
         """
@@ -236,7 +237,6 @@ class Foo(Protocol):
         Buffer 'data' and determine if a complete message exists; if so,
         inject that input.
         """
-        print("QQQQ", len(data), self._buffer)
         self._buffer += data
         bsize = len(self._buffer)
 
@@ -244,9 +244,9 @@ class Foo(Protocol):
             msgsize, = struct.unpack("!H", self._buffer[:2])
             if bsize > msgsize + 2:
                 self.too_much_data()
+                return
             elif bsize == msgsize + 2:
                 msg = msgpack.unpackb(self._buffer[2:2 + msgsize])
-                print("ASDFASDF", msg)
                 from twisted.internet import reactor
                 reactor.callLater(0, lambda: self.got_reply(msg))
         return
@@ -257,31 +257,40 @@ class Foo(Protocol):
         Initiate the local connection
         """
         print("MSG", msg)
+        if msg.get("connected", False):
+            self.remote_connected()
+        else:
+            self.remote_not_connected()
 
     @m.output()
     def send_queued_data(self):
         """
         Confirm to the other side that we've connected.
         """
-        print("DRAINDRAING")
-        if not msg.get("connected", False):
-            self.transport.loseConnection()
-            raise RuntimeError("no connection")
+        print("send queued")
+        self.factory.other_proto.transport.resumeProducing()
         self.factory.other_proto._maybe_drain_queue()
-        #self._buffer = None
 
     @m.output()
     def close_connection(self):
         """
         Shut down this subchannel.
         """
-        self.loseConnection()
+        self.transport.loseConnection()
+
+    @m.output()
+    def close_other_connection(self):
+        """
+        Shut down this subchannel.
+        """
+        self.factory.other_proto.transport.loseConnection()
 
     @m.output()
     def forward_bytes(self, data):
         """
         Send bytes to the other side
         """
+        print("CONNECTOR forward_bytes", len(data))
         max_noise = 65000
         while len(data):
             d = data[:max_noise]
@@ -294,6 +303,7 @@ class Foo(Protocol):
                 }),
                 file=self.factory.config.stdout,
             )
+            print("XXX", self.factory.other_proto.transport)
             self.factory.other_proto.transport.write(d)
 
     await_confirmation.upon(
@@ -317,12 +327,12 @@ class Foo(Protocol):
         outputs=[check_message]
     )
     evaluating.upon(
-        connected,
+        remote_connected,
         enter=forwarding_bytes,
         outputs=[send_queued_data]
     )
     evaluating.upon(
-        not_connected,
+        remote_not_connected,
         enter=finished,
         outputs=[close_connection]
     )
@@ -334,16 +344,34 @@ class Foo(Protocol):
     forwarding_bytes.upon(
         subchannel_closed,
         enter=finished,
+        outputs=[close_other_connection]
+    )
+
+    finished.upon(
+        got_reply,
+        enter=finished,
+        outputs=[]
+    )
+    # kind-of feel this one is truely extraneous, but maybe not? (does
+    # happen in integration tests, but maybe points at different
+    # problem?)
+    finished.upon(
+        subchannel_closed,
+        enter=finished,
         outputs=[]
     )
 
+    do_trace = m._setTrace
+
     def connectionMade(self):
         self._buffer = b""
+        self.do_trace(lambda o, i, n: print("{} --[ {} ]--> {}".format(o, i, n)))
 
     def dataReceived(self, data):
         self.got_bytes(data)
 
     def connectionLost(self, reason):
+        print("CCCCCCC", reason)
         self.subchannel_closed()
         if self.factory.other_proto:
             self.factory.other_proto.transport.loseConnection()
@@ -403,6 +431,14 @@ class ConnectionForward(Protocol):
             )
             self.factory.other_proto.transport.write(d)
 
+    @m.output()
+    def close_other_side(self):
+        try:
+            if self.factory.other_proto:
+                self.factory.other_proto.transport.loseConnection()
+        except Exception:
+            pass
+
     forwarding_bytes.upon(
         got_bytes,
         enter=forwarding_bytes,
@@ -411,7 +447,7 @@ class ConnectionForward(Protocol):
     forwarding_bytes.upon(
         stream_closed,
         enter=finished,
-        outputs=[]
+        outputs=[close_other_side]
     )
 
     def connectionMade(self):
@@ -421,10 +457,8 @@ class ConnectionForward(Protocol):
         self.got_bytes(data)
 
     def connectionLost(self, reason):
-        print("ConnectionForward.lost", reason)
+        print("ZZZZZ", reason)
         self.stream_closed()
-        if self.factory.other_proto:
-            self.factory.other_proto.transport.loseConnection()
 
 
 class LocalServer(Protocol):
@@ -463,6 +497,8 @@ class LocalServer(Protocol):
         # XXX do we need registerProducer somewhere here?
         factory = Factory.forProtocol(ForwardConnecter)
         factory.other_proto = self
+        factory.conn_id = self._conn_id
+        factory.config = self.factory.config
         # Note: connect_ep here is the Wormhole provided
         # IClientEndpoint that lets us create new subchannels -- not
         # to be confused with the endpoint created from the "local
@@ -489,9 +525,9 @@ class LocalServer(Protocol):
         self.queue = None
 
     def connectionLost(self, reason):
-        print("local connection lost", self.remote, reason)
+        print("CCCCCASDFASDFASDFASDF", reason)
         # XXX causes duplice local_close 'errors' in magic-wormhole ... do we not want to do this?)
-        if False and self.remote is not None and self.remote.transport:
+        if self.remote is not None and self.remote.transport:
             self.remote.transport.loseConnection()
 
     def dataReceived(self, data):
@@ -630,6 +666,7 @@ class Incoming(Protocol):
                 "kind": "forward-bytes",
                 "id": self._conn_id,
                 "bytes": len(data),
+                "zinga": "foo",
             }),
             file=self.factory.config.stdout,
         )
@@ -682,9 +719,7 @@ class Incoming(Protocol):
         """
         FIXME
         """
-        print("ESTAB", msg)
         data = msgpack.unpackb(msg)
-        print(data)
         ep = clientFromString(reactor, data["local-destination"])
         print(
             json.dumps({
@@ -698,12 +733,10 @@ class Incoming(Protocol):
         factory.other_proto = self
         factory.config = self.factory.config
         factory.conn_id = self._conn_id
-        print("MAKING CONNECTIONFORWARD")
 
         d = ep.connect(factory)
 
         def bad(fail):
-            print("BAD", fail)
             print(
                 json.dumps({
                     "kind": "error",
@@ -719,10 +752,8 @@ class Incoming(Protocol):
             # if we hit the error-case above, we "handled" it so want
             # to return None -- but this pushes us into the "success"
             # / callback side, albiet with "None" as the value
-            print("assign", proto)
             self._local_connection = proto
             if self._local_connection is not None:
-                print("recursing to connected()")
                 reactor.callLater(0, lambda: self.connection_made())
             return proto
         d.addErrback(bad)
@@ -984,6 +1015,7 @@ class Commands(Protocol):
             )
 
     def connectionLost(self, reason):
+        print("BYBY", reason)
         pass  # print("command connectionLost", reason)
 
 
