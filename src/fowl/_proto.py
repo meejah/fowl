@@ -111,46 +111,6 @@ async def forward(config, wormhole_coro, reactor=reactor):
         raise
 
 
-class _ForwardConnecter(Protocol):
-    """
-    Incoming connections from the other side produce this protocol.
-
-    Forwards data to the `.other_protocol` in the Factory only after
-    awaiting a single incoming length-prefixed msgpack message.
-
-    This message tells us when the other side has successfully
-    connected (or not).
-    """
-
-    def connectionMade(self):
-        self._buffer = b""
-
-    def dataReceived(self, data):
-        if self._buffer is not None:
-            self._buffer += data
-            bsize = len(self._buffer)
-            if bsize >= 2:
-                msgsize, = struct.unpack("!H", self._buffer[:2])
-                if bsize > msgsize + 2:
-                    raise RuntimeError("leftover data in first message")
-                elif bsize == msgsize + 2:
-                    msg = msgpack.unpackb(self._buffer[2:2 + msgsize])
-                    if not msg.get("connected", False):
-                        self.transport.loseConnection()
-                        raise RuntimeError("Other side failed to connect")
-                    self.factory.other_proto.transport.resumeProducing()
-                    self.factory.other_proto._maybe_drain_queue()
-                    self._buffer = None
-            return
-        else:
-            self.factory.other_proto.transport.write(data)
-
-    def connectionLost(self, reason):
-        print("QQQQQ", reason)
-        if self.factory.other_proto:
-            self.factory.other_proto.transport.loseConnection()
-
-
 class ForwardConnecter(Protocol):
     """
     This is the side of the protocol that was listening .. so it has
