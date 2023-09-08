@@ -59,11 +59,9 @@ class Next:
         """
         if self._unheard_result is not None:
             d = succeed(self._unheard_result)
-            print("zinga", d)
             self._unheard_result = None
         else:
             d = Deferred()
-            print("YO", d)
             self._awaiters.append(d)
         return d
 
@@ -72,7 +70,6 @@ class Next:
         Triggers all current observers and resets them to the empty list.
         """
         listeners, self._awaiters = self._awaiters, []
-        print("ZZZ", listeners, type(result))
         if listeners:
             for d in listeners:
                 reactor.callLater(0, d.callback, result)
@@ -120,5 +117,4 @@ class Accumulate:
         if len(self._results) >= size:
             self._awaiters.pop(0)
             self._results, result = self._results[size:], self._results[:size]
-            print("ZZZZZZZZZ", len(result), size, d)
             reactor.callLater(0, d.callback, result)

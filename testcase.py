@@ -168,12 +168,8 @@ async def main(reactor):
         if who:
             client_proto.send(data)
             msg = await server.next_message(len(data))
-            print("QQQ", msg)
         else:
             server.send(data)
             msg = await client_proto.next_message(len(data))
-            print("CCC", msg)
         who = not who
-        print(len(msg))
-        print(len(data))
         assert msg == data, "Incorrect data transfer"
