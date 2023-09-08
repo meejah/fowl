@@ -145,7 +145,6 @@ async def main(reactor):
             return await self._got_protocol.next_item()
 
         def buildProtocol(self, *args):
-            print("buildprotocol", args)
             p = super().buildProtocol(*args)
             self._got_protocol.trigger(reactor, p)
             return p
@@ -162,11 +161,8 @@ async def main(reactor):
     for size in range(2**6, 2**18, 2**10):
         print("TEST", size, who)
         client = clientFromString(reactor, "tcp:localhost:1111")
-        print("client", client)
         client_proto = await client.connect(Factory.forProtocol(Client))
-        print("proto", client_proto)
         server = await listener.next_client()
-        print("server", server)
 
         data = os.urandom(size)
         if who:
