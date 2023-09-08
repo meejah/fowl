@@ -647,6 +647,8 @@ class Incoming(Protocol):
         # state-machine shouldn't allow this, but just to be sure
         assert self._buffer is not None, "Internal error: buffer is gone"
 
+        print("DINGDING", len(data))
+
         self._buffer += data
         bsize = len(self._buffer)
         if bsize >= 2:
@@ -797,6 +799,7 @@ class Incoming(Protocol):
         """
         Twisted API
         """
+        print("LOST")
         print(
             json.dumps({
                 "kind": "incoming-lost",
@@ -810,6 +813,7 @@ class Incoming(Protocol):
         """
         Twisted API
         """
+        print("RECV", len(data) )
         self.got_bytes(data)
 
 
@@ -861,10 +865,12 @@ async def _forward_loop(config, w):
     control_proto = await control_ep.connect(fac)
 
     # listen for incoming subchannel OPENs
+    print("DING")
     in_factory = Factory.forProtocol(Incoming)
     in_factory.config = config
     in_factory.connect_ep = connect_ep
-    listen_ep.listen(in_factory)
+    x = await listen_ep.listen(in_factory)
+    print("XX", x)
 
     await w.get_unverified_key()
     verifier_bytes = await w.get_verifier()  # might WrongPasswordError
@@ -920,8 +926,10 @@ async def _process_command(reactor, config, control_proto, connect_ep, cmd):
 
     if cmd["kind"] == "local":
         # listens locally, conencts to other side
+        print("LLLLLLLLLLLLLLLLLL")
         return await _local_to_remote_forward(reactor, config, connect_ep, cmd)
     elif cmd["kind"] == "remote":
+        print("RRRRRRRRRRRRRRRRRRRRR")
         # asks the other side to listen, connecting back to us
         return await _remote_to_local_forward(control_proto, cmd)
 
@@ -1006,6 +1014,7 @@ class LocalCommandDispatch(LineReceiver):
         # answer printed (so e.g. even if our controller gets
         # ahead and issues 3 commands without waiting for the
         # answer, we need to do them in order)
+        print("LINE", line)
         try:
             cmd = json.loads(line)
             d = ensureDeferred(
