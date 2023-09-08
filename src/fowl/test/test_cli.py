@@ -122,7 +122,8 @@ async def find_message(reactor, config, kind=None, timeout=10):
 
 
 @pytest_twisted.ensureDeferred
-async def test_forward(reactor, mailbox):
+@pytest.mark.parametrize("datasize", range(2**6, 2**18, 2**10)[:2])
+async def test_forward(reactor, request, mailbox, datasize):
     in0 = StringIO()
     in1 = StringIO()
 
@@ -207,18 +208,21 @@ async def test_forward(reactor, mailbox):
     # many open files."
     # gc.collect() doesn't fix it.
     who = True
-    for size in range(2**6, 2**18, 2**10):
-        print("TEST", size, who)
-        client = clientFromString(reactor, "tcp:localhost:1111")
-        client_proto = await client.connect(Factory.forProtocol(Client))
-        server = await listener.next_client()
+    client = clientFromString(reactor, "tcp:localhost:1111")
+    client_proto = await client.connect(Factory.forProtocol(Client))
+    server = await listener.next_client()
 
-        data = os.urandom(size)
-        if who:
-            client_proto.send(data)
-            msg = await server.next_message(len(data))
-        else:
-            server.send(data)
-            msg = await client_proto.next_message(len(data))
-        who = not who
-        assert msg == data, "Incorrect data transfer"
+    def cleanup():
+        server.transport.loseConnection()
+        server_port.stopListening()
+    request.addfinalizer(cleanup)
+
+    data = os.urandom(datasize)
+    if who:
+        client_proto.send(data)
+        msg = await server.next_message(len(data))
+    else:
+        server.send(data)
+        msg = await client_proto.next_message(len(data))
+    who = not who
+    assert msg == data, "Incorrect data transfer"
