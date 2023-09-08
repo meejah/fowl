@@ -3,6 +3,11 @@
 pin:
 	pip-compile --upgrade --allow-unsafe --generate-hashes --resolver=backtracking --output-file requirements-pinned.txt
 
+test:
+	coverage erase
+	coverage run --source fowl -m pytest src/fowl
+	cuv graph
+
 release: pin
 	python update-version.py
 	hatchling build
