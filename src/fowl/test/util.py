@@ -169,8 +169,7 @@ class WormholeMailboxServer:
             args=args,
             log_collector=lambda d: logs.append(d),
         )
-        # XXX some sort of cleanup
-        #request.addfinalizer(partial(_cleanup_service_process, transport, protocol.exited, ctx))
+        # note: run_service adds a finalizer
         return cls(
             reactor,
             transport,
