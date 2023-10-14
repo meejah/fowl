@@ -25,7 +25,6 @@ from fowl._proto import (
     forward,
 )
 from fowl.observer import (
-    When,
     Next,
     Accumulate,
 )
