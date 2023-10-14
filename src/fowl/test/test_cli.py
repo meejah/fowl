@@ -138,11 +138,7 @@ class FakeStandardIO(object):
 @pytest.mark.parametrize("who", [True])#, False])
 async def test_forward(reactor, request, mailbox, datasize, who):
 
-    stdin = [None, None]
-
     def create_stdin0(proto, reactor=None):
-        print("STD", proto)
-        stdin[0] = proto
         return FakeStandardIO(proto, reactor, messages=[
             # when connected, issue a "open listener" to one side
             json.dumps({
@@ -153,8 +149,6 @@ async def test_forward(reactor, request, mailbox, datasize, who):
         ])
 
     def create_stdin1(proto, reactor=None):
-        print("STD", proto)
-        stdin[1] = proto
         return FakeStandardIO(proto, reactor, messages=[])
 
     config0 = _Config(
@@ -166,11 +160,6 @@ async def test_forward(reactor, request, mailbox, datasize, who):
     # note: would like to get rid of this ensureDeferred, but it
     # doesn't start "running" the coro until we do this...
     d0 = ensureDeferred(forward(config0, wormhole_from_config(config0), reactor=reactor))
-
-    def err(f):
-        print("ERRERR", f)
-    d0.addErrback(err)
-
     msg = await find_message(reactor, config0, kind="wormhole-code")
     assert 'code' in msg, "Missing code"
 
@@ -182,13 +171,7 @@ async def test_forward(reactor, request, mailbox, datasize, who):
         code=msg["code"],
     )
 
-    print("HIHI")
     d1 = ensureDeferred(forward(config1, wormhole_from_config(config1), reactor=reactor))
-    def asdf(f):
-        print("BADBAD", f)
-        return f
-    d1.addErrback(asdf)
-    print("CCCCC", d1)
     msg = await find_message(reactor, config1, kind="connected")
 
     class Server(Protocol):
@@ -264,11 +247,18 @@ async def test_forward(reactor, request, mailbox, datasize, who):
 @pytest.mark.parametrize("who", [True, False][:1])
 async def test_drawrof(reactor, request, mailbox, datasize, who):
 
-    def create_stdin0():
-        return None
+    def create_stdin0(proto, reactor=None):
+        return FakeStandardIO(proto, reactor, messages=[
+            # when connected, issue a "open listener" to one side
+            json.dumps({
+                "kind": "remote",
+                "remote-endpoint": "tcp:7777",
+                "local-endpoint": "tcp:localhost:2222",
+            }).encode("utf8") + b"\n"
+        ])
 
-    def create_stdin1():
-        return None
+    def create_stdin1(proto, reactor=None):
+        return FakeStandardIO(proto, reactor, messages=[])
 
     config0 = _Config(
         relay_url=mailbox.url,
@@ -293,17 +283,6 @@ async def test_drawrof(reactor, request, mailbox, datasize, who):
     d1 = ensureDeferred(forward(config1, wormhole_from_config(config1), reactor=reactor))
     msg = await find_message(reactor, config1, kind="connected")
 
-    # we're connected .. issue a "open listener" to one side
-
-    in0.write(
-        json.dumps({
-            "kind": "remote",
-            "listen-endpoint": "tcp:8888",
-            "local-endpoint": "tcp:localhost:1111",
-        })
-    )
-
-
     class Server(Protocol):
         _message = Accumulate(b"")
 
@@ -316,7 +295,6 @@ async def test_drawrof(reactor, request, mailbox, datasize, who):
         def send(self, data):
             self.transport.write(data)
 
-
     class Client(Protocol):
         _message = Accumulate(b"")
 
@@ -328,7 +306,6 @@ async def test_drawrof(reactor, request, mailbox, datasize, who):
 
         def send(self, data):
             self.transport.write(data)
-
 
     class ServerFactory(Factory):
         protocol = Server
@@ -344,13 +321,15 @@ async def test_drawrof(reactor, request, mailbox, datasize, who):
             return p
 
     listener = ServerFactory()
-    server_port = await serverFromString(reactor, "tcp:1111").listen(listener)
+    server_port = await serverFromString(reactor, "tcp:2222").listen(listener)
+
+    msg = await find_message(reactor, config1, kind="listening")
 
     # if we do 'too many' test-cases debian complains about
     # "twisted.internet.error.ConnectBindError: Couldn't bind: 24: Too
     # many open files."
     # gc.collect() doesn't fix it.
-    client = clientFromString(reactor, "tcp:localhost:1111")
+    client = clientFromString(reactor, "tcp:localhost:7777")  # NB: same as remote-endpoint
     client_proto = await client.connect(Factory.forProtocol(Client))
     server = await listener.next_client()
 
