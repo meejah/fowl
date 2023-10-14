@@ -5,7 +5,7 @@ pin:
 
 test:
 	coverage erase
-	python -m pytest -sv --cov=fowl src/fowl
+	python -m pytest --disable-warnings -sv --cov=fowl src/fowl
 #	coverage run --source fowl -m pytest src/fowl
 	cuv graph
 

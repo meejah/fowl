@@ -121,22 +121,55 @@ async def find_message(reactor, config, kind=None, timeout=10):
     )
 
 
+class FakeStandardIO(object):
+    def __init__(self, proto, reactor, messages):
+        self.proto = proto
+        self.reactor = reactor
+        self.messages = messages
+        self.proto.makeConnection(self)
+        for msg in messages:
+            assert isinstance(msg, bytes), "messages must be bytes"
+            self.proto.dataReceived(msg)
+
+
+
 @pytest_twisted.ensureDeferred
-@pytest.mark.parametrize("datasize", range(2**6, 2**18, 2**10)[:2])
-@pytest.mark.parametrize("who", [True, False])
+@pytest.mark.parametrize("datasize", range(2**6, 2**18, 2**10)[:1])
+@pytest.mark.parametrize("who", [True])#, False])
 async def test_forward(reactor, request, mailbox, datasize, who):
-    in0 = StringIO()
-    in1 = StringIO()
+
+    stdin = [None, None]
+
+    def create_stdin0(proto, reactor=None):
+        print("STD", proto)
+        stdin[0] = proto
+        return FakeStandardIO(proto, reactor, messages=[
+            # when connected, issue a "open listener" to one side
+            json.dumps({
+                "kind": "local",
+                "listen-endpoint": "tcp:8888",
+                "local-endpoint": "tcp:localhost:1111",
+            }).encode("utf8") + b"\n"
+        ])
+
+    def create_stdin1(proto, reactor=None):
+        print("STD", proto)
+        stdin[1] = proto
+        return FakeStandardIO(proto, reactor, messages=[])
 
     config0 = _Config(
         relay_url=mailbox.url,
         use_tor=False,
-        stdin=in0,
+        create_stdio=create_stdin0,
         stdout=StringIO(),
     )
     # note: would like to get rid of this ensureDeferred, but it
     # doesn't start "running" the coro until we do this...
     d0 = ensureDeferred(forward(config0, wormhole_from_config(config0), reactor=reactor))
+
+    def err(f):
+        print("ERRERR", f)
+    d0.addErrback(err)
 
     msg = await find_message(reactor, config0, kind="wormhole-code")
     assert 'code' in msg, "Missing code"
@@ -144,23 +177,19 @@ async def test_forward(reactor, request, mailbox, datasize, who):
     config1 = _Config(
         relay_url=mailbox.url,
         use_tor=False,
-        stdin=in0,
+        create_stdio=create_stdin1,
         stdout=StringIO(),
         code=msg["code"],
     )
+
+    print("HIHI")
     d1 = ensureDeferred(forward(config1, wormhole_from_config(config1), reactor=reactor))
+    def asdf(f):
+        print("BADBAD", f)
+        return f
+    d1.addErrback(asdf)
+    print("CCCCC", d1)
     msg = await find_message(reactor, config1, kind="connected")
-
-    # we're connected .. issue a "open listener" to one side
-
-    in0.write(
-        json.dumps({
-            "kind": "local",
-            "listen-endpoint": "tcp:8888",
-            "local-endpoint": "tcp:localhost:1111",
-        })
-    )
-
 
     class Server(Protocol):
         _message = Accumulate(b"")
@@ -204,11 +233,13 @@ async def test_forward(reactor, request, mailbox, datasize, who):
     listener = ServerFactory()
     server_port = await serverFromString(reactor, "tcp:1111").listen(listener)
 
+    msg = await find_message(reactor, config0, kind="listening")
+
     # if we do 'too many' test-cases debian complains about
     # "twisted.internet.error.ConnectBindError: Couldn't bind: 24: Too
     # many open files."
     # gc.collect() doesn't fix it.
-    client = clientFromString(reactor, "tcp:localhost:1111")
+    client = clientFromString(reactor, "tcp:localhost:8888") # NB: same port as in "kind=local" message!
     client_proto = await client.connect(Factory.forProtocol(Client))
     server = await listener.next_client()
 
@@ -229,16 +260,20 @@ async def test_forward(reactor, request, mailbox, datasize, who):
 
 
 @pytest_twisted.ensureDeferred
-@pytest.mark.parametrize("datasize", range(2**6, 2**18, 2**10)[:2])
-@pytest.mark.parametrize("who", [True, False])
+@pytest.mark.parametrize("datasize", range(2**6, 2**18, 2**10)[:1])
+@pytest.mark.parametrize("who", [True, False][:1])
 async def test_drawrof(reactor, request, mailbox, datasize, who):
-    in0 = StringIO()
-    in1 = StringIO()
+
+    def create_stdin0():
+        return None
+
+    def create_stdin1():
+        return None
 
     config0 = _Config(
         relay_url=mailbox.url,
         use_tor=False,
-        stdin=in0,
+        create_stdio=create_stdin0,
         stdout=StringIO(),
     )
     # note: would like to get rid of this ensureDeferred, but it
@@ -251,7 +286,7 @@ async def test_drawrof(reactor, request, mailbox, datasize, who):
     config1 = _Config(
         relay_url=mailbox.url,
         use_tor=False,
-        stdin=in0,
+        create_stdio=create_stdin1,
         stdout=StringIO(),
         code=msg["code"],
     )

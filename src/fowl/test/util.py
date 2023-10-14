@@ -106,13 +106,14 @@ def run_service(
 
     env = os.environ.copy()
     env['PYTHONUNBUFFERED'] = '1'
+    for k, v in env.items():
+        if 'COV' in k:
+            print(k, v)
     process = reactor.spawnProcess(
         protocol,
         executable,
         args,
         path=cwd,
-        # Twisted on Windows doesn't support customizing FDs
-        childFDs={0: 'w', 1: 'r', 2: 'r',} if sys.platform != "win32" else None,
         env=env,
     )
     request.addfinalizer(partial(_cleanup_service_process, process, protocol.exited))

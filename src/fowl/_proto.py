@@ -2,12 +2,12 @@ from __future__ import print_function
 
 import sys
 import json
-from typing import IO
+from typing import IO, Callable
 
 import struct
 from functools import partial
 
-from attrs import frozen
+from attrs import frozen, field
 
 import msgpack
 import automat
@@ -53,7 +53,7 @@ class _Config:
     appid: str = APPID
     debug_state: bool = False
     stdout: IO = sys.stdout
-    stdin: IO = sys.stdin
+    create_stdio: Callable = None  # returns a StandardIO work-alike, for testing
 
 
 async def wormhole_from_config(config, wormhole_create=None):
@@ -493,6 +493,7 @@ class LocalServer(Protocol):
     def dataReceived(self, data):
         # XXX FIXME if len(data) >= 65535 must split "because noise"
         # -- handle in Dilation code?
+        print("DINGDING", data)
 
         max_noise = 65000
         while len(data):
@@ -876,7 +877,8 @@ async def _forward_loop(config, w):
     verifier_bytes = await w.get_verifier()  # might WrongPasswordError
 
     # arrange to read incoming commands from stdin
-    x = StandardIO(LocalCommandDispatch(reactor, config, control_proto, connect_ep))
+    create_stdio = config.create_stdio or StandardIO
+    x = create_stdio(LocalCommandDispatch(reactor, config, control_proto, connect_ep))
     try:
         await Deferred(canceller=lambda _: None)
     except CancelledError:
@@ -888,6 +890,8 @@ async def _local_to_remote_forward(reactor, config, connect_ep, cmd):
     Listen locally, and for each local connection create an Outgoing
     subchannel which will connect on the other end.
     """
+    # XXX these lines are "uncovered" but we clearly run them ... so
+    # something wrong with subprocess coverage?? again???
     ep = serverFromString(reactor, cmd["listen-endpoint"])
     factory = Factory.forProtocol(LocalServer)
     factory.config = config
@@ -921,6 +925,7 @@ async def _remote_to_local_forward(control_proto, cmd):
 
 
 async def _process_command(reactor, config, control_proto, connect_ep, cmd):
+    print("COMMAND", cmd)
     if "kind" not in cmd:
         raise ValueError("no 'kind' in command")
 
