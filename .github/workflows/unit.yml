@@ -1,4 +1,4 @@
-name: Linux Testing
+name: Unit Testing
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
     branches: [ main ]
 
 jobs:
-  integration-tests:
+  unit-tests:
     strategy:
       matrix:
         os:
@@ -40,7 +40,7 @@ jobs:
         pip install --editable .[test]
 
     - name: pytest
-      run: pytest --cov=fowl -s -v integration/
+      run: python -m pytest --disable-warnings --cov=fowl -s -v src/fowl/test/
 
     - name: Coverage graph
       shell: bash

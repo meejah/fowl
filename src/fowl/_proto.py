@@ -74,6 +74,7 @@ async def wormhole_from_config(config, wormhole_create=None):
                 "version": tor.version,
             }),
             file=config.stdout,
+            flush=True,
         )
 
     w = wormhole_create(
@@ -262,6 +263,7 @@ class ForwardConnecter(Protocol):
                     "bytes": len(d),
                 }),
                 file=self.factory.config.stdout,
+                flush=True,
             )
             self.factory.other_proto.transport.write(d)
 
@@ -386,6 +388,7 @@ class ConnectionForward(Protocol):
                     "hello": "foo",
                 }),
                 file=self.factory.config.stdout,
+                flush=True,
             )
             self.factory.other_proto.transport.write(d)
 
@@ -445,6 +448,7 @@ class LocalServer(Protocol):
                     "id": self._conn_id,
                 }),
                 file=self.factory.config.stdout,
+                flush=True,
             )
 
             # MUST wait for reply first -- queueing all data until
@@ -471,6 +475,7 @@ class LocalServer(Protocol):
                     "message": str(f.value),
                 }),
                 file=self.factory.config.stdout,
+                flush=True,
             )
         d.addErrback(err)
         return d
@@ -625,6 +630,7 @@ class Incoming(Protocol):
                 "zinga": "foo",
             }),
             file=self.factory.config.stdout,
+            flush=True,
         )
 
         # XXX handle in Dilation? or something?
@@ -684,6 +690,7 @@ class Incoming(Protocol):
                 "endpoint": data["local-destination"],
             }),
             file=self.factory.config.stdout,
+            flush=True,
         )
         factory = Factory.forProtocol(ConnectionForward)
         factory.other_proto = self
@@ -700,6 +707,7 @@ class Incoming(Protocol):
                     "message": fail.getErrorMessage(),
                 }),
                 file=self.factory.config.stdout,
+                flush=True,
             )
             reactor.callLater(0, lambda: self.connection_failed())
             return None
@@ -783,6 +791,7 @@ class Incoming(Protocol):
                 "id": self._conn_id,
             }),
             file=self.factory.config.stdout,
+            flush=True,
         )
         # XXX first message should tell us where to connect, locally
         # (want some kind of opt-in on this side, probably)
@@ -799,6 +808,7 @@ class Incoming(Protocol):
                 "id": self._conn_id,
             }),
             file=self.factory.config.stdout,
+            flush=True,
         )
         self.subchannel_closed()
 
@@ -827,6 +837,7 @@ async def _forward_loop(config, w):
             "welcome": welcome,
         }),
         file=config.stdout,
+        flush=True,
     )
 
     if config.code:
@@ -844,6 +855,7 @@ async def _forward_loop(config, w):
                 "code": code,
             }),
             file=config.stdout,
+            flush=True,
         )
 
     control_ep, connect_ep, listen_ep = w.dilate(
@@ -904,6 +916,7 @@ async def _local_to_remote_forward(reactor, config, connect_ep, on_listen, cmd):
             "connect-endpoint": cmd["local-endpoint"],
         }),
         file=config.stdout,
+        flush=True,
     )
 
 
@@ -961,6 +974,7 @@ class Commands(Protocol):
                     "endpoint": msg["listen-endpoint"],
                 }),
                 file=self.factory.config.stdout,
+                flush=True,
             )
 
             # XXX ask for permission
@@ -985,6 +999,7 @@ class Commands(Protocol):
                     "endpoint": msg["listen-endpoint"],
                 }),
                 file=self.factory.config.stdout,
+                flush=True,
             )
 
     def connectionLost(self, reason):
@@ -1012,6 +1027,7 @@ class LocalCommandDispatch(LineReceiver):
                 "kind": "connected",
             }),
             file=self.config.stdout,
+            flush=True,
         )
 
     def lineReceived(self, line):
@@ -1070,6 +1086,7 @@ async def get_tor(
         print(
             f"Failed to connect to Tor: {e}\nAttempting to run Tor",
             file=stderr,
+            flush=True,
         )
 
         def progress(done, tag, summary):
