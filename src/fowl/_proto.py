@@ -207,8 +207,11 @@ class ForwardConnecter(Protocol):
                 return
             elif bsize == msgsize + 2:
                 msg = msgpack.unpackb(self._buffer[2:2 + msgsize])
-                from twisted.internet import reactor
-                reactor.callLater(0, lambda: self.got_reply(msg))
+                # this used to have a callLater(0, ..) for the
+                # got_reply -- not sure this can happen "in practice",
+                # but in testing at least the server can start sending
+                # bytes _immediately_ so we must call synchronously..
+                return self.got_reply(msg)
         return
 
     @m.output()
