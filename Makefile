@@ -11,6 +11,8 @@ test:
 
 release: pin
 	python update-version.py
+	git add -u
+	git commit -m "update version"
 	hatch version `git tag --sort -v:refname | head -1`
 	hatchling build
 	gpg --pinentry=loopback -u meejah@meejah.ca --armor --detach-sign dist/fowl-`git describe --abbrev=0`-py3-none-any.whl
