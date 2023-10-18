@@ -229,7 +229,6 @@ class ForwardConnecter(Protocol):
         """
         Confirm to the other side that we've connected.
         """
-        print("send queued")
         self.factory.other_proto.transport.resumeProducing()
         self.factory.other_proto._maybe_drain_queue()
 
@@ -252,7 +251,6 @@ class ForwardConnecter(Protocol):
         """
         Send bytes to the other side
         """
-        print("CONNECTOR forward_bytes", len(data))
         max_noise = 65000
         while len(data):
             d = data[:max_noise]
@@ -265,7 +263,6 @@ class ForwardConnecter(Protocol):
                 }),
                 file=self.factory.config.stdout,
             )
-            print("XXX", self.factory.other_proto.transport)
             self.factory.other_proto.transport.write(d)
 
     await_confirmation.upon(
@@ -333,7 +330,6 @@ class ForwardConnecter(Protocol):
         self.got_bytes(data)
 
     def connectionLost(self, reason):
-        print("CCCCCCC", reason)
         self.subchannel_closed()
         if self.factory.other_proto:
             self.factory.other_proto.transport.loseConnection()
@@ -865,7 +861,6 @@ async def _forward_loop(config, w):
     in_factory.config = config
     in_factory.connect_ep = connect_ep
     listen_port = await listen_ep.listen(in_factory)
-    print("LISTENER", listen_port)
 
     await w.get_unverified_key()
     verifier_bytes = await w.get_verifier()  # might WrongPasswordError
@@ -877,12 +872,9 @@ async def _forward_loop(config, w):
     x = create_stdio(LocalCommandDispatch(reactor, config, control_proto, connect_ep, listening_ports.append))
 
     def cancelled(x):
-        print("cancelled!!!", listen_port)
         d = listen_port.stopListening()
-        print("FOO", d)
         for port in listening_ports:
             d = port.stopListening()
-            print("FFFFFFFF", d)
         control_proto.transport.loseConnection()
 
     try:
