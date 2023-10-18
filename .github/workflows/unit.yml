@@ -40,7 +40,7 @@ jobs:
         pip install --editable .[test]
 
     - name: pytest
-      run: pytest --cov=fow -s -v src/fowl/test/
+      run: python -m pytest --disable-warnings --cov=fowl -s -v src/fowl/test/
 
     - name: Coverage graph
       shell: bash

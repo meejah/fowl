@@ -40,7 +40,7 @@ jobs:
         pip install --editable .[test]
 
     - name: pytest
-      run: pytest --cov=fow -s -v integration/
+      run: pytest --cov=fowl -s -v integration/
 
     - name: Coverage graph
       shell: bash
