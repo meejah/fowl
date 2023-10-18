@@ -861,21 +861,34 @@ async def _forward_loop(config, w):
     in_factory = Factory.forProtocol(Incoming)
     in_factory.config = config
     in_factory.connect_ep = connect_ep
-    x = await listen_ep.listen(in_factory)
+    listen_port = await listen_ep.listen(in_factory)
+    print("LISTENER", listen_port)
 
     await w.get_unverified_key()
     verifier_bytes = await w.get_verifier()  # might WrongPasswordError
 
+    listening_ports = []
+
     # arrange to read incoming commands from stdin
     create_stdio = config.create_stdio or StandardIO
-    x = create_stdio(LocalCommandDispatch(reactor, config, control_proto, connect_ep))
+    x = create_stdio(LocalCommandDispatch(reactor, config, control_proto, connect_ep, listening_ports.append))
+
+    def cancelled(x):
+        print("cancelled!!!", listen_port)
+        d = listen_port.stopListening()
+        print("FOO", d)
+        for port in listening_ports:
+            d = port.stopListening()
+            print("FFFFFFFF", d)
+        control_proto.transport.loseConnection()
+
     try:
-        await Deferred(canceller=lambda _: None)
+        await Deferred(canceller=cancelled)
     except CancelledError:
         pass
 
 
-async def _local_to_remote_forward(reactor, config, connect_ep, cmd):
+async def _local_to_remote_forward(reactor, config, connect_ep, on_listen, cmd):
     """
     Listen locally, and for each local connection create an Outgoing
     subchannel which will connect on the other end.
@@ -887,7 +900,8 @@ async def _local_to_remote_forward(reactor, config, connect_ep, cmd):
     factory.config = config
     factory.endpoint_str = cmd["local-endpoint"]
     factory.connect_ep = connect_ep
-    proto = await ep.listen(factory)
+    port = await ep.listen(factory)
+    on_listen(port)
     print(
         json.dumps({
             "kind": "listening",
@@ -898,7 +912,7 @@ async def _local_to_remote_forward(reactor, config, connect_ep, cmd):
     )
 
 
-async def _remote_to_local_forward(control_proto, cmd):
+async def _remote_to_local_forward(control_proto, on_listen, cmd):
     """
     Ask the remote side to listen on a port, forwarding back here
     (where our Incoming subchannel will be told what to connect
@@ -914,16 +928,16 @@ async def _remote_to_local_forward(control_proto, cmd):
     return None
 
 
-async def _process_command(reactor, config, control_proto, connect_ep, cmd):
+async def _process_command(reactor, config, control_proto, connect_ep, on_listen, cmd):
     if "kind" not in cmd:
         raise ValueError("no 'kind' in command")
 
     if cmd["kind"] == "local":
         # listens locally, conencts to other side
-        return await _local_to_remote_forward(reactor, config, connect_ep, cmd)
+        return await _local_to_remote_forward(reactor, config, connect_ep, on_listen, cmd)
     elif cmd["kind"] == "remote":
         # asks the other side to listen, connecting back to us
-        return await _remote_to_local_forward(control_proto, cmd)
+        return await _remote_to_local_forward(control_proto, on_listen, cmd)
 
     raise KeyError(
         "Unknown command '{}'".format(cmd["kind"])
@@ -934,9 +948,7 @@ class Commands(Protocol):
     """
     Listen for (and send) commands over the command subchannel
     """
-
-    def connectionMade(self):
-        pass
+    _local_port = None
 
     # XXX make these msgpack too, for consistency!
 
@@ -962,7 +974,14 @@ class Commands(Protocol):
             factory.config = self.factory.config
             factory.connect_ep = self.factory.connect_ep
             factory.endpoint_str = msg["connect-endpoint"]
-            proto = listen_ep.listen(factory)
+
+            # XXX this can fail (synchronously) if address in use (e.g.)
+            d = listen_ep.listen(factory)
+
+            def got_port(port):
+                self._local_port = port
+            d.addCallback(got_port)
+            # XXX should await proto.stopListening() somewhere...at the appropriate time
         else:
             print(
                 json.dumps({
@@ -974,8 +993,9 @@ class Commands(Protocol):
             )
 
     def connectionLost(self, reason):
-        print("BYBY", reason)
-        pass  # print("command connectionLost", reason)
+        print("BYBY", reason, self._local_port)
+        if self._local_port is not None:
+            return self._local_port.stopListening()
 
 
 class LocalCommandDispatch(LineReceiver):
@@ -984,12 +1004,13 @@ class LocalCommandDispatch(LineReceiver):
     """
     delimiter = b"\n"
 
-    def __init__(self, reactor, cfg, control_proto, connect_ep):
+    def __init__(self, reactor, cfg, control_proto, connect_ep, on_listen):
         super(LocalCommandDispatch, self).__init__()
         self.config = cfg
         self._reactor = reactor
         self._control_proto = control_proto
         self._connect_ep = connect_ep
+        self._on_listen = on_listen
 
     def connectionMade(self):
         print(
@@ -1008,7 +1029,7 @@ class LocalCommandDispatch(LineReceiver):
         try:
             cmd = json.loads(line)
             d = ensureDeferred(
-                _process_command(self._reactor, self.config, self._control_proto, self._connect_ep, cmd)
+                _process_command(self._reactor, self.config, self._control_proto, self._connect_ep, self._on_listen, cmd)
             )
             def err(f):
                 print("ERR: {}".format(f))
