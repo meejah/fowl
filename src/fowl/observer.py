@@ -1,4 +1,4 @@
-from attr import define
+from attr import define, Factory
 from twisted.internet.defer import Deferred, succeed
 
 
@@ -11,7 +11,7 @@ class Next:
     Used for implementing the a ``next_thing()`` style of method.
     """
 
-    _awaiters: list = []
+    _awaiters: list = Factory(list)
     _unheard_result: object = None
 
     def next_item(self):
@@ -51,7 +51,7 @@ class Accumulate:
     """
 
     _results: object
-    _awaiters: list = []
+    _awaiters: list = Factory(list)
 
     def next_item(self, reactor, size):
         """
