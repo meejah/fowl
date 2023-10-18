@@ -23,4 +23,4 @@ undo-release:
 
 release-upload:
 	@ls dist/fowl-`git describe --abbrev=0`*
-	twine upload dist/fowl-`git describe --abbrev=0`*
+	twine upload --username __token__ --password `cat PRIVATE-release-token` dist/fowl-`git describe --abbrev=0`*

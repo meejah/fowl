@@ -3,3 +3,4 @@ venv
 dist
 .coverage
 relay.sqlite
+PRIVATE*
