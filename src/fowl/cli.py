@@ -46,11 +46,17 @@ def fowl(ctx, ip_privacy, mailbox):
 
 @fowl.command()
 @click.pass_context
-def invite(ctx):
+@click.option(
+    "--code-length",
+    default=2,
+    help="Length of the Wormhole code",
+)
+def invite(ctx, code_length):
     """
     Start a new forwarding session, allocating a code that can be used
     on another computer to join a forwarding session
     """
+    ctx.obj = evolve(ctx.obj, code_length=code_length)
     def run(reactor):
         return ensureDeferred(
             forward(
