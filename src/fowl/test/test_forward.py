@@ -226,8 +226,13 @@ async def test_forward(reactor, request, mailbox, datasize, who):
     server = await listener.next_client()
 
     def cleanup():
+        d0.cancel()
+        d1.cancel()
         server.transport.loseConnection()
-        server_port.stopListening()
+        pytest_twisted.blockon(
+            server_port.stopListening()
+        )
+        client_proto.transport.loseConnection()
     request.addfinalizer(cleanup)
 
     data = os.urandom(datasize)
