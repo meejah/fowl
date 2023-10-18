@@ -132,8 +132,9 @@ class FakeStandardIO(object):
 
 
 
+# maybe Hypothesis better, via strategies.binary() ?
 @pytest_twisted.ensureDeferred
-@pytest.mark.parametrize("datasize", range(2**6, 2**18, 2**10)[:2])
+@pytest.mark.parametrize("datasize", range(2**6, 2**16, 2**14))
 @pytest.mark.parametrize("who", [True, False])
 async def test_forward(reactor, request, mailbox, datasize, who):
 
@@ -247,7 +248,7 @@ async def test_forward(reactor, request, mailbox, datasize, who):
 
 
 @pytest_twisted.ensureDeferred
-@pytest.mark.parametrize("datasize", range(2**6, 2**18, 2**10)[:4])
+@pytest.mark.parametrize("datasize", range(2**6, 2**16, 2**14))
 @pytest.mark.parametrize("who", [True, False])
 async def test_drawrof(reactor, request, mailbox, datasize, who):
 

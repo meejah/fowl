@@ -988,7 +988,6 @@ class Commands(Protocol):
             )
 
     def connectionLost(self, reason):
-        print("BYBY", reason, self._local_port)
         if self._local_port is not None:
             return self._local_port.stopListening()
 
