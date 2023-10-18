@@ -106,13 +106,14 @@ def run_service(
 
     env = os.environ.copy()
     env['PYTHONUNBUFFERED'] = '1'
+    for k, v in env.items():
+        if 'COV' in k:
+            print(k, v)
     process = reactor.spawnProcess(
         protocol,
         executable,
         args,
         path=cwd,
-        # Twisted on Windows doesn't support customizing FDs
-        childFDs={0: 'w', 1: 'r', 2: 'r',} if sys.platform != "win32" else None,
         env=env,
     )
     request.addfinalizer(partial(_cleanup_service_process, process, protocol.exited))
@@ -169,8 +170,7 @@ class WormholeMailboxServer:
             args=args,
             log_collector=lambda d: logs.append(d),
         )
-        # XXX some sort of cleanup
-        #request.addfinalizer(partial(_cleanup_service_process, transport, protocol.exited, ctx))
+        # note: run_service adds a finalizer
         return cls(
             reactor,
             transport,
