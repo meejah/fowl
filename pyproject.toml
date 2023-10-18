@@ -47,6 +47,7 @@ dev = [
     "sphinx",
     "dulwich",
     "gpg",  # should use isis lovecruft's version?
+    "pip-tools",
 ]
 
 [project.scripts]
