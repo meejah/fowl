@@ -29,9 +29,17 @@ from ._proto import (
     default=PUBLIC_MAILBOX_URL,
     help="URL for the mailbox server to use",
 )
+@click.option(
+    "-L",
+    multiple=True,
+)
+@click.option(
+    "-R",
+    multiple=True,
+)
 @click.group()
 @click.pass_context
-def fowl(ctx, ip_privacy, mailbox):
+def fowl(ctx, ip_privacy, mailbox, l, r):
     """
     Forward Over Wormhole
 
@@ -41,6 +49,10 @@ def fowl(ctx, ip_privacy, mailbox):
     ctx.obj = _Config(
         relay_url=mailbox,
         use_tor=bool(ip_privacy),
+        initial_commands = {
+            'local': l,
+            'remote': r,
+            }
     )
 
 

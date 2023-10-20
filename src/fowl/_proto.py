@@ -54,6 +54,7 @@ class _Config:
     debug_state: bool = False
     stdout: IO = sys.stdout
     create_stdio: Callable = None  # returns a StandardIO work-alike, for testing
+    initial_commands: dict = {}
 
 
 async def wormhole_from_config(config, wormhole_create=None):
@@ -878,6 +879,18 @@ async def _forward_loop(config, w):
     verifier_bytes = await w.get_verifier()  # might WrongPasswordError
 
     listening_ports = []
+
+    for remote in config.initial_commands["remote"]:
+        await _remote_to_local_forward(control_proto, listening_ports.append, {
+            "remote-endpoint": ':'.join(remote.split(':')[:2]),
+            "local-endpoint": ':'.join(remote.split(':')[2:]),
+            })
+
+    for local in config.initial_commands["local"]:
+        await _local_to_remote_forward(reactor, config, connect_ep, listening_ports.append, {
+            "listen-endpoint": ':'.join(local.split(':')[:2]),
+            "local-endpoint": ':'.join(local.split(':')[2:]),
+            })
 
     # arrange to read incoming commands from stdin
     create_stdio = config.create_stdio or StandardIO
