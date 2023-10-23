@@ -29,9 +29,15 @@ from ._proto import (
     default=PUBLIC_MAILBOX_URL,
     help="URL for the mailbox server to use",
 )
+@click.option(
+    "--debug",
+    default=None,
+    help="Output wormhole state-machine transitions to the given file",
+    type=click.File("w", encoding="utf8"),
+)
 @click.group()
 @click.pass_context
-def fowl(ctx, ip_privacy, mailbox):
+def fowl(ctx, ip_privacy, mailbox, debug):
     """
     Forward Over Wormhole
 
@@ -41,6 +47,7 @@ def fowl(ctx, ip_privacy, mailbox):
     ctx.obj = _Config(
         relay_url=mailbox,
         use_tor=bool(ip_privacy),
+        debug_file=debug,
     )
 
 

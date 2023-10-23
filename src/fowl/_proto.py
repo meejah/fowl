@@ -54,6 +54,7 @@ class _Config:
     debug_state: bool = False
     stdout: IO = sys.stdout
     create_stdio: Callable = None  # returns a StandardIO work-alike, for testing
+    debug_file: IO = None  # for state-machine transitions
 
 
 async def wormhole_from_config(config, wormhole_create=None):
@@ -95,6 +96,9 @@ async def forward(config, wormhole_coro, reactor=reactor):
     Set up a wormhole and process commands relating to forwarding.
     """
     w = await wormhole_coro
+
+    if config.debug_file:
+        w.debug_set_trace("forward", which="B N M S O K SK R RC L C T", file=config.debug_file)
 
     try:
         # if we succeed, we are done and should close
