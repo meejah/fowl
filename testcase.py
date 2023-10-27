@@ -77,7 +77,7 @@ async def main(reactor):
     reactor.spawnProcess(
         host_proto,
         sys.executable,
-        [sys.executable, "-m", "fowl", "--mailbox", "ws://localhost:4000/v1", "invite"],
+        [sys.executable, "-m", "fowl", "--mailbox", "ws://localhost:4000/v1"],
         env={"PYTHONUNBUFFERED": "1"},
     )
     msg = await host_proto.next_message("wormhole-code")
@@ -87,7 +87,7 @@ async def main(reactor):
     reactor.spawnProcess(
         host_proto,
         sys.executable,
-        [sys.executable, "-m", "fowl", "--mailbox", "ws://localhost:4000/v1", "accept", msg["code"]],
+        [sys.executable, "-m", "fowl", "--mailbox", "ws://localhost:4000/v1", msg["code"]],
         env={"PYTHONUNBUFFERED": "1"},
     )
     print("connected")

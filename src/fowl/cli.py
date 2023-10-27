@@ -19,6 +19,7 @@ from ._proto import (
 # XXX need to replicate a bunch of "wormhole *" args?
 # e.g. tor stuff, mailbox url, ..
 
+@click.command()
 @click.option(
     "--ip-privacy/--clearnet",
     default=False,
@@ -35,9 +36,14 @@ from ._proto import (
     help="Output wormhole state-machine transitions to the given file",
     type=click.File("w", encoding="utf8"),
 )
-@click.group()
+@click.option(
+    "--code-length",
+    default=2,
+    help="Length of the Wormhole code",
+)
+@click.argument("code", required=False)
 @click.pass_context
-def fowl(ctx, ip_privacy, mailbox, debug):
+def fowl(ctx, ip_privacy, mailbox, debug, code_length, code):
     """
     Forward Over Wormhole
 
@@ -48,22 +54,9 @@ def fowl(ctx, ip_privacy, mailbox, debug):
         relay_url=mailbox,
         use_tor=bool(ip_privacy),
         debug_file=debug,
+        code_length=code_length,
+        code=code
     )
-
-
-@fowl.command()
-@click.pass_context
-@click.option(
-    "--code-length",
-    default=2,
-    help="Length of the Wormhole code",
-)
-def invite(ctx, code_length):
-    """
-    Start a new forwarding session, allocating a code that can be used
-    on another computer to join a forwarding session
-    """
-    ctx.obj = evolve(ctx.obj, code_length=code_length)
     def run(reactor):
         return ensureDeferred(
             forward(
@@ -71,20 +64,6 @@ def invite(ctx, code_length):
                 wormhole_from_config(ctx.obj),  # coroutine
             )
         )
-    return react(run)
-
-
-@fowl.command()
-@click.pass_context
-@click.argument("code")
-def accept(ctx, code):
-    """
-    Join a forwarding session by consuming a wormhole code usually
-    created by 'fow invite'
-    """
-    ctx.obj = evolve(ctx.obj, code=code)
-    def run(reactor):
-        return ensureDeferred(forward(ctx.obj, wormhole_from_config(ctx.obj)))
     return react(run)
 
 

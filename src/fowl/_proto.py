@@ -850,8 +850,8 @@ async def _forward_loop(config, w):
         w.allocate_code(config.code_length)
 
     code = await w.get_code()
-    # it's kind of weird to see this on "fow accept" so only show it
-    # if we actually allocated a code
+    # it's kind of weird to see this after supplying the code earlier so only
+    # show it if we have not done that
     if not config.code:
         print(
             json.dumps({

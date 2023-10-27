@@ -17,8 +17,6 @@ from twisted.internet.endpoints import serverFromString, clientFromString
 
 
 from fowl.cli import fowl
-#from fow.cli import accept
-from fowl.cli import invite
 from fowl._proto import (
     _Config,
     wormhole_from_config,

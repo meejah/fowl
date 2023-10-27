@@ -74,9 +74,9 @@ class _FowlProtocol(ProcessProtocol):
         ]
 
 
-async def fowl(reactor, request, subcommand, *extra_args, mailbox=None, startup=True):
+async def fowl(reactor, request, *extra_args, mailbox=None, startup=True):
     """
-    Run `fowl` with a given subcommand
+    Run `fowl`
     """
 
     args = [
@@ -88,7 +88,6 @@ async def fowl(reactor, request, subcommand, *extra_args, mailbox=None, startup=
         args.extend([
             "--mailbox", mailbox,
         ])
-    args.append(subcommand)
     args.extend(extra_args)
     proto = _FowlProtocol()
     transport = await run_service(
@@ -158,13 +157,13 @@ async def test_happy_remote(reactor, request, wormhole):
     A session forwarding a single connection using the
     ``kind="remote"`` command.
     """
-    f0 = await fowl(reactor, request, "invite", mailbox=wormhole.url, startup=False)
+    f0 = await fowl(reactor, request, mailbox=wormhole.url, startup=False)
     code_msg = await f0.protocol.next_message(kind="wormhole-code")
 
     # normally the "code" is shared via human interaction
 
     f1 = await fowl(
-        reactor, request, "accept", code_msg["code"],
+        reactor, request, code_msg["code"],
         mailbox=wormhole.url, startup=False,
     )
     # open a listener of some sort
@@ -207,13 +206,13 @@ async def test_happy_local(reactor, request, wormhole):
     A session forwarding a single connection using the
     ``kind="local"`` command.
     """
-    f0 = await fowl(reactor, request, "invite", mailbox=wormhole.url, startup=False)
+    f0 = await fowl(reactor, request, mailbox=wormhole.url, startup=False)
     code_msg = await f0.protocol.next_message(kind="wormhole-code")
 
     # normally the "code" is shared via human interaction
 
     f1 = await fowl(
-        reactor, request, "accept", code_msg["code"],
+        reactor, request, code_msg["code"],
         mailbox=wormhole.url, startup=False,
     )
     # open a listener of some sort
