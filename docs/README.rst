@@ -10,6 +10,8 @@ Why?
 
 We sometimes pair-program but don't like the idea of sending keystrokes over a third-party server.
 
+For more context, see my blog posts: `Forwarding Streams over Magic Wormhole <https://meejah.ca/blog/fow-wormhole-forward>`_ and `Wizard Gardens vision <https://meejah.ca/blog/wizard-gardens-vision>`_.
+
 
 What?
 ------
