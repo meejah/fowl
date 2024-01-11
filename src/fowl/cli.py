@@ -91,6 +91,9 @@ def accept(ctx, code):
 
 @fowl.command()
 def readme():
+    """
+    Display the project README
+    """
     readme = pkg_resources.resource_string('fowl', '../../README.rst')
     # uhm, docutils documentation is confusing as all hell and no good
     # examples of "convert this rST string to anything else" .. :/ but
