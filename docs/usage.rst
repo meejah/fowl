@@ -1,11 +1,61 @@
-fowl Usage
-==========
+``fowld`` versus ``fowl``
+====================
 
-``fowl`` is a command-line tool intended to be run in a terminal session or as a subprocess by a higher-level co-ordination program (e.g. a GUI, or a WAMP client).
+This project actually ships two CLI tools: ``fowld`` and ``fowl``.
+
+One is intended for automated, programmatic use (``fowld``) and the other is intended for human use (``fowl``).
+
+Most users will only ever use ``fowl``.
+Programs that integrate with or otherwise want stable, machine-parsable output and input will use ``fowld``.
+Under the hood, ``fowl`` commands actually use ``fowld``.
+
+
+Philsophy of Commands
+-----------------------
+
+The commands that ``fowld`` accepts and the message it outputs MUST all be well-formed JSON lines.
+Generally, backwards-incompatibilities SHOULD be avoided.
+
+There should be few (ideally no) command-line options for ``fowld``.
+Programs integrating with it should expect to use any version of the software.
+
+NOTE::
+
+   Since this is still in rapid development we don't make any promises
+   about backwards compatibility yet, but will expect in future to
+   have a protocol version that will increment with any breaking
+   changes.
+
+By contrast, the ``fowl`` program accepts human-typed argument, asks questions the humans are expected to answer and produces message that humans are expected to read.
+
+Although we'll still avoid gratuitous compatilibity problems, the output SHOULD NOT be considered machine-parsable and may change from release to release.
+
+
+``fowld`` Usage
+===============
+
+``fowld`` is a command-line tool intended to be run in a terminal session or as a subprocess by a higher-level co-ordination program (e.g. a GUI, or a WAMP client, or ``fowl``).
 
 All interactions (besides CLI options) are via a line-based protocol: each line is a complete JSON object.
 
-The ``fowl repl`` subcommand provides a user-friendly version that can translate "actually human-readable" commands to and from JSON.
+Most humans should use ``fowl`` instead.
+
+See :ref:`frontend-protocol` for details on the stdin / stdout protocol that is spoken by ``fowld``.
+
+
+``fowl`` Usage
+==============
+
+``fowl`` is a friendly, human-centric frontend to start or join a forwarding session.
+You may specify streams to forward and rules to accept forwarded streams.
+
+We are cautious by default, so any incoming stream requests will result in a "y/n" style question on the command-line (unless overridden by options specifically allowing streams).
+
+Since the Dilation protocol is fairly symmetric, most options are available under ``fowl`` instead of the sub-commands ``fowl accept`` and ``fowl invite``
+
+For example, whether you started or joined a session, either side can ask the other side to start forwarding a port.
+Thus, the options for what to allow are required on both sides.
+
 
 ``fowl invite``
 ---------------
