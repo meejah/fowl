@@ -1,5 +1,6 @@
 
 import click
+import pkg_resources
 from attr import evolve
 
 from twisted.internet.task import react
@@ -88,5 +89,17 @@ def accept(ctx, code):
     return react(run)
 
 
+@fowl.command()
+def readme():
+    readme = pkg_resources.resource_string('fowl', '../../README.rst')
+    # uhm, docutils documentation is confusing as all hell and no good
+    # examples of "convert this rST string to anything else" .. :/ but
+    # we should "render" it to text
+    click.echo_via_pager(readme.decode('utf8'))
+
+
 def _entry():
+    """
+    The entry-point from setup.py
+    """
     return fowl()
