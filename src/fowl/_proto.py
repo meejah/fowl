@@ -872,6 +872,7 @@ class FowlDaemon:
             d.addErrback(self._handle_error)
 
         elif kind == "remote":
+            assert self.control_proto is not None, "Need a control proto"
             # XXX if we get this before we've dilated, just remember it?
             # asks the other side to listen, connecting back to us
             d = ensureDeferred(_remote_to_local_forward(self.control_proto, self._listening_ports.append, cmd))
@@ -941,7 +942,6 @@ class FowlDaemon:
 
     @m.output()
     def do_dilate(self):
-        print("DO_DILATE")
         self.control_ep, self.connect_ep, self.listen_ep = self._wormhole.dilate(
             transit_relay_location="tcp:magic-wormhole-transit.debian.net:4001",
         )
@@ -994,7 +994,7 @@ class FowlDaemon:
     no_code.upon(
         code_allocated,
         enter=waiting_peer,
-        outputs=[do_dilate],
+        outputs=[emit_code_allocated, do_dilate],
     )
 
     waiting_code.upon(
@@ -1078,41 +1078,6 @@ async def _remote_to_local_forward(control_proto, on_listen, cmd):
     prefix = struct.pack("!H", len(msg))
     control_proto.transport.write(prefix + msg)
     return None
-
-
-async def _process_command(reactor, w, config, control_proto, connect_ep, on_listen, cmd):
-    if "kind" not in cmd:
-        raise ValueError("no 'kind' in command")
-
-    if cmd["kind"] == "allocate":
-        if config.code is not None:
-            print(
-                json.dumps({
-                    "kind": "error",
-                    "message": "Code already allocated"
-                })
-            )
-        else:
-            w.allocate_code(config.code_length)
-            config.code = await w.get_code()
-            print(
-                json.dumps({
-                    "kind": "code-allocated",
-                    "code": config.code
-                })
-            )
-
-    elif cmd["kind"] == "local":
-        # listens locally, conencts to other side
-        return await _local_to_remote_forward(reactor, config, connect_ep, on_listen, cmd)
-
-    elif cmd["kind"] == "remote":
-        # asks the other side to listen, connecting back to us
-        return await _remote_to_local_forward(control_proto, on_listen, cmd)
-
-    raise KeyError(
-        "Unknown command '{}'".format(cmd["kind"])
-    )
 
 
 class Commands(Protocol):

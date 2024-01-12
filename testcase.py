@@ -77,24 +77,30 @@ async def main(reactor):
     reactor.spawnProcess(
         host_proto,
         sys.executable,
-        [sys.executable, "-m", "fowl", "--mailbox", "ws://localhost:4000/v1", "invite"],
+        [sys.executable, "-m", "fowl", "--mailbox", "ws://localhost:4000/v1"],
         env={"PYTHONUNBUFFERED": "1"},
     )
-    msg = await host_proto.next_message("wormhole-code")
-    print("got code")
+    host_proto.send_message({"kind": "allocate-code"})
+    msg = await host_proto.next_message("code-allocated")
+    print("got code", msg)
 
     guest_proto = _FowlProtocol()
     reactor.spawnProcess(
-        host_proto,
+        guest_proto,
         sys.executable,
-        [sys.executable, "-m", "fowl", "--mailbox", "ws://localhost:4000/v1", "accept", msg["code"]],
+        [sys.executable, "-m", "fowl", "--mailbox", "ws://localhost:4000/v1"],
         env={"PYTHONUNBUFFERED": "1"},
     )
-    print("connected")
+    x = await guest_proto.next_message("connected")
+    print("HIHI", x)
+    guest_proto.send_message({"kind": "set-code", "code": msg["code"]})
+    msg = await guest_proto.next_message("code-allocated")
+    print(msg)
+
     print(host_proto.all_messages())
     print(guest_proto.all_messages())
 
-    if False:
+    if True:
         host_proto.send_message({
             "kind": "local",
             "listen-endpoint": "tcp:8888",
