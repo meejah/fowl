@@ -96,12 +96,12 @@ Another way to view this: streaming network services can integrate the Magic Wor
 👤 Who Should Use This?
 -----------------------
 
-While it's definitely possible to use ``fowl`` "directly", the intent is that some other program -- some "glue" code -- is running ``fowl`` as a sub-process.
+We handle and expect two main use-cases of this program: integrators and end-users.
 
-The line-based JSON communication facilitates this.
+Human CLI users can use ``fowl`` itself to set up and use connections, for any purpose.
 
-This means the main users of ``fowl`` are expected to be other programmers who know how to start a long-running subprocess and communicate with it via stdin and stdout.
-
+For developers doing integration, ``fowld`` provides a simple protocol-based way for any runtime to use.
+That is, some "glue" code running ``fowld`` as a sub-process.
 This program will also co-ordinate the running of client-type or server-type networking applications that accomplish some goal useful to users. For example, "pair-programming" (for my case).
 
 Some other ideas to get you started:
@@ -114,17 +114,17 @@ Some other ideas to get you started:
 💼 Installation and Basic Usage
 -------------------------------
 
-``fowl`` is a Python program using the `Twisted <https://twisted.org>`_ asynchronous networking library.
+``fowl`` and ``fowld`` are Python programs using the `Twisted <https://twisted.org>`_ asynchronous networking library.
 
-You may install it with ``pip``::
+You may install them with ``pip``::
 
     pip install fowl
 
-Once this is done, ``fowl`` will appear on your ``PATH``.
-Run it for instructions on use.
+Once this is done, ``fowl`` and ``fowld`` will appear on your ``PATH``.
+Run either for instructions on use.
 
 In accordance with best practices, we recommend using a ``virtualenv`` to install all Python programs.
-Never use ``sudo pip``.
+**Never use ``sudo pip``**.
 To create a virtualenv in your checkout of ``fowl``, for example:
 
 .. code-block:: shell
