@@ -19,7 +19,7 @@ Generally, backwards-incompatibilities SHOULD be avoided.
 There should be few (ideally no) command-line options for ``fowld``.
 Programs integrating with it should expect to use any version of the software.
 
-NOTE::
+.. note::
 
    Since this is still in rapid development we don't make any promises
    about backwards compatibility yet, but will expect in future to
@@ -67,7 +67,7 @@ This results in one of the valid ``stdout`` messages being emitted::
 
     ``{"message": "code", "wormhole-code": "123-foo-bar"}``
 
-For all valid messages, see :ref:`messages`.
+For all valid messages, see :ref:`frontend-protocol`.
 
 This code is used by the "other end" to join this forwarding session with ``fowl accept``.
 Once that side has successfully set up, we will see a message::

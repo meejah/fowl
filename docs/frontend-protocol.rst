@@ -42,7 +42,11 @@ Keys allowed in this message:
 
 For example::
 
-    {"kind": "local", "endpoint": "tcp:8000:interface=localhost", "connect-endpoint": "tcp:localhost:80"}
+    {
+        "kind": "local",
+        "endpoint": "tcp:8000:interface=localhost",
+        "connect-endpoint": "tcp:localhost:80"
+    }
 
 In this example, we will open a listener on our machine on TCP port ``8000`` and interface ``localhost``.
 Whenever a new connection is opened on our machine, we will ask the other side to connect to port ``80`` on *their* notion of ``localhost``.
@@ -70,7 +74,11 @@ Keys allowed in this message:
 
 To directly mirror the example from the ``local`` command::
 
-    {"kind": "remote-to-local", "listen-endpoint": "tcp:8000:interface=localhost", "connect-endpoint": "tcp:localhost:80"}
+    {
+        "kind": "remote-to-local",
+        "listen-endpoint": "tcp:8000:interface=localhost",
+        "connect-endpoint": "tcp:localhost:80"
+    }
 
 This will be a mirror-image of the other example.
 That is, we'll cause the far end to start listening on its TCP port ``8000`` on interface ``localhost``.
@@ -89,7 +97,11 @@ If instead it was a ``kind: remote-to-local`` then it would appear on the far si
 
 An example message::
 
-    {"kind": "listening", "endpoint": "tcp:8080:interface=localhost", "connect-endpoint": "tcp:80"}
+    {
+        "kind": "listening",
+        "endpoint": "tcp:8080:interface=localhost",
+        "connect-endpoint": "tcp:80"
+    }
 
 Guidance for UX: the user should be made aware their machine is listening on a particular port / interface.
 
@@ -104,7 +116,10 @@ It MAY have additional fields depending on the kind of error (XXX good idea? Har
 
 An example message::
 
-    {"kind": "error", "Unknown control command: foo"}
+    {
+        "kind": "error",
+        "message": "Unknown control command: foo"
+    }
 
 Guidance for UX: most errors are probably interesting to the user.
 
