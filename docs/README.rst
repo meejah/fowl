@@ -5,8 +5,8 @@ Get TCP streams from one computer to another, safely.
 
 (The base protocol below `Magic Wormhole <https://github.com/magic-wormhole/magic-wormhole>`_ provides a powerful account-less, peer-to-peer networking solution -- ``fowl`` helps you use this power immediately with existing programs)
 
-Why?
------
+🤔 Why?
+-------
 
 We sometimes pair-program but don't like the idea of sending keystrokes over a third-party server.
 We also like avoiding the extra work of "set up a server on a public IP address".
@@ -14,8 +14,8 @@ We also like avoiding the extra work of "set up a server on a public IP address"
 For more context, see my blog posts: `Forwarding Streams over Magic Wormhole <https://meejah.ca/blog/fow-wormhole-forward>`_ and `Wizard Gardens vision <https://meejah.ca/blog/wizard-gardens-vision>`_.
 
 
-What?
------
+🦃 What?
+--------
 
 The command-line tool ``fowl`` allows you use any client/server program over `Magic Wormhole <https://github.com/magic-wormhole/magic-wormhole>`_.
 Magic Wormhole provides a *persistent*, strongly-encrypted session (end-to-end) with no need for pre-shared keys.
@@ -40,8 +40,8 @@ The communcation channel is:
 All this with *no action required at the application level*, it is just a normal localhost TCP (or UNIX) streaming socket.
 
 
-Motivational Example
---------------------
+✍️ Motivational Example
+-----------------------
 
 When pair-programming using `tty-share <https://tty-share.com/>`_ one handy option is to use the default, public server.
 However, *I don't like the idea of sending keystrokes over a third-party server* that I don't run.
@@ -56,8 +56,8 @@ Key advantage: *no need to expose keystrokes to a third-party server*.
 Additional advantage: *no need to set up a server on a public IP address*.
 
 
-Why is This Particular Yak Being Shorn?
----------------------------------------
+🐃 Why is This Particular Yak Being Shorn?
+------------------------------------------
 
 I wanted to write a pair-programming application in Haskell, but didn't want to implement Dilation in the Magic Wormhole Haskell library (maybe one day!)
 
@@ -65,11 +65,11 @@ It also occurred to me that other people might like to experiment with Magic Wor
 
 So, the first step in "write a Haskell pair-programming utility" became "write and release a Python program" :)
 
-(p.s. the next-higher level Yak is now online at `https://git.sr.ht/~meejah/pear-on`_ but not "released")
+(p.s. the next-higher level Yak is now online at `sr.ht <https://git.sr.ht/~meejah/pear-on>`_ but not "released")
 
 
-How Does It Work?
------------------
+⌨️  Hw Does It Work?
+---------------------
 
 ``fowl`` uses the "`Dilation <https://magic-wormhole.readthedocs.io/en/latest/api.html#dilation>`_" feature of the `Magic Wormhole <https://github.com/magic-wormhole/magic-wormhole>`_ protocol.
 
@@ -93,8 +93,8 @@ Another way to view this: streaming network services can integrate the Magic Wor
 (There *are* implementations in a few languages so you could take that route if you prefer).
 
 
-Who Should Use This?
---------------------
+👤 Who Should Use This?
+-----------------------
 
 While it's definitely possible to use ``fowl`` "directly", the intent is that some other program -- some "glue" code -- is running ``fowl`` as a sub-process.
 
@@ -111,8 +111,8 @@ Some other ideas to get you started:
 - ...
 
 
-Installation and Basic Usage
-----------------------------
+💼 Installation and Basic Usage
+-------------------------------
 
 ``fowl`` is a Python program using the `Twisted <https://twisted.org>`_ asynchronous networking library.
 
@@ -125,7 +125,9 @@ Run it for instructions on use.
 
 In accordance with best practices, we recommend using a ``virtualenv`` to install all Python programs.
 Never use ``sudo pip``.
-To create a virtualenv in your checkout of ``fowl``, for example::
+To create a virtualenv in your checkout of ``fowl``, for example:
+
+.. code-block:: shell
 
     python -m venv venv
     ./venv/bin/pip install --upgrade pip
@@ -134,8 +136,8 @@ To create a virtualenv in your checkout of ``fowl``, for example::
     ./venv/bin/fowl
 
 
-Hello World: Chat!
-------------------
+💬 Hello World: Chat!
+---------------------
 
 The actual "hello world" of networked applications these days is chat, amirite? 😉
 
@@ -159,8 +161,8 @@ It's not pretty, but it works fine.
 
 However, we want to talk to other machines.
 This means we need:
-- encryption;
-- a way to arrange network connectivity
+* encryption;
+* a way to arrange network connectivity
 
 These additional features are exactly what ``fowl`` gives us.
 
@@ -184,6 +186,21 @@ These result in "subchannels" (in the Magic Wormhole Dilation protocol) that can
 
 Any bytes received at either end of the connection are simply forwarded over the subchannel.
 
+Full example, computer one:
+
+.. code-block:: shell
+
+    $ nc -l localhost 8888
+    $ fowl --allow-connect 8888 invite
+    Invite code: 1-foo-bar
+
+Computer two:
+
+.. code-block:: shell
+
+    $ fowl --listen 8888 accept 1-foo-bar
+    $ telnet localhost 8888
+
 **Now we have encrypted chat**.
 
 These two programs can run **anywhere on the Internet**.
@@ -192,21 +209,21 @@ In addition, they are encrypted.
 Also the stream will survive changing networks (disconnects, new IP addresses, etc); that is, the actual inter-computer TCP connection is re-stablished, but to the applications (``nc``, ``telnet``) it looks uninterupted.
 
 
-note::
+.. note::
 
-    Note that the two public servers mentioned (the Mailbox Server and the Transit Relay) will learn the IP addresses of who is communicating.
+    The two public servers mentioned (the Mailbox Server and the Transit Relay) will learn the IP addresses of who is communicating.
     Tor is supported for users who do not wish to reveal their network location.
     **Neither server can see any plaintext** (like any other attacker, the Mailbox Server could try a single but destructive and noticable guess at the code for any mailbox).
 
 
-Other Platforms
----------------
+📦 Other Platforms
+------------------
 
 We welcome contributions from people experienced with packaging for other installation methods; please get in touch!
 
 
-Stability and Releases
-----------------------
+🚚 Stability and Releases
+-------------------------
 
 This is an early release of, essentially, a proof-of-concept.
 While we intend to make it a stable base to put co-ordination software on top, it is not yet there.
