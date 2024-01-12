@@ -2,6 +2,7 @@ from __future__ import print_function
 
 import sys
 import json
+import binascii
 from typing import IO, Callable
 
 import struct
@@ -846,7 +847,7 @@ class FowlDaemon:
         self._listening_ports = []
         self._code = None
         self._done = When()
-        self.connect_ep = self.control_proto = None
+##        self.connect_ep = self.control_proto = None
 
     def when_done(self):
         return self._done.when_triggered()
@@ -901,7 +902,7 @@ class FowlDaemon:
         """
 
     @m.state()
-    def peer_connected(self):
+    def connected(self):
         """
         Normal processing, our peer is connected
         """
@@ -913,6 +914,11 @@ class FowlDaemon:
 
     @m.input()
     def code_allocated(self):
+        """
+        """
+
+    @m.input()
+    def peer_connected(self, verifier):
         """
         """
 
@@ -941,13 +947,25 @@ class FowlDaemon:
         )
 
     @m.output()
+    def emit_peer_connected(self, verifier):
+        """
+        """
+        print(
+            json.dumps({
+                "kind": "peer-connected",
+                "verifier": binascii.hexlify(verifier).decode("utf8"),
+            })
+        )
+
+    @m.output()
     def do_dilate(self):
+##XXX wait for do_dilate + _post_dilation_setup() to run before emitting the "code-allocated" message.....it's currently not working (the control connection)
         self.control_ep, self.connect_ep, self.listen_ep = self._wormhole.dilate(
             transit_relay_location="tcp:magic-wormhole-transit.debian.net:4001",
         )
-
         d = ensureDeferred(self._post_dilation_setup())
         d.addErrback(self._handle_error)
+        d.addCallback(lambda _: self.emit_code_allocated())
 
     def _handle_error(self, f):
         print("error", f)
@@ -960,10 +978,12 @@ class FowlDaemon:
 
     async def _post_dilation_setup(self):
         # listen for commands from the other side on the control channel
+        assert self.control_ep is not None, "Need control connection"
         fac = Factory.forProtocol(Commands)
         fac.config = self._config
         fac.connect_ep = self.connect_ep  # so we can pass it command handlers
         self.control_proto = await self.control_ep.connect(fac)
+        print("do dilate", self.control_proto)
 
         # listen for incoming subchannel OPENs
         in_factory = Factory.forProtocol(Incoming)
@@ -973,6 +993,8 @@ class FowlDaemon:
 
         await self._wormhole.get_unverified_key()
         verifier_bytes = await self._wormhole.get_verifier()  # might WrongPasswordError
+
+        self.peer_connected(verifier_bytes)
 
         def cancelled(x):
             d = listen_port.stopListening()
@@ -994,13 +1016,19 @@ class FowlDaemon:
     no_code.upon(
         code_allocated,
         enter=waiting_peer,
-        outputs=[emit_code_allocated, do_dilate],
+        outputs=[do_dilate, emit_code_allocated],
     )
 
     waiting_code.upon(
         code_allocated,
         enter=waiting_peer,
-        outputs=[emit_code_allocated, do_dilate],
+        outputs=[do_dilate, emit_code_allocated],
+    )
+
+    waiting_peer.upon(
+        peer_connected,
+        enter=connected,
+        outputs=[emit_peer_connected],
     )
 
 

@@ -100,17 +100,18 @@ async def main(reactor):
     print(host_proto.all_messages())
     print(guest_proto.all_messages())
 
-    if True:
+    if False:
         host_proto.send_message({
             "kind": "local",
             "listen-endpoint": "tcp:8888",
             "local-endpoint": "tcp:localhost:1111"
         })
     else:
+# XXX this one doesn't work; no control connection??
         host_proto.send_message({
             "kind": "remote",
-            "remote-endpoint": "tcp:8888",
-            "local-endpoint": "tcp:localhost:1111"
+            "listen-endpoint": "tcp:8888",
+            "connect-endpoint": "tcp:localhost:1111"
         })
     m = await host_proto.next_message("listening")
     print("got it", m)
