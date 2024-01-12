@@ -40,8 +40,8 @@ The communcation channel is:
 All this with *no action required at the application level*, it is just a normal localhost TCP (or UNIX) streaming socket.
 
 
-✍️ Motivational Example
------------------------
+✍ Motivational Example
+----------------------
 
 When pair-programming using `tty-share <https://tty-share.com/>`_ one handy option is to use the default, public server.
 However, *I don't like the idea of sending keystrokes over a third-party server* that I don't run.
@@ -68,8 +68,8 @@ So, the first step in "write a Haskell pair-programming utility" became "write a
 (p.s. the next-higher level Yak is now online at `sr.ht <https://git.sr.ht/~meejah/pear-on>`_ but not "released")
 
 
-⌨️  Hw Does It Work?
----------------------
+⌨ How Does It Work?
+-------------------
 
 ``fowl`` uses the "`Dilation <https://magic-wormhole.readthedocs.io/en/latest/api.html#dilation>`_" feature of the `Magic Wormhole <https://github.com/magic-wormhole/magic-wormhole>`_ protocol.
 

@@ -40,7 +40,9 @@ Keys allowed in this message:
 - ``endpoint`` (required): a Twisted server-style endpoint string specifying where to listen locally
 - ``connect-endpoint`` (required): a Twisted client-style endpoint string specifying what connection to open on the other end
 
-For example::
+For example:
+
+.. code-block:: json
 
     {
         "kind": "local",
@@ -72,7 +74,9 @@ Keys allowed in this message:
 - ``listen-endpoint`` (required): a Twisted server-style endpoint string specifying where to listen (on the other end).
 - ``connect-endpoint`` (required): a Twisted client-style endpoint string specifying what to connect to (on this side) for each connection that happens on the other side.
 
-To directly mirror the example from the ``local`` command::
+To directly mirror the example from the ``local`` command:
+
+.. code-block:: json
 
     {
         "kind": "remote-to-local",
@@ -95,7 +99,9 @@ This message is issued by ``fowld`` when it has opened a listening socket on tha
 So, if a ``kind: local`` had initiated the listening, this message would appear on that same side.
 If instead it was a ``kind: remote-to-local`` then it would appear on the far side.
 
-An example message::
+An example message:
+
+.. code-block:: json
 
     {
         "kind": "listening",
@@ -114,7 +120,9 @@ Some sort of error has happened.
 This message MUST have a ``message`` key containing a freeform error message.
 It MAY have additional fields depending on the kind of error (XXX good idea? Hard to produce strict parser...)
 
-An example message::
+An example message:
+
+.. code-block:: json
 
     {
         "kind": "error",

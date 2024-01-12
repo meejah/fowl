@@ -22,6 +22,8 @@ from twisted.python.failure import Failure
 from zope.interface import directlyProvides
 from wormhole.cli.public_relay import RENDEZVOUS_RELAY as default_mailbox_url
 
+from .observer import When
+
 
 
 APPID = u"meejah.ca/wormhole/forward"
@@ -91,6 +93,16 @@ async def wormhole_from_config(config, wormhole_create=None):
     return w
 
 
+async def frontend_invite(config, wormhole_coro):
+    w = await wormhole_coro
+    print(w)
+
+
+async def frontend_accept(config, wormhole_coro):
+    w = await wormhole_coro
+    print(w)
+
+
 async def forward(config, wormhole_coro, reactor=reactor):
     """
     Set up a wormhole and process commands relating to forwarding.
@@ -102,7 +114,7 @@ async def forward(config, wormhole_coro, reactor=reactor):
 
     try:
         # if we succeed, we are done and should close
-        await _forward_loop(config, w)
+        await _forward_loop(reactor, config, w)
         await w.close()  # waits for ack
 
     except Exception:
@@ -823,7 +835,176 @@ class Incoming(Protocol):
         self.got_bytes(data)
 
 
-async def _forward_loop(config, w):
+## refactoring _forward_loop etc
+class FowlDaemon:
+    m = automat.MethodicalMachine()
+
+    def __init__(self, reactor, config, wormhole):
+        self._reactor = reactor
+        self._config = config
+        self._wormhole = wormhole
+        self._listening_ports = []
+        self._code = None
+        self._done = When()
+        self.connect_ep = self.control_proto = None
+
+    def when_done(self):
+        return self._done.when_triggered()
+
+    def handle_command(self, cmd):
+        try:
+            kind = cmd["kind"]
+        except KeyError:
+            self._handle_error(
+                Failure(ValueError("No 'kind' in command"))
+            )
+        if kind == "allocate-code":
+            length = cmd.get("length", self._config.code_length)
+            self.allocate_code(length)
+
+        elif kind == "set-code":
+            self.set_code(cmd["code"])
+
+        elif kind == "local":
+            # XXX if we get this before we've dilated, just remember it?
+            # listens locally, conencts to other side
+            d = ensureDeferred(_local_to_remote_forward(self._reactor, self._config, self.connect_ep, self._listening_ports.append, cmd))
+            d.addErrback(self._handle_error)
+
+        elif kind == "remote":
+            # XXX if we get this before we've dilated, just remember it?
+            # asks the other side to listen, connecting back to us
+            d = ensureDeferred(_remote_to_local_forward(self.control_proto, self._listening_ports.append, cmd))
+            d.addErrback(self._handle_error)
+
+        else:
+            raise KeyError(
+                "Unknown command '{}'".format(cmd["kind"])
+            )
+
+    @m.state(initial=True)
+    def no_code(self):
+        """
+        Connected, but haven't allocated code
+        """
+
+    @m.state()
+    def waiting_code(self):
+        """
+        """
+
+    @m.state()
+    def waiting_peer(self):
+        """
+        Do not yet have a peer
+        """
+
+    @m.state()
+    def peer_connected(self):
+        """
+        Normal processing, our peer is connected
+        """
+
+    @m.input()
+    def allocate_code(self, code_length):
+        """
+        """
+
+    @m.input()
+    def code_allocated(self):
+        """
+        """
+
+    def _got_code(self, code):
+        self._code = code
+        self.code_allocated()
+
+    def set_code(self, code):
+        self._code = code
+        self._wormhole.set_code(code)
+        self.code_allocated()
+
+    @m.output()
+    def begin_allocate(self, code_length):
+        self._wormhole.allocate_code(code_length)
+        d = self._wormhole.get_code()
+        d.addCallbacks(self._got_code, self._handle_error)
+
+    @m.output()
+    def emit_code_allocated(self):
+        print(
+            json.dumps({
+                "kind": "code-allocated",
+                "code": self._code
+            })
+        )
+
+    @m.output()
+    def do_dilate(self):
+        print("DO_DILATE")
+        self.control_ep, self.connect_ep, self.listen_ep = self._wormhole.dilate(
+            transit_relay_location="tcp:magic-wormhole-transit.debian.net:4001",
+        )
+
+        d = ensureDeferred(self._post_dilation_setup())
+        d.addErrback(self._handle_error)
+
+    def _handle_error(self, f):
+        print("error", f)
+        print(
+            json.dumps({
+                "kind": "error",
+                "message": f.getErrorMessage(),
+            })
+        )
+
+    async def _post_dilation_setup(self):
+        # listen for commands from the other side on the control channel
+        fac = Factory.forProtocol(Commands)
+        fac.config = self._config
+        fac.connect_ep = self.connect_ep  # so we can pass it command handlers
+        self.control_proto = await self.control_ep.connect(fac)
+
+        # listen for incoming subchannel OPENs
+        in_factory = Factory.forProtocol(Incoming)
+        in_factory.config = self._config
+        in_factory.connect_ep = self.connect_ep
+        listen_port = await self.listen_ep.listen(in_factory)
+
+        await self._wormhole.get_unverified_key()
+        verifier_bytes = await self._wormhole.get_verifier()  # might WrongPasswordError
+
+        def cancelled(x):
+            d = listen_port.stopListening()
+            for port in self._listening_ports:
+                d = port.stopListening()
+            control_proto.transport.loseConnection()
+
+        try:
+            await Deferred(canceller=cancelled)
+        except CancelledError:
+            pass
+
+
+    no_code.upon(
+        allocate_code,
+        enter=waiting_code,
+        outputs=[begin_allocate],
+    )
+    no_code.upon(
+        code_allocated,
+        enter=waiting_peer,
+        outputs=[do_dilate],
+    )
+
+    waiting_code.upon(
+        code_allocated,
+        enter=waiting_peer,
+        outputs=[emit_code_allocated, do_dilate],
+    )
+
+
+async def _forward_loop(reactor, config, w):
     """
     Run the main loop of the forward:
        - perform setup (version stuff etc)
@@ -844,59 +1025,18 @@ async def _forward_loop(config, w):
         flush=True,
     )
 
-    if config.code:
-        w.set_code(config.code)
-    else:
-        w.allocate_code(config.code_length)
-
-    code = await w.get_code()
-    # it's kind of weird to see this on "fow accept" so only show it
-    # if we actually allocated a code
-    if not config.code:
-        print(
-            json.dumps({
-                "kind": "wormhole-code",
-                "code": code,
-            }),
-            file=config.stdout,
-            flush=True,
-        )
-
-    control_ep, connect_ep, listen_ep = w.dilate(
-        transit_relay_location="tcp:magic-wormhole-transit.debian.net:4001",
-    )
-
-    # listen for commands from the other side on the control channel
-    fac = Factory.forProtocol(Commands)
-    fac.config = config
-    fac.connect_ep = connect_ep  # so we can pass it command handlers
-    control_proto = await control_ep.connect(fac)
-
-    # listen for incoming subchannel OPENs
-    in_factory = Factory.forProtocol(Incoming)
-    in_factory.config = config
-    in_factory.connect_ep = connect_ep
-    listen_port = await listen_ep.listen(in_factory)
-
-    await w.get_unverified_key()
-    verifier_bytes = await w.get_verifier()  # might WrongPasswordError
-
-    listening_ports = []
-
+    sm = FowlDaemon(reactor, config, w)
     # arrange to read incoming commands from stdin
     create_stdio = config.create_stdio or StandardIO
-    x = create_stdio(LocalCommandDispatch(reactor, config, control_proto, connect_ep, listening_ports.append))
+    dispatch = LocalCommandDispatch(config, sm)
+    create_stdio(dispatch)
 
-    def cancelled(x):
-        d = listen_port.stopListening()
-        for port in listening_ports:
-            d = port.stopListening()
-        control_proto.transport.loseConnection()
+    # if config.code:
+    #     sm.set_code(config.code)
+    # else:
+    #     sm.allocate_code(config.code_length)
 
-    try:
-        await Deferred(canceller=cancelled)
-    except CancelledError:
-        pass
+    await sm.when_done()
 
 
 async def _local_to_remote_forward(reactor, config, connect_ep, on_listen, cmd):
@@ -940,13 +1080,32 @@ async def _remote_to_local_forward(control_proto, on_listen, cmd):
     return None
 
 
-async def _process_command(reactor, config, control_proto, connect_ep, on_listen, cmd):
+async def _process_command(reactor, w, config, control_proto, connect_ep, on_listen, cmd):
     if "kind" not in cmd:
         raise ValueError("no 'kind' in command")
 
-    if cmd["kind"] == "local":
+    if cmd["kind"] == "allocate":
+        if config.code is not None:
+            print(
+                json.dumps({
+                    "kind": "error",
+                    "message": "Code already allocated"
+                })
+            )
+        else:
+            w.allocate_code(config.code_length)
+            config.code = await w.get_code()
+            print(
+                json.dumps({
+                    "kind": "code-allocated",
+                    "code": config.code
+                })
+            )
+
+    elif cmd["kind"] == "local":
         # listens locally, conencts to other side
         return await _local_to_remote_forward(reactor, config, connect_ep, on_listen, cmd)
+
     elif cmd["kind"] == "remote":
         # asks the other side to listen, connecting back to us
         return await _remote_to_local_forward(control_proto, on_listen, cmd)
@@ -1017,15 +1176,14 @@ class LocalCommandDispatch(LineReceiver):
     """
     delimiter = b"\n"
 
-    def __init__(self, reactor, cfg, control_proto, connect_ep, on_listen):
+    def __init__(self, cfg, daemon):
         super(LocalCommandDispatch, self).__init__()
         self.config = cfg
-        self._reactor = reactor
-        self._control_proto = control_proto
-        self._connect_ep = connect_ep
-        self._on_listen = on_listen
+        self.daemon = daemon
 
     def connectionMade(self):
+        # XXX is this premature? _have_ we actually connected to the
+        # Mailbox server? (I think "yes")
         print(
             json.dumps({
                 "kind": "connected",
@@ -1042,14 +1200,9 @@ class LocalCommandDispatch(LineReceiver):
         # answer, we need to do them in order)
         try:
             cmd = json.loads(line)
-            d = ensureDeferred(
-                _process_command(self._reactor, self.config, self._control_proto, self._connect_ep, self._on_listen, cmd)
-            )
-            def err(f):
-                print("ERR: {}".format(f))
-            d.addErrback(err)
-            return d
+            self.daemon.handle_command(cmd)
         except Exception as e:
+            print("BAD", repr(e))
             print(f"{line.strip()}: failed: {e}")
 
 

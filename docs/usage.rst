@@ -63,16 +63,15 @@ Thus, the options for what to allow are required on both sides.
 One side has to begin first, and this side runs ``fowl invite``.
 This uses the Magic Wormhole protocol to allocate a short, one-time code.
 
-This results in one of the valid ``stdout`` messages being emitted::
-
-    ``{"message": "code", "wormhole-code": "123-foo-bar"}``
-
-For all valid messages, see :ref:`frontend-protocol`.
 
 This code is used by the "other end" to join this forwarding session with ``fowl accept``.
-Once that side has successfully set up, we will see a message::
+Once that side has successfully set up, we will see a message:
 
-    ``{"message": "connected"}``
+.. code-block:: json
+
+    {
+        "message": "connected"
+    }
 
 After this, we reach the more "symmetric" state of the session: although under the hood one side is randomly "the Follower" and one side is "the Leader" in the Dilation session, at our level either side can request forwards from the other.
 

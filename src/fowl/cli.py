@@ -14,6 +14,8 @@ from ._proto import (
     _Config,
     wormhole_from_config,
     forward,
+    frontend_invite,
+    frontend_accept,
 )
 
 
@@ -36,11 +38,51 @@ from ._proto import (
     help="Output wormhole state-machine transitions to the given file",
     type=click.File("w", encoding="utf8"),
 )
+@click.command()
+@click.pass_context
+def fowld(ctx, ip_privacy, mailbox, debug):
+    """
+    Forward Over Wormhole Daemon
+
+    Low-level daemon to set up and forward streams over Dilated magic
+    wormhole connections
+    """
+    ctx.obj = _Config(
+        relay_url=mailbox,
+        use_tor=bool(ip_privacy),
+        debug_file=debug,
+    )
+    def run(reactor):
+        return ensureDeferred(
+            forward(
+                ctx.obj,
+                wormhole_from_config(ctx.obj),  # coroutine
+            )
+        )
+    return react(run)
+
+
+@click.option(
+    "--ip-privacy/--clearnet",
+    default=False,
+    help="Enable operation over Tor (default is public Internet)",
+)
+@click.option(
+    "--mailbox",
+    default=PUBLIC_MAILBOX_URL,
+    help="URL for the mailbox server to use",
+)
+@click.option(
+    "--debug",
+    default=None,
+    help="Output wormhole state-machine transitions to the given file",
+    type=click.File("w", encoding="utf8"),
+)
 @click.group()
 @click.pass_context
 def fowl(ctx, ip_privacy, mailbox, debug):
     """
-    Forward Over Wormhole
+    Forward Over Wormhole, Locally
 
     Bi-directional streaming data over secure and durable Dilated
     magic-wormhole connections.
@@ -67,7 +109,7 @@ def invite(ctx, code_length):
     ctx.obj = evolve(ctx.obj, code_length=code_length)
     def run(reactor):
         return ensureDeferred(
-            forward(
+            frontend_invite(
                 ctx.obj,
                 wormhole_from_config(ctx.obj),  # coroutine
             )
@@ -85,7 +127,7 @@ def accept(ctx, code):
     """
     ctx.obj = evolve(ctx.obj, code=code)
     def run(reactor):
-        return ensureDeferred(forward(ctx.obj, wormhole_from_config(ctx.obj)))
+        return ensureDeferred(frontend_accept(ctx.obj, wormhole_from_config(ctx.obj)))
     return react(run)
 
 
@@ -101,8 +143,15 @@ def readme():
     click.echo_via_pager(readme.decode('utf8'))
 
 
-def _entry():
+def _entry_fowl():
     """
     The entry-point from setup.py
     """
     return fowl()
+
+
+def _entry_fowld():
+    """
+    The entry-point from setup.py
+    """
+    return fowld()

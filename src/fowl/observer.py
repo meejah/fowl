@@ -41,6 +41,41 @@ class Next:
 
 
 @define
+class When:
+    """
+    An observerable event that can by async-ly listened for and
+    triggers exactly once.
+
+    Used for implementing the a ``when_thing()`` style of method.
+    """
+
+    _awaiters: list = Factory(list)
+    _result: object = None
+
+    def when_triggered(self):
+        """
+        :return Awaitable: a new Deferred that fires when this observable
+            triggered. This maybe be 'right now' if we already have a result
+        """
+        if self._result is not None:
+            d = succeed(self._result)
+        else:
+            d = Deferred()
+            self._awaiters.append(d)
+        return d
+
+    def trigger(self, reactor, result):
+        """
+        Triggers all current observers and resets them to the empty list.
+        """
+        assert _result is None, "Can only trigger it once"
+        listeners, self._awaiters = self._awaiters, []
+        self._result = result
+        for d in listeners:
+            reactor.callLater(0, d.callback, result)
+
+
+@define
 class Accumulate:
     """
     An observerable event that can by async-ly listened for and

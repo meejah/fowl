@@ -52,7 +52,8 @@ dev = [
 ]
 
 [project.scripts]
-fowl = "fowl.cli:_entry"
+fowl = "fowl.cli:_entry_fowl"
+fowld = "fowl.cli:_entry_fowld"
 
 [tool.hatch.version]
 path = "src/fowl/__init__.py"
