@@ -6,8 +6,8 @@
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
-project = 'fow'
-copyright = '2023, meejah'
+project = 'fowl'
+copyright = '2023-2024, meejah'
 author = 'meejah'
 
 # -- General configuration ---------------------------------------------------

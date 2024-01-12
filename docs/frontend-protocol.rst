@@ -17,7 +17,7 @@ Since ``fowl`` itself uses ``fowld`` under the hood, this project has examples o
 We now go over the keys that particular messages have.
 
 The ``"kind"`` Key
-----------------
+--------------------
 
 Every single message MUST have a ``"kind"`` key.
 This tells the parser what sort of message it is (and hence what other keys may be present).
@@ -31,7 +31,7 @@ An "output" message is one that ``fowld`` may produce on stdout.
 
 
 Input: ``kind: local``
-------------------
+----------------------
 
 This message asks ``fowld`` to start listening on a local port -- any subsequent connections on this local port cause the *remote* side to open a corresponding connection (possibly on a different port or protocol).
 
@@ -58,7 +58,7 @@ Once the listener is established, we'll issue a ``kind: listening`` output.
 
 
 Input: ``kind: remote-to-local``
---------------------
+--------------------------------
 
 This will cause ``fowld`` to request a listener on the *other* side.
 There is symmetry here: the same thing could be accomplished by that other side instead issuing a ``kind: local`` request.
@@ -80,7 +80,7 @@ The far-side ``fowld`` will issue a ``kind: listening`` message when it has star
 
 
 Output: ``kind: listening``
------------------------
+-----------------------------
 
 This message is issued by ``fowld`` when it has opened a listening socket on that side.
 
@@ -95,7 +95,7 @@ Guidance for UX: the user should be made aware their machine is listening on a p
 
 
 Output: ``kind: error``
---------------------
+--------------------------
 
 Some sort of error has happened.
 
@@ -110,7 +110,7 @@ Guidance for UX: most errors are probably interesting to the user.
 
 
 Output: ``kind: connected``
--------------------------
+-----------------------------
 
 The ``fowld`` process has successfully connected to the Mailbox Server.
 No other keys are present.
@@ -119,7 +119,7 @@ Guidance for UX: the user should be informed that progress has been made (e.g. t
 
 
 Output: ``kind: forward-bytes``
-----------------------------
+--------------------------------
 
 The ``fowld`` process has forwarded some bytes successfully.
 
@@ -134,7 +134,7 @@ XXX probably want to distinguish direction (hacked in as ``hello: foo`` on one o
 
 
 Output: ``kind: local-connection``
-------------------------------
+----------------------------------
 
 We have received a connection on one of our local listeners.
 
@@ -146,7 +146,7 @@ Guidance for UX: the user should be informed that something is interacting with 
 
 
 Output: ``kind: connect-local``
----------------------------
+-------------------------------
 
 The other side has asked us to make a local connection.
 
