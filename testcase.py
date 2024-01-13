@@ -97,8 +97,8 @@ async def main(reactor):
     msg = await guest_proto.next_message("code-allocated")
     print(msg)
 
-    print(host_proto.all_messages())
-    print(guest_proto.all_messages())
+    await host_proto.next_message("peer-connected")
+    await guest_proto.next_message("peer-connected")
 
     if False:
         host_proto.send_message({
@@ -106,14 +106,16 @@ async def main(reactor):
             "listen-endpoint": "tcp:8888",
             "local-endpoint": "tcp:localhost:1111"
         })
+        m = await host_proto.next_message("listening")
     else:
 # XXX this one doesn't work; no control connection??
         host_proto.send_message({
             "kind": "remote",
-            "listen-endpoint": "tcp:8888",
-            "connect-endpoint": "tcp:localhost:1111"
+            ##"listen-endpoint": "tcp:8888",
+            "remote-endpoint": "tcp:8888",
+            "local-endpoint": "tcp:localhost:1111"
         })
-    m = await host_proto.next_message("listening")
+        m = await guest_proto.next_message("listening")
     print("got it", m)
 
 

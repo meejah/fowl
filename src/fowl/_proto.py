@@ -512,6 +512,13 @@ class LocalServer(Protocol):
         # XXX FIXME if len(data) >= 65535 must split "because noise"
         # -- handle in Dilation code?
 
+        print(
+            json.dumps({
+                "kind": "incoming-bytes",
+                "id": self._conn_id,
+                "bytes": len(data),
+            })
+        )
         max_noise = 65000
         while len(data):
             d = data[:max_noise]
@@ -656,7 +663,6 @@ class Incoming(Protocol):
             d = data[:max_noise]
             data = data[max_noise:]
             self._local_connection.transport.write(d)
-
 
     @m.output()
     def find_message(self, data):
@@ -867,6 +873,7 @@ class FowlDaemon:
             self.set_code(cmd["code"])
 
         elif kind == "local":
+            assert self.connect_ep is not None, "need connect ep"
             # XXX if we get this before we've dilated, just remember it?
             # listens locally, conencts to other side
             d = ensureDeferred(_local_to_remote_forward(self._reactor, self._config, self.connect_ep, self._listening_ports.append, cmd))
