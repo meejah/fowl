@@ -168,7 +168,7 @@ async def main(reactor):
     who = True
     for size in range(2**6, 2**18, 2**10):
         print("TEST", size, who)
-        client = clientFromString(reactor, "tcp:localhost:1111")
+        client = clientFromString(reactor, "tcp:localhost:8888")
         client_proto = await client.connect(Factory.forProtocol(Client))
         server = await listener.next_client()
 
@@ -181,3 +181,9 @@ async def main(reactor):
             msg = await client_proto.next_message(len(data))
         who = not who
         assert msg == data, "Incorrect data transfer"
+
+    print(host_proto.all_messages())
+    print(guest_proto.all_messages())
+
+    guest_proto.transport.signalProcess('TERM')
+    host_proto.transport.signalProcess('TERM')
