@@ -92,15 +92,17 @@ async def main(reactor):
         env={"PYTHONUNBUFFERED": "1"},
     )
     x = await guest_proto.next_message("connected")
-    print("HIHI", x)
     guest_proto.send_message({"kind": "set-code", "code": msg["code"]})
     msg = await guest_proto.next_message("code-allocated")
     print(msg)
 
+    print("waiting for peers")
     await host_proto.next_message("peer-connected")
+    print("one peer")
     await guest_proto.next_message("peer-connected")
+    print("two peers")
 
-    if False:
+    if 'remote' in sys.argv:
         host_proto.send_message({
             "kind": "local",
             "listen-endpoint": "tcp:8888",
@@ -108,7 +110,7 @@ async def main(reactor):
         })
         m = await host_proto.next_message("listening")
     else:
-# XXX this one doesn't work; no control connection??
+        print("local forward")
         host_proto.send_message({
             "kind": "remote",
             ##"listen-endpoint": "tcp:8888",

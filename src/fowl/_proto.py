@@ -275,7 +275,7 @@ class ForwardConnecter(Protocol):
             data = data[max_noise:]
             print(
                 json.dumps({
-                    "kind": "forward-bytes",
+                    "kind": "bytes-out",
                     "id": self.factory.conn_id,
                     "bytes": len(d),
                 }),
@@ -343,7 +343,7 @@ class ForwardConnecter(Protocol):
 
     def connectionMade(self):
         self._buffer = b""
-        self.do_trace(lambda o, i, n: print("{} --[ {} ]--> {}".format(o, i, n)))
+        ##self.do_trace(lambda o, i, n: print("{} --[ {} ]--> {}".format(o, i, n)))
 
     def dataReceived(self, data):
         self.got_bytes(data)
@@ -399,10 +399,9 @@ class ConnectionForward(Protocol):
             data = data[max_noise:]
             print(
                 json.dumps({
-                    "kind": "forward-bytes",
+                    "kind": "bytes-out",
                     "id": self.factory.conn_id,
                     "bytes": len(d),
-                    "hello": "foo",
                 }),
                 file=self.factory.config.stdout,
                 flush=True,
@@ -514,7 +513,7 @@ class LocalServer(Protocol):
 
         print(
             json.dumps({
-                "kind": "incoming-bytes",
+                "kind": "bytes-in",
                 "id": self._conn_id,
                 "bytes": len(data),
             })
@@ -648,10 +647,9 @@ class Incoming(Protocol):
         assert self._local_connection is not None, "expected local connection by now"
         print(
             json.dumps({
-                "kind": "forward-bytes",
+                "kind": "bytes-out",
                 "id": self._conn_id,
                 "bytes": len(data),
-                "zinga": "foo",
             }),
             file=self.factory.config.stdout,
             flush=True,
@@ -853,12 +851,32 @@ class FowlDaemon:
         self._listening_ports = []
         self._code = None
         self._done = When()
-##        self.connect_ep = self.control_proto = None
+        self._connected = When()
+        self._command_queue = []
+        self._running_command = None  # Deferred if we're running a command now
+        self.connect_ep = self.control_proto = None
 
     def when_done(self):
         return self._done.when_triggered()
 
+    def when_connected(self):
+        return self._connected.when_triggered()
+
     def handle_command(self, cmd):
+        self._command_queue.append(cmd)
+        self._maybe_run_command()
+
+    def _maybe_run_command(self):
+        if not self._command_queue:
+            return
+        if self._running_command is not None:
+            self._running_command.addBoth(lambda _: self._maybe_run_command())
+        if not self._command_queue:
+            return
+        cmd = self._command_queue.pop(0)
+        self._running_command = ensureDeferred(self._run_command(cmd))
+
+    async def _run_command(self, cmd):
         try:
             kind = cmd["kind"]
         except KeyError:
@@ -873,18 +891,22 @@ class FowlDaemon:
             self.set_code(cmd["code"])
 
         elif kind == "local":
+            await self.when_connected()
             assert self.connect_ep is not None, "need connect ep"
             # XXX if we get this before we've dilated, just remember it?
             # listens locally, conencts to other side
-            d = ensureDeferred(_local_to_remote_forward(self._reactor, self._config, self.connect_ep, self._listening_ports.append, cmd))
-            d.addErrback(self._handle_error)
+            await _local_to_remote_forward(self._reactor, self._config, self.connect_ep, self._listening_ports.append, cmd)
 
         elif kind == "remote":
+            print("remote commdn")
+            await self.when_connected()
             assert self.control_proto is not None, "Need a control proto"
             # XXX if we get this before we've dilated, just remember it?
             # asks the other side to listen, connecting back to us
-            d = ensureDeferred(_remote_to_local_forward(self.control_proto, self._listening_ports.append, cmd))
-            d.addErrback(self._handle_error)
+            try:
+                await _remote_to_local_forward(self.control_proto, self._listening_ports.append, cmd)
+            except Exception as e:
+                self._report_error(e)
 
         else:
             raise KeyError(
@@ -950,7 +972,9 @@ class FowlDaemon:
             json.dumps({
                 "kind": "code-allocated",
                 "code": self._code
-            })
+            }),
+            file=self._config.stdout,
+            flush=True,
         )
 
     @m.output()
@@ -961,7 +985,9 @@ class FowlDaemon:
             json.dumps({
                 "kind": "peer-connected",
                 "verifier": binascii.hexlify(verifier).decode("utf8"),
-            })
+            }),
+            file=self._config.stdout,
+            flush=True,
         )
 
     @m.output()
@@ -975,12 +1001,16 @@ class FowlDaemon:
         d.addCallback(lambda _: self.emit_code_allocated())
 
     def _handle_error(self, f):
-        print("error", f)
+        self._report_error(f.error)
+
+    def _report_Error(self, e):
         print(
             json.dumps({
                 "kind": "error",
-                "message": f.getErrorMessage(),
-            })
+                "message": str(e),
+            }),
+            file=self._config.stdout,
+            flush=True,
         )
 
     async def _post_dilation_setup(self):
@@ -1001,6 +1031,12 @@ class FowlDaemon:
         await self._wormhole.get_unverified_key()
         verifier_bytes = await self._wormhole.get_verifier()  # might WrongPasswordError
 
+        print("TRIGGER")
+        try:
+            self._connected.trigger(self._reactor, None)
+        except Exception as e:
+            print("ASDF",e)
+        print("DONE")
         self.peer_connected(verifier_bytes)
 
         def cancelled(x):
@@ -1013,7 +1049,6 @@ class FowlDaemon:
             await Deferred(canceller=cancelled)
         except CancelledError:
             pass
-
 
     no_code.upon(
         allocate_code,
@@ -1200,10 +1235,12 @@ class LocalCommandDispatch(LineReceiver):
         # answer, we need to do them in order)
         try:
             cmd = json.loads(line)
+            print("doing command: ", cmd)
             self.daemon.handle_command(cmd)
         except Exception as e:
             print("BAD", repr(e))
             print(f"{line.strip()}: failed: {e}")
+            raise
 
 
 async def get_tor(

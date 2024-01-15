@@ -2,6 +2,9 @@ from attr import define, Factory
 from twisted.internet.defer import Deferred, succeed
 
 
+_UNSET = object()
+
+
 @define
 class Next:
     """
@@ -12,7 +15,7 @@ class Next:
     """
 
     _awaiters: list = Factory(list)
-    _unheard_result: object = None
+    _unheard_result: object = _UNSET
 
     def next_item(self):
         """
@@ -20,7 +23,7 @@ class Next:
             triggered. This will always be 'in the future' even if we've
             triggered more than zero times already.
         """
-        if self._unheard_result is not None:
+        if self._unheard_result is not _UNSET:
             d = succeed(self._unheard_result)
             self._unheard_result = None
         else:
@@ -50,14 +53,14 @@ class When:
     """
 
     _awaiters: list = Factory(list)
-    _result: object = None
+    _result: object = _UNSET
 
     def when_triggered(self):
         """
         :return Awaitable: a new Deferred that fires when this observable
             triggered. This maybe be 'right now' if we already have a result
         """
-        if self._result is not None:
+        if self._result is not _UNSET:
             d = succeed(self._result)
         else:
             d = Deferred()
@@ -68,7 +71,7 @@ class When:
         """
         Triggers all current observers and resets them to the empty list.
         """
-        assert _result is None, "Can only trigger it once"
+        assert self._result is _UNSET, "Can only trigger it once"
         listeners, self._awaiters = self._awaiters, []
         self._result = result
         for d in listeners:

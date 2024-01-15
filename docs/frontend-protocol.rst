@@ -16,6 +16,19 @@ Since ``fowl`` itself uses ``fowld`` under the hood, this project has examples o
 
 We now go over the keys that particular messages have.
 
+.. WARNING::
+
+    XXX Do we want a request-id for "things controllers send" (and then we can reference this request-id when answering the request).
+    - pro: more explicit
+    - pro: multiple outstanding requests
+    - con: more complex
+
+    If we _do_ have request-ids, the controller can "load up" forward requests and then when (if?) we finally connect to a peer, they can be honoured.
+    (Other way around: controller would get an error right away because "we can't do that now" or whatever)
+
+
+
+
 The ``"kind"`` Key
 --------------------
 
@@ -63,7 +76,7 @@ With `txtorcon <https://meejah.ca/projects/txtorcon>`_ one could have ``onion:..
 Once the listener is established, we'll issue a ``kind: listening`` output.
 
 
-Input: ``kind: remote-to-local``
+Input: ``kind: remote``
 --------------------------------
 
 This will cause ``fowld`` to request a listener on the *other* side.
@@ -79,7 +92,7 @@ To directly mirror the example from the ``local`` command:
 .. code-block:: json
 
     {
-        "kind": "remote-to-local",
+        "kind": "remote",
         "listen-endpoint": "tcp:8000:interface=localhost",
         "connect-endpoint": "tcp:localhost:80"
     }

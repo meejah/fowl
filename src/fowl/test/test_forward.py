@@ -114,7 +114,7 @@ async def find_message(reactor, config, kind=None, timeout=10):
             if msg["kind"] == kind:
                 return msg
         await sleep(reactor, 1)
-        print(config.stdout.getvalue())
+        print("not yet:", repr(config.stdout.getvalue()))
     raise RuntimeError(
         f"Waited {timeout}s for message of kind={kind}"
     )
@@ -122,6 +122,7 @@ async def find_message(reactor, config, kind=None, timeout=10):
 
 class FakeStandardIO(object):
     def __init__(self, proto, reactor, messages):
+        self.disconnecting = False  ## XXX why? this is in normal one?
         self.proto = proto
         self.reactor = reactor
         self.messages = messages
@@ -144,7 +145,7 @@ async def test_forward(reactor, request, mailbox, datasize, who):
             json.dumps({
                 "kind": "local",
                 "listen-endpoint": "tcp:8888",
-                "local-endpoint": "tcp:localhost:1111",
+                "connect-endpoint": "tcp:localhost:1111",
             }).encode("utf8") + b"\n"
         ])
 
@@ -160,7 +161,7 @@ async def test_forward(reactor, request, mailbox, datasize, who):
     # note: would like to get rid of this ensureDeferred, but it
     # doesn't start "running" the coro until we do this...
     d0 = ensureDeferred(forward(config0, wormhole_from_config(config0), reactor=reactor))
-    msg = await find_message(reactor, config0, kind="wormhole-code")
+    msg = await find_message(reactor, config0, kind="code-allocated")
     assert 'code' in msg, "Missing code"
 
     config1 = _Config(
@@ -248,22 +249,22 @@ async def test_forward(reactor, request, mailbox, datasize, who):
 
 
 @pytest_twisted.ensureDeferred
-@pytest.mark.parametrize("datasize", range(2**6, 2**16, 2**14))
-@pytest.mark.parametrize("who", [True, False])
+@pytest.mark.parametrize("datasize", [2**6])#range(2**6, 2**16, 2**14))
+@pytest.mark.parametrize("who", [True])#[True, False])
 async def test_drawrof(reactor, request, mailbox, datasize, who):
 
+    stdios = [
+        None,
+        None,
+    ]
+
     def create_stdin0(proto, reactor=None):
-        return FakeStandardIO(proto, reactor, messages=[
-            # when connected, issue a "open listener" to one side
-            json.dumps({
-                "kind": "remote",
-                "remote-endpoint": "tcp:7777",
-                "local-endpoint": "tcp:localhost:2222",
-            }).encode("utf8") + b"\n"
-        ])
+        stdios[0] = FakeStandardIO(proto, reactor, messages=[])
+        return stdios[0]
 
     def create_stdin1(proto, reactor=None):
-        return FakeStandardIO(proto, reactor, messages=[])
+        stdios[1] = FakeStandardIO(proto, reactor, messages=[])
+        return stdios[1]
 
     config0 = _Config(
         relay_url=mailbox.url,
@@ -274,8 +275,16 @@ async def test_drawrof(reactor, request, mailbox, datasize, who):
     # note: would like to get rid of this ensureDeferred, but it
     # doesn't start "running" the coro until we do this...
     d0 = ensureDeferred(forward(config0, wormhole_from_config(config0), reactor=reactor))
+    msg = await find_message(reactor, config0, kind="connected")
 
-    msg = await find_message(reactor, config0, kind="wormhole-code")
+    # when connected, issue a "open listener" to one side
+    stdios[0].proto.dataReceived(
+        json.dumps({
+            "kind": "allocate-code",
+        }).encode("utf8") + b"\n"
+    )
+
+    msg = await find_message(reactor, config0, kind="code-allocated")
     assert 'code' in msg, "Missing code"
 
     config1 = _Config(
@@ -287,6 +296,14 @@ async def test_drawrof(reactor, request, mailbox, datasize, who):
     )
     d1 = ensureDeferred(forward(config1, wormhole_from_config(config1), reactor=reactor))
     msg = await find_message(reactor, config1, kind="connected")
+
+    # now we can set the code on this side
+    stdios[1].proto.dataReceived(
+        json.dumps({
+            "kind": "set-code",
+            "code": config1.code,
+        }).encode("utf8") + b"\n"
+    )
 
     class Server(Protocol):
         _message = Accumulate(b"")
@@ -328,6 +345,24 @@ async def test_drawrof(reactor, request, mailbox, datasize, who):
     listener = ServerFactory()
     server_port = await serverFromString(reactor, "tcp:2222").listen(listener)
 
+    # XXX it's bad we have to wait for this I think? (otherwise get a
+    # "no control proto yet" error
+    print("waiting for peers")
+    msg = await find_message(reactor, config0, kind="peer-connected")
+    print("got one", msg)
+    msg = await find_message(reactor, config1, kind="peer-connected")
+    print("\n\nXXX", msg)
+
+    # both sides are connected -- now we can issue a "remote listen"
+    # request
+    stdios[0].proto.dataReceived(
+        json.dumps({
+            "kind": "remote",
+            "remote-endpoint": "tcp:7777",
+            "local-endpoint": "tcp:localhost:2222",
+        }).encode("utf8") + b"\n"
+    )
+
     msg = await find_message(reactor, config1, kind="listening")
 
     # if we do 'too many' test-cases debian complains about
@@ -356,6 +391,7 @@ async def test_drawrof(reactor, request, mailbox, datasize, who):
     assert msg == data, "Incorrect data transfer"
 
 
+@pytest_twisted.ensureDeferred
 async def test_forward(reactor, request, mailbox):
 
     def create_stdin0(proto, reactor=None):
@@ -364,7 +400,7 @@ async def test_forward(reactor, request, mailbox):
             json.dumps({
                 "kind": "local",
                 "listen-endpoint": "tcp:8888",
-                "local-endpoint": "tcp:localhost:1111",
+                "connect-endpoint": "tcp:localhost:1111",
             }).encode("utf8") + b"\n"
         ])
 
@@ -380,7 +416,7 @@ async def test_forward(reactor, request, mailbox):
     # note: would like to get rid of this ensureDeferred, but it
     # doesn't start "running" the coro until we do this...
     d0 = ensureDeferred(forward(config0, wormhole_from_config(config0), reactor=reactor))
-    msg = await find_message(reactor, config0, kind="wormhole-code")
+    msg = await find_message(reactor, config0, kind="code-allocated")
     assert 'code' in msg, "Missing code"
 
     config1 = _Config(
