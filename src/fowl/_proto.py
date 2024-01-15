@@ -95,6 +95,8 @@ async def wormhole_from_config(config, wormhole_create=None):
 
 
 async def frontend_invite(config, wormhole_coro):
+    if config.debug_file:
+        w.debug_set_trace("forward", which="B N M S O K SK R RC L C T", file=config.debug_file)
     w = await wormhole_coro
     print(w)
 
@@ -1074,6 +1076,37 @@ class FowlDaemon:
     )
 
 
+# XXX FIXME
+# NOTES
+# 
+# since we want "fowl" to use "fowld" we have two options:
+# - start a subprocess and use stdin/out
+# - sans-io style (send "messages" in / out of _forward_loop or so)
+#
+# Would like the second; so we can interact in unit-tests (or here)
+# via parsed commands. e.g. we have an AGT union-type, and every
+# input-message is a class
+
+
+class FowlOutputMessage:
+    pass
+
+
+@frozen
+class FowlWelcome(FowlOutputMessage):
+    """
+    We have connected to the Mailbox Server and received the
+    Welcome message.
+    """
+    welcome: dict
+
+
+@frozen
+class FowlListening(FowlOutputMessage):
+    endpoint: str
+    connect_endpoint: str
+
+
 async def _forward_loop(reactor, config, w):
     """
     Run the main loop of the forward:
@@ -1217,15 +1250,7 @@ class LocalCommandDispatch(LineReceiver):
         self.daemon = daemon
 
     def connectionMade(self):
-        # XXX is this premature? _have_ we actually connected to the
-        # Mailbox server? (I think "yes")
-        print(
-            json.dumps({
-                "kind": "connected",
-            }),
-            file=self.config.stdout,
-            flush=True,
-        )
+        pass
 
     def lineReceived(self, line):
         # XXX FIXME since we don't have req/resp IDs etc we should

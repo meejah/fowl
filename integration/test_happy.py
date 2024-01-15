@@ -13,6 +13,10 @@ from attrs import define
 
 from util import run_service
 
+# since the src/fowl/test/test_forward tests exercise the underlying
+# "fowld" functionality (minus the entry-point), this tests the
+# "user-friendly" frontend.
+
 
 @define
 class _Fowl:
@@ -22,8 +26,7 @@ class _Fowl:
 
 class _FowlProtocol(ProcessProtocol):
     """
-    This speaks to an underlying ``fow`` sub-process.
-    ``fow`` consumes and emits a line-oriented JSON protocol.
+    This speaks to an underlying ``fowl`` sub-process.
     """
 
     def __init__(self):

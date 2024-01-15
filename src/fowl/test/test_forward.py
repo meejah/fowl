@@ -167,7 +167,7 @@ async def test_forward(reactor, request, mailbox, datasize, who):
     # doesn't start "running" the coro until we do this...
     d0 = ensureDeferred(forward(config0, wormhole_from_config(config0), reactor=reactor))
     d0.addErrback(ignore_cancel)
-    msg = await find_message(reactor, config0, kind="connected")
+    msg = await find_message(reactor, config0, kind="welcome")
     stdios[0].proto.dataReceived(
         json.dumps({
             "kind": "allocate-code",
@@ -187,7 +187,7 @@ async def test_forward(reactor, request, mailbox, datasize, who):
 
     d1 = ensureDeferred(forward(config1, wormhole_from_config(config1), reactor=reactor))
     d1.addErrback(ignore_cancel)
-    msg = await find_message(reactor, config1, kind="connected")
+    msg = await find_message(reactor, config1, kind="welcome")
     stdios[1].proto.dataReceived(
         json.dumps({
             "kind": "set-code",
@@ -306,7 +306,7 @@ async def test_drawrof(reactor, request, mailbox, datasize, who):
     # doesn't start "running" the coro until we do this...
     d0 = ensureDeferred(forward(config0, wormhole_from_config(config0), reactor=reactor))
     d0.addErrback(ignore_cancel)
-    msg = await find_message(reactor, config0, kind="connected")
+    msg = await find_message(reactor, config0, kind="welcome")
 
     # when connected, issue a "open listener" to one side
     stdios[0].proto.dataReceived(
@@ -327,7 +327,7 @@ async def test_drawrof(reactor, request, mailbox, datasize, who):
     )
     d1 = ensureDeferred(forward(config1, wormhole_from_config(config1), reactor=reactor))
     d1.addErrback(ignore_cancel)
-    msg = await find_message(reactor, config1, kind="connected")
+    msg = await find_message(reactor, config1, kind="welcome")
 
     # now we can set the code on this side
     stdios[1].proto.dataReceived(

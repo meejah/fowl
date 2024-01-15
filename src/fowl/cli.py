@@ -86,6 +86,9 @@ def fowl(ctx, ip_privacy, mailbox, debug):
 
     Bi-directional streaming data over secure and durable Dilated
     magic-wormhole connections.
+
+    This frontend is meant for humans -- if you want machine-parsable
+    data and commands, use fowld (or 'python -m fowl')
     """
     ctx.obj = _Config(
         relay_url=mailbox,
