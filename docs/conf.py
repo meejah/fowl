@@ -25,3 +25,16 @@ exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 
 html_theme = 'alabaster'
 html_static_path = ['_static']
+html_theme_options = {
+    'logo': 'logo.svg',
+    'github_button': 'false',
+    'github_user': 'meejah',
+    'github_repo': 'fowl',
+    'travis_button': 'false',
+    'coveralls_button': 'false',
+    'logo_name': 'true',
+    'description': 'Forward any stream over peer-to-peer Wormhole connection',
+    'logo_text_align': 'center',
+    'note_bg': '#ccddcc',
+    'note_border': '#839496',
+}
