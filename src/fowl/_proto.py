@@ -3,7 +3,7 @@ from __future__ import print_function
 import sys
 import json
 import binascii
-from typing import IO, Callable
+from typing import IO, Callable, Optional
 
 import struct
 from functools import partial
@@ -1089,22 +1089,181 @@ class FowlDaemon:
 
 
 class FowlOutputMessage:
-    pass
+    """
+    An information message from fowld to the controller
+    """
+
+
+class FowlCommandMessage:
+    """
+    A command from the controller to fowld
+    """
 
 
 @frozen
-class FowlWelcome(FowlOutputMessage):
+class Welcome(FowlOutputMessage):
     """
     We have connected to the Mailbox Server and received the
     Welcome message.
     """
+    # open-ended information from the server
     welcome: dict
 
 
 @frozen
-class FowlListening(FowlOutputMessage):
-    endpoint: str
-    connect_endpoint: str
+class AllocateCode(FowlCommandMessage):
+    """
+    Create a fresh code on the server
+    """
+    length: Optional[int] = None
+
+
+@frozen
+class SetCode(FowlCommandMessage):
+    """
+    Give a code we know to the servecr
+    """
+    code: str
+
+
+@frozen
+class CodeAllocated(FowlOutputMessage):
+    """
+    The secret wormhole code has been determined
+    """
+    code: str
+
+
+@frozen
+class PeerConnected(FowlOutputMessage):
+    """
+    We have evidence that the peer has connected
+    """
+    # hex-encoded 32-byte hash output (should match other peer)
+    verifier: str
+
+
+@frozen
+class LocalListener(FowlCommandMessage):
+    """
+    We wish to open a local listener.
+    """
+    listen_endpoint: str  # Twisted server-type endpoint string
+    connect_endpoint: str  # Twisted client-type endpoint string
+
+
+@frozen
+class RemoteListener(FowlCommandMessage):
+    """
+    We wish to open a listener on the peer.
+    """
+    listen_endpoint: str  # Twisted server-type endpoint string
+    connect_endpoint: str  # Twisted client-type endpoint string
+
+
+@frozen
+class Listening(FowlOutputMessage):
+    """
+    We have opened a local listener.
+
+    Any connections to this litsener will result in a subchannel and a
+    connect on the other side (to "connected_endpoint"). This message
+    may result from a LocalListener or a RemoteListener command. This
+    message will always appear on the side that's actually listening.
+    """
+    listen_endpoint: str  # Twisted server-type endpoint string
+    connect_endpoint:str  # Twisted client-type endpoint string
+
+
+@frozen
+class LocalConnection(FowlOutputMessage):
+    """
+    Something has connected to one of our listeners
+    """
+    id: int
+
+
+@frozen
+class BytesIn(FowlOutputMessage):
+    id: int
+    bytes: int
+
+
+@frozen
+class BytesOut(FowlOutputMessage):
+    id: int
+    bytes: int
+
+
+def parse_fowld_command(json_str: str) -> FowlCommandMessage:
+    """
+    Parse the given JSON message assuming is a command for fowld
+    """
+    cmd = json.loads(json_str)
+    try:
+        kind = cmd["kind"]
+        del cmd["kind"]
+    except KeyError:
+        raise ValueError("No 'kind' in command")
+
+    def parser(cls, item_parsers, optional_parsers):
+        def parse(js):
+            args = {}
+            for k, process in item_parsers:
+                try:
+                    args[k] = js[k] if process is None else process(js[k])
+                except KeyError:
+                    raise ValueError('"{k}" is missing')
+            for k, process in optional_parsers:
+                try:
+                    args[k] = js[k] if process is None else process(js[k])
+                except KeyError:
+                    pass
+            return cls(**args)
+        return parse
+
+    kind_to_message = {
+        "allocate-code": parser(AllocateCode, [], [("length", int)]),
+        "set-code": parser(SetCode, [("code", None)], []),
+        "local": parser(LocalListener, [("listen-endpoint", None), ("connect-endpoint", None)], []),
+        "remote": parser(RemoteListener, [("remote-endpoint", None), ("local-endpoint", None)], []),
+    }
+    return kind_to_message[kind](cmd)
+
+
+def parse_fowld_output(json_str: str) -> FowlOutputMessage:
+    """
+    Parse the given JSON message assuming it came from fowld.
+    :raises: ValueError if it's an invalid message.
+    """
+    cmd = json.loads(json_str)
+    try:
+        kind = cmd["kind"]
+        del cmd["kind"]
+    except KeyError:
+        raise ValueError("No 'kind' in command")
+
+    def parser(cls, item_parsers):
+        def parse(js):
+            args = {}
+            for k, process in item_parsers:
+                try:
+                    args[k] = js[k] if process is None else process(js[k])
+                except KeyError:
+                    raise ValueError('"{k}" is missing')
+            return cls(**args)
+        return parse
+
+    kind_to_message = {
+        "welcome": parser(Welcome, [("welcome", None)]),
+        "code-allocatd": parser(CodeAllocated, [("code", None)]),
+        "peer-connected": parser(PeerConnected, [("verifier", binascii.unhexlify)]),
+        "listening": parser(Listening, [("endpoint", None), ("connect-endpoint", None)]),
+        "local-connection": parser(LocalConnection, [("id", int)]),
+        "bytes-in": parser(BytesIn, [("id", int), ("bytes", int)]),
+        "bytes-out": parser(BytesOut, [("id", int), ("bytes", int)]),
+    }
+    return kind_to_message[kind](cmd)
 
 
 async def _forward_loop(reactor, config, w):
