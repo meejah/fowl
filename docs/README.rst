@@ -26,17 +26,18 @@ Conceptually, this is somewhat similar to combining ``ssh -R`` and ``ssh -L``.
 
 Key features:
 
-- no need to pre-exchange keys
-- simple, one-time-use codes that are easy to transcribe
-- secure (full-strength keys via SPAKE2)
-- end-to-end encryption (and no possibility for unencrypted application data)
-- integrate with any tools that can listen on or connect to localhost
+* no need to pre-exchange keys
+* simple, one-time-use codes that are easy to transcribe
+* secure (full-strength keys via SPAKE2)
+* end-to-end encryption (and no possibility for unencrypted application data)
+* integrate with any tools that can listen on or connect to localhost
 
 This allows an author to write a "glue" program in *any language* that ties together unchanged networked progams.
 The communcation channel is:
-- set up *without pre-shared secrets*;
-- *fully encrypted*;
-- and *survives IP address changes or outages*.
+
+* set up *without pre-shared secrets*;
+* *fully encrypted*;
+* and *survives IP address changes or outages*.
 
 All this with *no action required at the application level*, it is just a normal localhost TCP (or UNIX) streaming socket.
 
@@ -79,7 +80,7 @@ For details on the security arguments, please refer to `the Magic Wormhole docum
 After this, an E2E-encrypted direct P2P connection (or, in some cases, via a "transit relay" service) is established between the two computers;
 that is, between the computer that created the wormhole code, and the one that consumed it.
 
-The key encrypting messages on this connection is only known to the two computers; the Mailbox server cannot see contents.
+The key encrypting messages on this connection is only known to the two computers; the Mailbox server cannot see any message contents.
 (It, like any attacker, could try a single guess at the wormhole code). See the `Magic Wormhole documentation <https://magic-wormhole.readthedocs.io/en/latest/welcome.html#design>`_ for more details on this.
 
 The "Dilation" feature further extends the above protocol to provide subchannels and "durability" -- this means the overall connection survives network changes, disconnections, etc.
