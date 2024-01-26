@@ -846,7 +846,7 @@ class Incoming(Protocol):
 class FowlDaemon:
     m = automat.MethodicalMachine()
 
-    def __init__(self, reactor, config, wormhole):
+    def __init__(self, reactor, config, wormhole, message_out_handler=lambda _: None):
         self._reactor = reactor
         self._config = config
         self._wormhole = wormhole
@@ -856,6 +856,7 @@ class FowlDaemon:
         self._connected = When()
         self._command_queue = []
         self._running_command = None  # Deferred if we're running a command now
+        self._message_out = message_out_handler
         self.connect_ep = self.control_proto = None
 
     def when_done(self):
@@ -879,25 +880,27 @@ class FowlDaemon:
         self._running_command = ensureDeferred(self._run_command(cmd))
 
     async def _run_command(self, cmd):
-        try:
-            kind = cmd["kind"]
-        except KeyError:
-            self._handle_error(
-                Failure(ValueError("No 'kind' in command"))
-            )
-        if kind == "allocate-code":
-            length = cmd.get("length", self._config.code_length)
-            self.allocate_code(length)
+        if isinstance(cmd, AllocateCode):
+            self.allocate_code(self._config.code_length if cmd.length is None else cmd.length)
 
-        elif kind == "set-code":
-            self.set_code(cmd["code"])
+        elif isinstance(cmd, SetCode):
+            self.set_code(cmd.code)
 
-        elif kind == "local":
+        elif isinstance(cmd, LocalListener):
             await self.when_connected()
             assert self.connect_ep is not None, "need connect ep"
             # XXX if we get this before we've dilated, just remember it?
             # listens locally, conencts to other side
             await _local_to_remote_forward(self._reactor, self._config, self.connect_ep, self._listening_ports.append, cmd)
+            print(
+                json.dumps({
+                    "kind": "listening",
+                    "endpoint": cmd.listen_endpoint,
+                    "connect-endpoint": cmd.local_endpoint,
+                }),
+                file=config.stdout,
+                flush=True,
+            )
 
         elif kind == "remote":
             print("remote commdn")
@@ -1308,22 +1311,13 @@ async def _local_to_remote_forward(reactor, config, connect_ep, on_listen, cmd):
     """
     # XXX these lines are "uncovered" but we clearly run them ... so
     # something wrong with subprocess coverage?? again???
-    ep = serverFromString(reactor, cmd["listen-endpoint"])
+    ep = serverFromString(reactor, cmd.listen_endpoint)
     factory = Factory.forProtocol(LocalServer)
     factory.config = config
-    factory.endpoint_str = cmd["local-endpoint"]
+    factory.endpoint_str = cmd.local_endpoint
     factory.connect_ep = connect_ep
     port = await ep.listen(factory)
     on_listen(port)
-    print(
-        json.dumps({
-            "kind": "listening",
-            "endpoint": cmd["listen-endpoint"],
-            "connect-endpoint": cmd["local-endpoint"],
-        }),
-        file=config.stdout,
-        flush=True,
-    )
 
 
 async def _remote_to_local_forward(control_proto, on_listen, cmd):
@@ -1334,8 +1328,8 @@ async def _remote_to_local_forward(control_proto, on_listen, cmd):
     """
     msg = msgpack.packb({
         "kind": "remote-to-local",
-        "listen-endpoint": cmd["remote-endpoint"],
-        "connect-endpoint": cmd["local-endpoint"],
+        "listen-endpoint": cmd.remote_endpoint,
+        "connect-endpoint": cmd.local_endpoint,
     })
     prefix = struct.pack("!H", len(msg))
     control_proto.transport.write(prefix + msg)
@@ -1418,7 +1412,7 @@ class LocalCommandDispatch(LineReceiver):
         # ahead and issues 3 commands without waiting for the
         # answer, we need to do them in order)
         try:
-            cmd = json.loads(line)
+            cmd = parse_fowld_command(line)
             print("doing command: ", cmd)
             self.daemon.handle_command(cmd)
         except Exception as e:
