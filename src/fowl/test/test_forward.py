@@ -245,8 +245,8 @@ async def test_forward(reactor, request, mailbox, datasize, who):
     stdios[0].proto.dataReceived(
         json.dumps({
             "kind": "local",
-            "listen-endpoint": "tcp:7777",
-            "local-endpoint": "tcp:localhost:1111",
+            "listen": "tcp:7777",
+            "connect": "tcp:localhost:1111",
         }).encode("utf8") + b"\n"
     )
     msg = await find_message(reactor, config0, kind="listening")
@@ -375,7 +375,7 @@ async def test_drawrof(reactor, request, mailbox, datasize, who):
             return p
 
     listener = ServerFactory()
-    server_port = await serverFromString(reactor, "tcp:2222").listen(listener)
+    server_port = await serverFromString(reactor, "tcp:3333").listen(listener)
 
     # XXX it's bad we have to wait for this I think? (otherwise get a
     # "no control proto yet" error
@@ -390,8 +390,8 @@ async def test_drawrof(reactor, request, mailbox, datasize, who):
     stdios[0].proto.dataReceived(
         json.dumps({
             "kind": "remote",
-            "remote-endpoint": "tcp:8888",
-            "local-endpoint": "tcp:localhost:2222",
+            "listen": "tcp:8888",
+            "connect": "tcp:localhost:3333",
         }).encode("utf8") + b"\n"
     )
 

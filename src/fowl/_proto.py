@@ -878,6 +878,7 @@ class FowlDaemon:
             return
         cmd = self._command_queue.pop(0)
         self._running_command = ensureDeferred(self._run_command(cmd))
+        self._running_command.addErrback(self._handle_error)
 
     async def _run_command(self, cmd):
         if isinstance(cmd, AllocateCode):
@@ -895,8 +896,8 @@ class FowlDaemon:
             print(
                 json.dumps({
                     "kind": "listening",
-                    "endpoint": cmd.listen_endpoint,
-                    "connect-endpoint": cmd.local_endpoint,
+                    "endpoint": cmd.listen,
+                    "connect-endpoint": cmd.local,
                 }),
                 file=config.stdout,
                 flush=True,
@@ -1151,8 +1152,8 @@ class LocalListener(FowlCommandMessage):
     """
     We wish to open a local listener.
     """
-    listen_endpoint: str  # Twisted server-type endpoint string
-    connect_endpoint: str  # Twisted client-type endpoint string
+    listen: str  # Twisted server-type endpoint string
+    connect: str  # Twisted client-type endpoint string
 
 
 @frozen
@@ -1160,8 +1161,8 @@ class RemoteListener(FowlCommandMessage):
     """
     We wish to open a listener on the peer.
     """
-    listen_endpoint: str  # Twisted server-type endpoint string
-    connect_endpoint: str  # Twisted client-type endpoint string
+    listen: str  # Twisted server-type endpoint string
+    connect: str  # Twisted client-type endpoint string
 
 
 @frozen
@@ -1169,13 +1170,13 @@ class Listening(FowlOutputMessage):
     """
     We have opened a local listener.
 
-    Any connections to this litsener will result in a subchannel and a
+    Any connections to this listener will result in a subchannel and a
     connect on the other side (to "connected_endpoint"). This message
     may result from a LocalListener or a RemoteListener command. This
     message will always appear on the side that's actually listening.
     """
-    listen_endpoint: str  # Twisted server-type endpoint string
-    connect_endpoint:str  # Twisted client-type endpoint string
+    listen: str  # Twisted server-type endpoint string
+    connect: str  # Twisted client-type endpoint string
 
 
 @frozen
@@ -1216,7 +1217,7 @@ def parse_fowld_command(json_str: str) -> FowlCommandMessage:
                 try:
                     args[k] = js[k] if process is None else process(js[k])
                 except KeyError:
-                    raise ValueError('"{k}" is missing')
+                    raise ValueError(f'"{k}" is missing')
             for k, process in optional_parsers:
                 try:
                     args[k] = js[k] if process is None else process(js[k])
@@ -1228,8 +1229,8 @@ def parse_fowld_command(json_str: str) -> FowlCommandMessage:
     kind_to_message = {
         "allocate-code": parser(AllocateCode, [], [("length", int)]),
         "set-code": parser(SetCode, [("code", None)], []),
-        "local": parser(LocalListener, [("listen-endpoint", None), ("connect-endpoint", None)], []),
-        "remote": parser(RemoteListener, [("remote-endpoint", None), ("local-endpoint", None)], []),
+        "local": parser(LocalListener, [("listen", None), ("connect", None)], []),
+        "remote": parser(RemoteListener, [("listen", None), ("connect", None)], []),
     }
     return kind_to_message[kind](cmd)
 
