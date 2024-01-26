@@ -7,7 +7,7 @@ name = "fowl"
 dynamic = ["version"]
 description = "Forward Over Wormhole Locally provides bi-directional streaming data over secure and durable Dilated magic-wormhole connections. Secure communication with easy setup."
 readme = "README.rst"
-license.text = "MIT"
+license = {file = "LICENSE"}
 authors = [
     { name = "meejah", email = "meejah@meejah.ca" },
 ]
@@ -21,6 +21,8 @@ keywords = [
 classifiers = [
     "Framework :: Twisted",
     "Programming Language :: Python :: 3",
+    "Environment :: Console (Text Based)",
+    "License :: OSI Approved :: MIT License",
 ]
 dependencies = [
     "setuptools",
