@@ -57,6 +57,50 @@ For example, whether you started or joined a session, either side can ask the ot
 Thus, the options for what to allow are required on both sides.
 
 
+Overview of a Session
+---------------------
+
+Using ``fowl`` involves two computers.
+One computer runs ``fowl invite`` and the other computer runs ``fowl accept``.
+
+After this, a lot of things are "symmetric" in that either side can listen on a port (or cause the peer to listen on a port) and subsequently forward data over resulting connections.
+
+The "symmetric" parts are described in the next session, following which are things specific to the "accept" or the "invite" side.
+
+
+Common ``fowl`` Options
+-----------------------
+
+Both subcommands ``accept`` and ``invite`` share a series of options for setting up streaming connections.
+
+Either side may have a listener on a local port; this listener will accept any incoming connection, create a Wormhole subchannel, and ask the other side to make a particular local connection.
+
+The normal use-case here is that you're running a daemon on one of the two peers and you wish to have the other peer be able to reach it.
+
+Let's take SSH as an example: the computer "desktop" is running an SSH daemon on the usual port 22.
+One this side we run ``fowl invite``, which produces a code.
+
+On the computer called "laptop" we run ``fowl accept``, consuming the code.
+
+So to use SSH over this Wormhole connnection, we want to have a listener appear on the "laptop" (because the "desktop" computer already has a listener: the SSH daemon on port 22).
+
+We have two choices here: either the "desktop" or the "laptop" side may initiate the listening; if we do it on the "desktop" side we use the ``"remote"`` command and if we do it on the "laptop" side we use the ``"local"`` command.
+
+The ``"remote"`` and ``"local"`` commands are mirrors of each other and both have a ``"listen"`` and ``"connect"`` value -- what changes is _where_ that value is used.
+In a ``"remote"`` command, the ``"listen"`` value is used on the "far" side, whereas in a ``"local"`` command the ``"listen"`` value is used on the near side.
+
+So back to our example, we want the "laptop" to open a new listener.
+
+On the "laptop" machine we'd use something like ``--local 22`` to indicate that we'd like to listen on port ``22`` (and forward to the same port on the other side).
+Maybe we can't listen on ``22``, though, so we might want to listen on ``1234`` but still forward to ``22`` on the far side; this is expressed with ``--local 1234:22``
+
+To flip this around, on the "desktop" machine we could do ``--remote 22`` or ``--remote 1234:22`` to use the same values from above.
+
+.. NOTE::
+
+    If you're using ``fowld`` directly, the above correspond to ``{"kind": "remote", "listen": "tcp:1234:interface=localhost", "connect": "tcp:localhost:22}`` from the "desktop" machine or ``{"kind": "local", "listen": "tcp:1234:interface=localhost", "connect": "tcp:localhost:22}`` from the "laptop" machine.
+
+
 ``fowl invite``
 ---------------
 
