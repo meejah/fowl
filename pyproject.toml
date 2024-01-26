@@ -21,7 +21,6 @@ keywords = [
 classifiers = [
     "Framework :: Twisted",
     "Programming Language :: Python :: 3",
-    "Environment :: Console (Text Based)",
     "License :: OSI Approved :: MIT License",
 ]
 dependencies = [
