@@ -49,7 +49,6 @@ Example::
         "listen-endpoint": "<Twisted server-style endpoint-string>",
         "connect-endpoint": "<Twisted client-style endpoint-string>",
     }
-    }
 
 
 .. stdout_messages:
