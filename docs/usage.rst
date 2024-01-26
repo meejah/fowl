@@ -70,7 +70,7 @@ Once that side has successfully set up, we will see a message:
 .. code-block:: json
 
     {
-        "message": "connected"
+        "kind": "connected"
     }
 
 After this, we reach the more "symmetric" state of the session: although under the hood one side is randomly "the Follower" and one side is "the Leader" in the Dilation session, at our level either side can request forwards from the other.
@@ -86,7 +86,7 @@ This command consumes a Wromhole code and must receive it from the human who ran
 
 Once the Magic Wormhole protocol has successfully set up a Dilation connection, a message will appear on ``stdout``::
 
-    ``{"message": "connected"}``
+    ``{"kind": "connected"}``
 
 After this, we reach the more "symmetric" state of the session: although under the hood one side is randomly "the Follower" and one side is "the Leader" in the Dilation session, at our level either side can request forwards from the other.
 
@@ -108,7 +108,7 @@ Request a Remote Listener
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 
 "Our" side wants the "other" side to start listening on a local port.
-So, we "ask" them via a ``"message": "forward"`` request.
+So, we "ask" them via a ``"kind": "remote"`` request.
 
 That side may have an aritrarily complex process around this request, and ultimately either accepts or rejects it.
 For example, it may simply have a policy on what ports to whitelist.
