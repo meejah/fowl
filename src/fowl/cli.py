@@ -78,9 +78,27 @@ def fowld(ctx, ip_privacy, mailbox, debug):
     help="Output wormhole state-machine transitions to the given file",
     type=click.File("w", encoding="utf8"),
 )
+@click.option(
+    "--local",
+    multiple=True,
+    help="Listen locally, connect remotely (accepted multiple times)",
+    metavar="listen-port[:connect-port]",
+)
+@click.option(
+    "--remote",
+    multiple=True,
+    help="Listen remotely, connect locally (accepted multiple times)",
+    metavar="listen-port[:local-port]",
+)
+@click.option(
+    "--allow",
+    multiple=True,
+    help="Accept a request to listen on a port (optionally which port to open on the far-side connection). Accepted multiple times",
+    metavar="port[:connect-port]",
+)
 @click.group()
 @click.pass_context
-def fowl(ctx, ip_privacy, mailbox, debug):
+def fowl(ctx, ip_privacy, mailbox, debug, allow, local, remote):
     """
     Forward Over Wormhole, Locally
 
@@ -109,6 +127,13 @@ def invite(ctx, code_length):
     Start a new forwarding session, allocating a code that can be used
     on another computer to join a forwarding session
     """
+
+    # todo:
+    # - convert all common options into .. FowlCommandMessage instances
+    # - send these to the loop/thing
+    # - processes them all .. probably "permissions first"
+    # - ditto for "accept"
+
     ctx.obj = evolve(ctx.obj, code_length=code_length)
     def run(reactor):
         return ensureDeferred(

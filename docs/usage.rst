@@ -68,8 +68,8 @@ After this, a lot of things are "symmetric" in that either side can listen on a 
 The "symmetric" parts are described in the next session, following which are things specific to the "accept" or the "invite" side.
 
 
-Common ``fowl`` Options
------------------------
+Common ``fowl`` Options: An Example
+-----------------------------------
 
 Both subcommands ``accept`` and ``invite`` share a series of options for setting up streaming connections.
 
@@ -99,6 +99,15 @@ To flip this around, on the "desktop" machine we could do ``--remote 22`` or ``-
 .. NOTE::
 
     If you're using ``fowld`` directly, the above correspond to ``{"kind": "remote", "listen": "tcp:1234:interface=localhost", "connect": "tcp:localhost:22}`` from the "desktop" machine or ``{"kind": "local", "listen": "tcp:1234:interface=localhost", "connect": "tcp:localhost:22}`` from the "laptop" machine.
+
+
+Common ``fowl`` Options
+-----------------------
+
+* ``--local port:[remote-port]``: listen locally on ``port``. On any connection to this port, we will ask the peer to open a connection on its end to ``port`` (instead to ``remote-port`` if specified).
+
+* ``--remote port:[local-port]``: listen on the remote peer's ``port``. On any connection to this port (on the peer's side), we will ask our local side to open a connection to ``port`` (or instead to ``local-port`` if specified).
+
 
 
 ``fowl invite``
