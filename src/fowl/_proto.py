@@ -898,14 +898,13 @@ class FowlDaemon:
                 json.dumps({
                     "kind": "listening",
                     "endpoint": cmd.listen,
-                    "connect-endpoint": cmd.local,
+                    "connect-endpoint": cmd.connect,
                 }),
-                file=config.stdout,
+                file=self._config.stdout,
                 flush=True,
             )
 
-        elif kind == "remote":
-            print("remote commdn")
+        elif isinstance(cmd, RemoteListener):
             await self.when_connected()
             assert self.control_proto is not None, "Need a control proto"
             # XXX if we get this before we've dilated, just remember it?
@@ -1313,10 +1312,10 @@ async def _local_to_remote_forward(reactor, config, connect_ep, on_listen, cmd):
     """
     # XXX these lines are "uncovered" but we clearly run them ... so
     # something wrong with subprocess coverage?? again???
-    ep = serverFromString(reactor, cmd.listen_endpoint)
+    ep = serverFromString(reactor, cmd.listen)
     factory = Factory.forProtocol(LocalServer)
     factory.config = config
-    factory.endpoint_str = cmd.local_endpoint
+    factory.endpoint_str = cmd.connect
     factory.connect_ep = connect_ep
     port = await ep.listen(factory)
     on_listen(port)
@@ -1330,8 +1329,8 @@ async def _remote_to_local_forward(control_proto, on_listen, cmd):
     """
     msg = msgpack.packb({
         "kind": "remote-to-local",
-        "listen-endpoint": cmd.remote_endpoint,
-        "connect-endpoint": cmd.local_endpoint,
+        "listen-endpoint": cmd.listen,
+        "connect-endpoint": cmd.connect,
     })
     prefix = struct.pack("!H", len(msg))
     control_proto.transport.write(prefix + msg)
