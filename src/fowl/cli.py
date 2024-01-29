@@ -124,8 +124,10 @@ def fowl(ctx, ip_privacy, mailbox, debug, allow, local, remote):
 )
 def invite(ctx, code_length):
     """
-    Start a new forwarding session, allocating a code that can be used
-    on another computer to join a forwarding session
+    Start a new forwarding session.
+
+    We allocate a code that can be used on another computer to join
+    this session (i.e. "fowl accept")
     """
 
     # todo:
@@ -150,8 +152,10 @@ def invite(ctx, code_length):
 @click.argument("code")
 def accept(ctx, code):
     """
-    Join a forwarding session by consuming a wormhole code usually
-    created by 'fow invite'
+    Join an already started forwarding session.
+
+    This consumes an existing invite code (usually created by 'fow
+    invite')
     """
     ctx.obj = evolve(ctx.obj, code=code)
     def run(reactor):
