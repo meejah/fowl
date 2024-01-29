@@ -152,7 +152,7 @@ def invite(ctx, code_length):
 @click.argument("code")
 def accept(ctx, code):
     """
-    Join an already started forwarding session.
+    Join an exiting forwarding session.
 
     This consumes an existing invite code (usually created by 'fow
     invite')
