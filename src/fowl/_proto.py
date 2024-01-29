@@ -1008,9 +1008,9 @@ class FowlDaemon:
         d.addCallback(lambda _: self.emit_code_allocated())
 
     def _handle_error(self, f):
-        self._report_error(f.error)
+        self._report_error(f.value)
 
-    def _report_Error(self, e):
+    def _report_error(self, e):
         print(
             json.dumps({
                 "kind": "error",
