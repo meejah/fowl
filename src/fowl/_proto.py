@@ -515,7 +515,7 @@ class LocalServer(Protocol):
 
     def dataReceived(self, data):
         # XXX FIXME if len(data) >= 65535 must split "because noise"
-        # -- handle in Dilation code?
+        # -- handle in Dilation code? (yes)
 
         print(
             json.dumps({
@@ -524,15 +524,19 @@ class LocalServer(Protocol):
                 "bytes": len(data),
             })
         )
-        max_noise = 65000
-        while len(data):
-            d = data[:max_noise]
-            data = data[max_noise:]
+        if False:
+            max_noise = 65000
+            while len(data):
+                d = data[:max_noise]
+                data = data[max_noise:]
 
-            if self.queue is not None:
-                self.queue.append(d)
-            else:
-                self.remote.transport.write(d)
+                if self.queue is not None:
+                    self.queue.append(d)
+                else:
+                    self.remote.transport.write(d)
+        else:
+            ## if Dilation handling of "more than noise packet" works
+            self.remote.transport.write(data)
 
 
 class Incoming(Protocol):
