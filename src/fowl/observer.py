@@ -29,17 +29,20 @@ class Next:
         else:
             d = Deferred()
             self._awaiters.append(d)
+            print("waiters", self._awaiters)
         return d
 
     def trigger(self, reactor, result):
         """
         Triggers all current observers and resets them to the empty list.
         """
+        print("TRIGGER", result)
         listeners, self._awaiters = self._awaiters, []
         if listeners:
             for d in listeners:
                 reactor.callLater(0, d.callback, result)
         else:
+            print("  (unheard)")
             self._unheard_result = result
 
 

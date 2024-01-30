@@ -25,6 +25,7 @@ from fowl._proto import (
     forward,
 )
 from fowl.observer import (
+    When,
     Next,
     Accumulate,
 )
@@ -110,11 +111,16 @@ async def find_message(reactor, config, kind=None, timeout=10):
     Await a message of particular kind in the stdout of config
     """
     for _ in range(timeout):
-        for msg in [json.loads(line) for line in config.stdout.getvalue().split("\n") if line]:
+        messages = [
+            json.loads(line)
+            for line in config.stdout.getvalue().split("\n")
+            if line
+        ]
+        for msg in messages:
             if msg["kind"] == kind:
                 return msg
         await sleep(reactor, 1)
-        print("no '{}' yet: {}".format(kind, repr(config.stdout.getvalue())))
+        print("no '{}' yet: {}".format(kind, " ".join([m.get("kind", "<kind missing>") for m in messages])))
     raise RuntimeError(
         f"Waited {timeout}s for message of kind={kind}"
     )
@@ -281,7 +287,8 @@ async def test_forward(reactor, request, mailbox, datasize, who):
 @pytest_twisted.ensureDeferred
 @pytest.mark.parametrize("datasize", [2**6])#range(2**6, 2**16, 2**14))
 @pytest.mark.parametrize("who", [True])#[True, False])
-async def test_drawrof(reactor, request, mailbox, datasize, who):
+@pytest.mark.parametrize("wait_peer", [True, False])
+async def test_drawrof(reactor, request, mailbox, datasize, who, wait_peer):
 
     stdios = [
         None,
@@ -339,6 +346,7 @@ async def test_drawrof(reactor, request, mailbox, datasize, who):
 
     class Server(Protocol):
         _message = Accumulate(b"")
+        _done = When()
 
         def dataReceived(self, data):
             self._message.some_results(reactor, data)
@@ -346,8 +354,16 @@ async def test_drawrof(reactor, request, mailbox, datasize, who):
         async def next_message(self, expected_size):
             return await self._message.next_item(reactor, expected_size)
 
+        async def when_closed(self):
+            return await self._done.when_triggered()
+
         def send(self, data):
             self.transport.write(data)
+
+        def connectionLost(self, reason):
+            print("lost", self, reason)
+            self._done.trigger(reactor, None)
+
 
     class Client(Protocol):
         _message = Accumulate(b"")
@@ -377,13 +393,14 @@ async def test_drawrof(reactor, request, mailbox, datasize, who):
     listener = ServerFactory()
     server_port = await serverFromString(reactor, "tcp:3333").listen(listener)
 
-    # XXX it's bad we have to wait for this I think? (otherwise get a
-    # "no control proto yet" error
-    print("waiting for peers")
-    msg = await find_message(reactor, config0, kind="peer-connected")
-    print("got one", msg)
-    msg = await find_message(reactor, config1, kind="peer-connected")
-    print("\n\nXXX", msg)
+    # whether we explicitly wait for our peer, the underlying fowl
+    # code should "do the right thing" if we just start issuing
+    # listen/etc commands
+    if wait_peer:
+        print("Explicitly awaiting peers")
+        msg = await find_message(reactor, config0, kind="peer-connected")
+        msg = await find_message(reactor, config1, kind="peer-connected")
+        print("Both sides have a peer")
 
     # both sides are connected -- now we can issue a "remote listen"
     # request
@@ -396,6 +413,7 @@ async def test_drawrof(reactor, request, mailbox, datasize, who):
     )
 
     msg = await find_message(reactor, config1, kind="listening")
+    print("listening", msg)
 
     # if we do 'too many' test-cases debian complains about
     # "twisted.internet.error.ConnectBindError: Couldn't bind: 24: Too
@@ -403,13 +421,23 @@ async def test_drawrof(reactor, request, mailbox, datasize, who):
     # gc.collect() doesn't fix it.
     client = clientFromString(reactor, "tcp:localhost:8888")  # NB: same as remote-endpoint
     client_proto = await client.connect(Factory.forProtocol(Client))
+    print("waiting next client")
     server = await listener.next_client()
+    print("got", server)
 
     def cleanup():
+        print("cleanup")
+        print("cancel d0", d0)
         d0.cancel()
+        print("cancel d1", d1)
         d1.cancel()
+        print("cancelled")
         server.transport.loseConnection()
         server_port.stopListening()
+        d = ensureDeferred(server.when_closed())
+        print("DDD", d)
+        pytest_twisted.blockon(d)
+        print("done listening")
     request.addfinalizer(cleanup)
 
     data = os.urandom(datasize)
@@ -419,5 +447,4 @@ async def test_drawrof(reactor, request, mailbox, datasize, who):
     else:
         server.send(data)
         msg = await client_proto.next_message(len(data))
-    who = not who
     assert msg == data, "Incorrect data transfer"

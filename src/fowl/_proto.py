@@ -121,13 +121,15 @@ async def forward(config, wormhole_coro, reactor=reactor):
         await _forward_loop(reactor, config, w)
         await w.close()  # waits for ack
 
-    except Exception:
+    except Exception as e:
+        print("hey it's an error: ", type(e), e)
         # if we catch an error, we should close and then return the original
         # error (the close might give us an error, but it isn't as important
         # as the original one)
         try:
             await w.close()  # might be an error too
-        except Exception:
+        except Exception as e:
+            print("moar error", e)
             pass
         raise
 
@@ -843,6 +845,11 @@ class Incoming(Protocol):
         self.got_bytes(data)
 
 
+##XXX needs a shutdown path
+## this is currently via "cancel"
+## so need a "await FowlDaemon.shutdown()" or similar which can do
+## async stuff like shut down all listeners, etc etc
+
 ## refactoring _forward_loop etc
 class FowlDaemon:
     m = automat.MethodicalMachine()
@@ -853,8 +860,8 @@ class FowlDaemon:
         self._wormhole = wormhole
         self._listening_ports = []
         self._code = None
-        self._done = When()
-        self._connected = When()
+        self._done = When() # we have shut down completely
+        self._connected = When()  # our Peer has connected
         self._command_queue = []
         self._running_command = None  # Deferred if we're running a command now
         self._message_out = message_out_handler
@@ -864,6 +871,13 @@ class FowlDaemon:
         return self._done.when_triggered()
 
     def when_connected(self):
+        """
+        Our peer has connected.
+
+        Fires with the "verifier" of the peer (this is an optional
+        measure whereby users may compare these; if they're identical
+        they are communicating with the intended partner)
+        """
         return self._connected.when_triggered()
 
     def handle_command(self, cmd):
@@ -907,12 +921,8 @@ class FowlDaemon:
         elif isinstance(cmd, RemoteListener):
             await self.when_connected()
             assert self.control_proto is not None, "Need a control proto"
-            # XXX if we get this before we've dilated, just remember it?
             # asks the other side to listen, connecting back to us
-            try:
-                await _remote_to_local_forward(self.control_proto, self._listening_ports.append, cmd)
-            except Exception as e:
-                self._report_error(e)
+            await _remote_to_local_forward(self.control_proto, self._listening_ports.append, cmd)
 
         else:
             raise KeyError(
@@ -942,13 +952,25 @@ class FowlDaemon:
         Normal processing, our peer is connected
         """
 
+    @m.state()
+    def stopping(self):
+        """
+        We are shutting down.
+        """
+
+    @m.state()
+    def done(self):
+        """
+        Nothing more to accomplish
+        """
+
     @m.input()
     def allocate_code(self, code_length):
         """
         """
 
     @m.input()
-    def code_allocated(self):
+    def code_allocated(self):  # XXX include "code" here?
         """
         """
 
@@ -957,20 +979,43 @@ class FowlDaemon:
         """
         """
 
-    def _got_code(self, code):
-        self._code = code
-        self.code_allocated()
+    @m.input()
+    def shutdown(self):
+        """
+        Begin tearing this wormhole down
+        """
 
+    @m.input()
+    def shutdown_finished(self):
+        """
+        We have completed the shutdown process
+        """
+
+    @m.input()
     def set_code(self, code):
-        self._code = code
-        self._wormhole.set_code(code)
-        self.code_allocated()
+        """
+        We already had a code somewhere
+        """
 
     @m.output()
     def begin_allocate(self, code_length):
         self._wormhole.allocate_code(code_length)
         d = self._wormhole.get_code()
-        d.addCallbacks(self._got_code, self._handle_error)
+
+        def got_code(code):
+            print("got code", code)
+            self._code = code
+            self.code_allocated()
+        d.addCallbacks(got_code, self._handle_error)
+
+    @m.output()
+    def do_set_code(self, code):
+        print("do set code", code)
+        self._code = code
+        self._wormhole.set_code(code)
+        d = self._wormhole.get_code()
+        print("ZZZ", d)
+        d.addCallbacks(lambda _: self.code_allocated(), self._handle_error)
 
     @m.output()
     def emit_code_allocated(self):
@@ -1004,9 +1049,20 @@ class FowlDaemon:
         )
         d = ensureDeferred(self._post_dilation_setup())
         d.addErrback(self._handle_error)
-        d.addCallback(lambda _: self.emit_code_allocated())
+
+    @m.output()
+    def do_shutdown(self):
+        """
+        Perform any (possibly async) tasks related to shutting down:
+        - remove listeners
+        """
+        print("do shutdown")
+        d = ensureDeferred(self.control_proto.when_done())
+        self.control_proto.transport.loseConnection()
+        d.addBoth(lambda _: self.shutdown_finished())
 
     def _handle_error(self, f):
+        print("HANDLE_ERROR", f)
         self._report_error(f.value)
 
     def _report_error(self, e):
@@ -1026,35 +1082,38 @@ class FowlDaemon:
         fac.config = self._config
         fac.connect_ep = self.connect_ep  # so we can pass it command handlers
         self.control_proto = await self.control_ep.connect(fac)
-        print("do dilate", self.control_proto)
 
         # listen for incoming subchannel OPENs
         in_factory = Factory.forProtocol(Incoming)
         in_factory.config = self._config
         in_factory.connect_ep = self.connect_ep
         listen_port = await self.listen_ep.listen(in_factory)
+###        self._ports.append(listen_port)
 
         await self._wormhole.get_unverified_key()
         verifier_bytes = await self._wormhole.get_verifier()  # might WrongPasswordError
 
-        print("TRIGGER")
-        try:
-            self._connected.trigger(self._reactor, None)
-        except Exception as e:
-            print("ASDF",e)
-        print("DONE")
+        self._connected.trigger(self._reactor, verifier_bytes)
         self.peer_connected(verifier_bytes)
 
+        #XXX this isn't actually called -- we're cancelling some other
+        #deferred in the end. move to "cleanup" states + handlers in
+        #the state-machine
         def cancelled(x):
+            print("hey hey cancelled", x)
             d = listen_port.stopListening()
+            print("xx", d)
             for port in self._listening_ports:
                 d = port.stopListening()
-            control_proto.transport.loseConnection()
+                print("DDD", d)
+            print("close", self.control_proto)
+            self.control_proto.transport.loseConnection()
 
         try:
             await Deferred(canceller=cancelled)
         except CancelledError:
-            pass
+            print("BADBADBAD")
+            raise
 
     no_code.upon(
         allocate_code,
@@ -1062,21 +1121,48 @@ class FowlDaemon:
         outputs=[begin_allocate],
     )
     no_code.upon(
-        code_allocated,
-        enter=waiting_peer,
-        outputs=[do_dilate, emit_code_allocated],
+        set_code,
+        enter=waiting_code,
+        outputs=[do_set_code],
+    )
+    no_code.upon(
+        shutdown,
+        enter=stopping,
+        outputs=[do_shutdown],
     )
 
     waiting_code.upon(
         code_allocated,
         enter=waiting_peer,
-        outputs=[do_dilate, emit_code_allocated],
+        outputs=[emit_code_allocated, do_dilate],
+    )
+    waiting_code.upon(
+        shutdown,
+        enter=stopping,
+        outputs=[do_shutdown],
     )
 
     waiting_peer.upon(
         peer_connected,
         enter=connected,
         outputs=[emit_peer_connected],
+    )
+    waiting_peer.upon(
+        shutdown,
+        enter=stopping,
+        outputs=[do_shutdown],
+    )
+
+    connected.upon(
+        shutdown,
+        enter=stopping,
+        outputs=[do_shutdown],
+    )
+
+    stopping.upon(
+        shutdown_finished,
+        enter=done,
+        outputs=[]
     )
 
 
@@ -1302,7 +1388,16 @@ async def _forward_loop(reactor, config, w):
     # else:
     #     sm.allocate_code(config.code_length)
 
-    await sm.when_done()
+    try:
+        await sm.when_done()
+    except Exception as e:
+        print("ZINGA", sm._listening_ports)
+        print("DING", type(e))
+        # XXXX okay, this fixes it .. but how to hook in cleanup etc "properly"
+        # (probably via state-machine etc)
+        sm.shutdown()
+        ###sm.control_proto.transport.loseConnection()
+        raise
 
 
 async def _local_to_remote_forward(reactor, config, connect_ep, on_listen, cmd):
@@ -1341,9 +1436,11 @@ class Commands(Protocol):
     """
     Listen for (and send) commands over the command subchannel
     """
-    _local_port = None
+    _ports = []
+    _done = When()
 
-    # XXX make these msgpack too, for consistency!
+    def when_done(self):
+        return self._done.when_triggered()
 
     def dataReceived(self, data):
         # XXX can we depend on data being "one message"? or do we need length-prefixed?
@@ -1353,6 +1450,7 @@ class Commands(Protocol):
         assert bsize == expected_size + 2, "data has more than the message"
         msg = msgpack.unpackb(data[2:])
         if msg["kind"] == "remote-to-local":
+            #XXX do this _after_ we're definitely listening
             print(
                 json.dumps({
                     "kind": "listening",
@@ -1373,7 +1471,8 @@ class Commands(Protocol):
             d = listen_ep.listen(factory)
 
             def got_port(port):
-                self._local_port = port
+                print("XXX got port", port)
+                self._ports.append(port)
             d.addCallback(got_port)
             # XXX should await proto.stopListening() somewhere...at the appropriate time
         else:
@@ -1387,9 +1486,13 @@ class Commands(Protocol):
                 flush=True,
             )
 
+    def _unregister_ports(self):
+        for port in self._ports:
+            port.stopListening()
+
     def connectionLost(self, reason):
-        if self._local_port is not None:
-            return self._local_port.stopListening()
+        self._unregister_ports()
+        self._done.trigger(None)
 
 
 class LocalCommandDispatch(LineReceiver):
@@ -1414,7 +1517,6 @@ class LocalCommandDispatch(LineReceiver):
         # answer, we need to do them in order)
         try:
             cmd = parse_fowld_command(line)
-            print("doing command: ", cmd)
             self.daemon.handle_command(cmd)
         except Exception as e:
             print("BAD", repr(e))

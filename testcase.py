@@ -91,7 +91,6 @@ async def main(reactor):
         [sys.executable, "-m", "fowl", "--mailbox", "ws://localhost:4000/v1"],
         env={"PYTHONUNBUFFERED": "1"},
     )
-    x = await guest_proto.next_message("connected")
     guest_proto.send_message({"kind": "set-code", "code": msg["code"]})
     msg = await guest_proto.next_message("code-allocated")
     print(msg)
@@ -105,17 +104,17 @@ async def main(reactor):
     if 'remote' in sys.argv:
         host_proto.send_message({
             "kind": "local",
-            "listen-endpoint": "tcp:8888",
-            "local-endpoint": "tcp:localhost:1111"
+            "listen": "tcp:8888",
+            "connect": "tcp:localhost:1111"
         })
+
         m = await host_proto.next_message("listening")
     else:
         print("local forward")
         host_proto.send_message({
             "kind": "remote",
-            ##"listen-endpoint": "tcp:8888",
-            "remote-endpoint": "tcp:8888",
-            "local-endpoint": "tcp:localhost:1111"
+            "listen": "tcp:8888",
+            "connect": "tcp:localhost:1111"
         })
         m = await guest_proto.next_message("listening")
     print("got it", m)
