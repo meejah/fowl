@@ -137,6 +137,7 @@ To create a virtualenv in your checkout of ``fowl``, for example:
     # or: ./venv/bin/pip install --editable .
     ./venv/bin/fowl
 
+.. _hello-world-chat:
 
 💬 Hello World: Chat!
 ---------------------

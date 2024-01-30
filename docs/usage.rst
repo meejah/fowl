@@ -6,41 +6,51 @@ This project actually ships two CLI tools: ``fowld`` and ``fowl``.
 One is intended for automated, programmatic use (``fowld``) and the other is intended for human use (``fowl``).
 
 Most users will only ever use ``fowl``.
-Programs that integrate with or otherwise want stable, machine-parsable output and input will use ``fowld``.
-Under the hood, ``fowl`` commands actually use ``fowld``.
+
+Programs that integrate with (or otherwise want stable, machine-parsable output) will use ``fowld``.
+Under the hood, ``fowl`` commands actually use ``fowld`` (via a Python API).
+All functionality should be available to users of either program.
+
+
+High-Level Overview
+-------------------
+
+What we aim to accomplish here is to easily set up the forwarding of TCP or Unix streams over a secure, identity-less and durable connection.
+
+These streams may be anything at all -- but the core use-case is aimed at eliminating the need to run public-IP services.
+Our canonical "hello world" example is a simple chat system: running ``nc`` (aka "netcat") on one side, and ``telnet`` (see :ref:`hello-world-chat` for a fully-worked example).
+
+Although ``nc`` and ``telnet`` provide no security, using them here we get an end-to-end-encrypted chat session.
+We also get "durability" (if one side loses conenction or changes to a different network, we will eventually resume uninterrupted).
+We do not have to change the ``nc`` or ``telnet`` programs at all (they can already connect to and listen upon ``localhost`` -- that's all we need).
+
+The general flow of a session is that one side "starts" it (allocating a secret code), and the second side "joins" it (consuming the secret coe).
+These codes can be used precisely once: if a bad actor guesses or intercepts the code, your partner will know (because it won't work for them).
+
+You may also gain additional security by using the "verifier" feature, if desired (this ensures that you're 100% definitely communicating with the intended party).
+See the `magic-wormhole documentation <>`_ for a full security discussion.
 
 
 Philsophy of Commands
------------------------
+---------------------
 
-The commands that ``fowld`` accepts and the message it outputs MUST all be well-formed JSON lines.
+The ``fowl`` program accepts human-typed arguments, asks questions that humans are expected to answer and produces messages for humans to read.
+Many options are available via normal command-line arguments.
+
+Although we'll still avoid gratuitous compatilibity problems, the output SHOULD NOT be considered machine-parsable and may change from release to release.
+
+By contrast, the commands that ``fowld`` accepts and the messages it outputs MUST all be well-formed JSON lines.
 Generally, backwards-incompatibilities SHOULD be avoided.
 
 There should be few (ideally no) command-line options for ``fowld``.
-Programs integrating with it should expect to use any version of the software.
+Programs integrating with it should be able to use any version of the software (that is, to upgrade seamlessly).
 
 .. note::
 
    Since this is still in rapid development we don't make any promises
-   about backwards compatibility yet, but will expect in future to
+   about backwards compatibility *yet*, but will expect in future to
    have a protocol version that will increment with any breaking
    changes.
-
-By contrast, the ``fowl`` program accepts human-typed argument, asks questions the humans are expected to answer and produces message that humans are expected to read.
-
-Although we'll still avoid gratuitous compatilibity problems, the output SHOULD NOT be considered machine-parsable and may change from release to release.
-
-
-``fowld`` Usage
-===============
-
-``fowld`` is a command-line tool intended to be run in a terminal session or as a subprocess by a higher-level co-ordination program (e.g. a GUI, or a WAMP client, or ``fowl``).
-
-All interactions (besides CLI options) are via a line-based protocol: each line is a complete JSON object.
-
-Most humans should use ``fowl`` instead.
-
-See :ref:`frontend-protocol` for details on the stdin / stdout protocol that is spoken by ``fowld``.
 
 
 ``fowl`` Usage
@@ -134,39 +144,26 @@ See below.
 ``fowl accept``
 ---------------
 
-One side has to begin the session second, and they run this command.
-This command consumes a Wromhole code and must receive it from the human who ran the ``fowl invite`` command.
+One side has to be the "second" user to a session and that person runs this command.
+``fowl accept`` consumes a Wormhole code and must receive it from the human who ran the ``fowl invite`` command.
 
 Once the Magic Wormhole protocol has successfully set up a Dilation connection, a message will appear on ``stdout``::
 
-    ``{"kind": "connected"}``
+    ``Peer connected. Verifier: <long string of hex>``
 
 After this, we reach the more "symmetric" state of the session: although under the hood one side is randomly "the Follower" and one side is "the Leader" in the Dilation session, at our level either side can request forwards from the other.
 
-See below.
+Generally ports to forward are specified on the command-line (and "policy" type options to allow or deny these are also expressed as command-line options).
+In case no "policy" options were specified, the user will be interactively asked on every stream that the other side proposes to open.
 
 
-Successful Session: Symmetric Messaging
----------------------------------------
+``fowld`` Usage
+===============
 
-Both sides are set up.
+``fowld`` is a command-line tool intended to be run in a terminal session or as a subprocess by a higher-level co-ordination program (e.g. a GUI, or a WAMP client, or ``fowl``).
 
-We now enter a state where either side can make requests of the other.
-All requests are "asynchronous", in the sense that replies are not definitely right after requests.
-Therefore we attach an ``id`` to all requests which is matched with a reply
-(XXX can we say "exactly one reply" here? hopefully!)s
+All interactions (besides CLI options) are via a line-based protocol: each line is a complete JSON object.
 
+Most humans should use ``fowl`` instead.
 
-Request a Remote Listener
-~~~~~~~~~~~~~~~~~~~~~~~~~
-
-"Our" side wants the "other" side to start listening on a local port.
-So, we "ask" them via a ``"kind": "remote"`` request.
-
-That side may have an aritrarily complex process around this request, and ultimately either accepts or rejects it.
-For example, it may simply have a policy on what ports to whitelist.
-Or, it may ask the human via some UI whether to allow the forward or not.
-Regardless, it takes some time to answer the request.
-
-Upon success, the other side listens locally on a particular port.
-Whenever something connects to that port, a subchannel is opened to our side and we make a localhost *client-type* request over the *same port* (this latter point is important for some protocols, for example HTTP).
+See :ref:`frontend-protocol` for details on the stdin / stdout protocol that is spoken by ``fowld``.
