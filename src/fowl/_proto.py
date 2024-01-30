@@ -475,6 +475,7 @@ class LocalServer(Protocol):
             # MUST wait for reply first -- queueing all data until
             # then
             self.transport.pauseProducing()
+            return proto
 
         # XXX do we need registerProducer somewhere here?
         factory = Factory.forProtocol(ForwardConnecter)
@@ -1003,19 +1004,21 @@ class FowlDaemon:
         d = self._wormhole.get_code()
 
         def got_code(code):
-            print("got code", code)
             self._code = code
             self.code_allocated()
+            return code
         d.addCallbacks(got_code, self._handle_error)
 
     @m.output()
     def do_set_code(self, code):
-        print("do set code", code)
-        self._code = code
         self._wormhole.set_code(code)
         d = self._wormhole.get_code()
-        print("ZZZ", d)
-        d.addCallbacks(lambda _: self.code_allocated(), self._handle_error)
+
+        def got_code(code):
+            self._code = code
+            self.code_allocated()
+            return code
+        d.addCallbacks(got_code, self._handle_error)
 
     @m.output()
     def emit_code_allocated(self):
@@ -1473,6 +1476,7 @@ class Commands(Protocol):
             def got_port(port):
                 print("XXX got port", port)
                 self._ports.append(port)
+                return port
             d.addCallback(got_port)
             # XXX should await proto.stopListening() somewhere...at the appropriate time
         else:
