@@ -56,7 +56,7 @@ def fowld(ctx, ip_privacy, mailbox, debug):
         return ensureDeferred(
             forward(
                 ctx.obj,
-                wormhole_from_config(ctx.obj),  # coroutine
+                wormhole_from_config(reactor, ctx.obj),  # coroutine
             )
         )
     return react(run)
@@ -141,7 +141,7 @@ def invite(ctx, code_length):
         return ensureDeferred(
             frontend_invite(
                 ctx.obj,
-                wormhole_from_config(ctx.obj),  # coroutine
+                wormhole_from_config(reactor, ctx.obj),  # coroutine
             )
         )
     return react(run)

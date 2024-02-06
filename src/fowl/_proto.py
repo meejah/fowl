@@ -60,7 +60,7 @@ class _Config:
     debug_file: IO = None  # for state-machine transitions
 
 
-async def wormhole_from_config(config, wormhole_create=None):
+async def wormhole_from_config(reactor, config, wormhole_create=None):
     """
     Create a suitable wormhole for the given configuration.
 
