@@ -99,21 +99,48 @@ async def frontend_tui(reactor, config):
                 try:
                     cmd_fn = commands[cmd_name]
                 except KeyError as e:
+                    if cmd_name.strip().lower() == "quit" or cmd_name.strip().lower() == "q":
+                        break
                     print(f'No such command "{cmd_name}"')
                     print("Commands: {}".format(" ".join(commands.keys())))
+                    print("Ctrl-d to quit")
                     continue
                 await cmd_fn(reactor, w, state, *cmd[1:])
         elif what == 1:
-            print("\nClosing mailbox...", end="", flush=True)
-            try:
-                await w.close()
-            except LonelyError:
-                pass
-            print("done.")
             break
+
+    print("\nClosing mailbox...", end="", flush=True)
+    try:
+        await w.close()
+    except LonelyError:
+        pass
+    print("done.")
+
+
+async def _cmd_help(reactor, w, state, *args):
+    """
+    Some helpful words
+    """
+    funs = dict()
+    for name, fn in commands.items():
+        try:
+            funs[fn].append(name)
+        except KeyError:
+            funs[fn] = [name]
+    for fn, aliases in funs.items():
+        name = sorted(aliases)[-1]
+        rest = " ".join(sorted(aliases)[:-1])
+        helptext = fn.__doc__
+        if helptext:
+            print(f"{name} ({rest})")
+            print(textwrap.fill(helptext.strip(), 80, initial_indent="    ", subsequent_indent="    "))
+            print()
 
 
 async def _cmd_invite(reactor, w, state, *args):
+    """
+    Allocate a code (to give to a peer)
+    """
     if args:
         print("No arguments allowed")
         return
@@ -121,10 +148,21 @@ async def _cmd_invite(reactor, w, state, *args):
 
 
 async def _cmd_accept(reactor, w, state, *args):
+    """
+    Consume an already-allocated code (from a peer)
+    """
     if len(args) != 1:
         print('Require a secret code (e.g. from "invite" on the other side)')
         return
     w.set_code(args[0])
+
+
+async def _cmd_listen_local(reactor, w, state, *args):
+    pass
+
+
+async def _cmd_listen_remote(reactor, w, state, *args):
+    pass
 
 
 class CommandReader(LineReceiver):
@@ -237,3 +275,19 @@ async def _tui(reactor, config, w, stdscr):
         await w.close()
     except LonelyError:
         pass
+
+
+commands = {
+    "invite": _cmd_invite,
+    "i": _cmd_invite,
+
+    "accept": _cmd_accept,
+    "a": _cmd_accept,
+
+    "local": _cmd_listen_local,
+    "remote": _cmd_listen_remote,
+
+    "help": _cmd_help,
+    "h":_cmd_help,
+    "?": _cmd_help,
+}
