@@ -16,11 +16,16 @@ from ._proto import (
     forward,
     frontend_invite,
     frontend_accept,
+    WELL_KNOWN_MAILBOXES,
 )
+from ._tui import frontend_tui
 
 
 # XXX need to replicate a bunch of "wormhole *" args?
 # e.g. tor stuff, mailbox url, ..
+
+# XXX there ar repeated args for "fowl" and "fowld" -- can we have a
+# "common args" ... decorator? function?
 
 @click.option(
     "--ip-privacy/--clearnet",
