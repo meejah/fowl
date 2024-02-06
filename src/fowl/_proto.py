@@ -30,6 +30,7 @@ from .observer import When
 APPID = u"meejah.ca/wormhole/forward"
 WELL_KNOWN_MAILBOXES = {
     "default": PUBLIC_MAILBOX_URL,
+    "local": "ws://localhost:4000/v1",
     "winden": "wss://mailbox.mw.leastauthority.com/v1",
     # Do YOU run a public mailbox service? Contact the project to
     # consider having it listed here
