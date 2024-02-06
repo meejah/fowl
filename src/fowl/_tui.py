@@ -42,10 +42,6 @@ async def frontend_tui(reactor, config):
     if "motd" in welcome:
         print(textwrap.fill(welcome["motd"].strip(), 80, initial_indent="    ", subsequent_indent="    "))
 
-    commands = {
-        "invite": _cmd_invite,
-        "accept": _cmd_accept,
-    }
     state = [State([])]
 
     def replace_state(new_state):
