@@ -21,13 +21,19 @@ from twisted.internet.stdio import StandardIO
 from twisted.protocols.basic import LineReceiver
 from twisted.python.failure import Failure
 from zope.interface import directlyProvides
-from wormhole.cli.public_relay import RENDEZVOUS_RELAY as default_mailbox_url
+from wormhole.cli.public_relay import RENDEZVOUS_RELAY as PUBLIC_MAILBOX_URL
 
 from .observer import When
 
 
 
 APPID = u"meejah.ca/wormhole/forward"
+WELL_KNOWN_MAILBOXES = {
+    "default": PUBLIC_MAILBOX_URL,
+    "winden": "wss://mailbox.mw.leastauthority.com/v1",
+    # Do YOU run a public mailbox service? Contact the project to
+    # consider having it listed here
+}
 
 
 def _sequential_id():
@@ -49,7 +55,7 @@ class _Config:
     Represents a set of validated configuration
     """
 
-    relay_url: str = default_mailbox_url
+    relay_url: str = PUBLIC_MAILBOX_URL
     code: str = None
     code_length: int = 2
     use_tor: bool = False

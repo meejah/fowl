@@ -30,7 +30,8 @@ from ._proto import (
 @click.option(
     "--mailbox",
     default=PUBLIC_MAILBOX_URL,
-    help="URL for the mailbox server to use",
+    help='URL for the mailbox server to use (or "default" or "winden" to use well-known servers)',
+    metavar="URL or NAME",
 )
 @click.option(
     "--debug",
@@ -48,7 +49,7 @@ def fowld(ctx, ip_privacy, mailbox, debug):
     wormhole connections
     """
     ctx.obj = _Config(
-        relay_url=mailbox,
+        relay_url=WELL_KNOWN_MAILBOXES.get(mailbox, mailbox),
         use_tor=bool(ip_privacy),
         debug_file=debug,
     )
@@ -70,7 +71,8 @@ def fowld(ctx, ip_privacy, mailbox, debug):
 @click.option(
     "--mailbox",
     default=PUBLIC_MAILBOX_URL,
-    help="URL for the mailbox server to use",
+    help='URL for the mailbox server to use (or "default" or "winden" to use well-known servers)',
+    metavar="URL or NAME",
 )
 @click.option(
     "--debug",
@@ -109,7 +111,7 @@ def fowl(ctx, ip_privacy, mailbox, debug, allow, local, remote):
     data and commands, use fowld (or 'python -m fowl')
     """
     ctx.obj = _Config(
-        relay_url=mailbox,
+        relay_url=WELL_KNOWN_MAILBOXES.get(mailbox, mailbox),
         use_tor=bool(ip_privacy),
         debug_file=debug,
     )
