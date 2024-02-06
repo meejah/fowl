@@ -161,7 +161,21 @@ def accept(ctx, code):
     """
     ctx.obj = evolve(ctx.obj, code=code)
     def run(reactor):
-        return ensureDeferred(frontend_accept(ctx.obj, wormhole_from_config(ctx.obj)))
+        return ensureDeferred(frontend_accept(ctx.obj, wormhole_from_config(reactor, ctx.obj)))
+    return react(run)
+
+
+@fowl.command()
+@click.pass_context
+def tui(ctx):
+    """
+    Run an interactive text user-interface (TUI)
+
+    Allows one to use a human-readable version of the controller
+    protocol directly to set up listeners, monitor streams, etc
+    """
+    def run(reactor):
+        return ensureDeferred(frontend_tui(reactor, ctx.obj))
     return react(run)
 
 
