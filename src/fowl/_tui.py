@@ -26,7 +26,7 @@ class State:
 
     @property
     def pretty_verifier(self):
-        # space-ify this
+        # space-ify this, for easier reading
         hstr = binascii.hexlify(self.verifier).decode("utf8")
         return " ".join(
             hstr[a:a+4]

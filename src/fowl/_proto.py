@@ -1360,7 +1360,7 @@ def parse_fowld_output(json_str: str) -> FowlOutputMessage:
 
     kind_to_message = {
         "welcome": parser(Welcome, [("welcome", None)]),
-        "code-allocatd": parser(CodeAllocated, [("code", None)]),
+        "code-allocated": parser(CodeAllocated, [("code", None)]),
         "peer-connected": parser(PeerConnected, [("verifier", binascii.unhexlify)]),
         "listening": parser(Listening, [("endpoint", None), ("connect-endpoint", None)]),
         "local-connection": parser(LocalConnection, [("id", int)]),

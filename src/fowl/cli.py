@@ -35,7 +35,7 @@ from ._tui import frontend_tui
 @click.option(
     "--mailbox",
     default=PUBLIC_MAILBOX_URL,
-    help='URL for the mailbox server to use (or "default" or "winden" to use well-known servers)',
+    help='URL for the mailbox server to use (or "default", "local" or "winden" to use well-known servers)',
     metavar="URL or NAME",
 )
 @click.option(
