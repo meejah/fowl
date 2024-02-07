@@ -34,6 +34,8 @@ class State:
         )
 
 
+
+
 async def frontend_tui(reactor, config):
     print(f"Connecting: {config.relay_url}")
     w = await wormhole_from_config(reactor, config)
@@ -43,6 +45,15 @@ async def frontend_tui(reactor, config):
         print(textwrap.fill(welcome["motd"].strip(), 80, initial_indent="    ", subsequent_indent="    "))
 
     state = [State([])]
+
+    # XXX aaaaa, should use FowlDaemon instead
+
+    # Hrrrmmm, thinking ahead: maybe DelegatedWormhole is a better
+    # move? Since essentially FowlDaemon will "hook up event-handlers"
+    # by doing stuff like get_code().addCallback(self.got_code) or
+    # similar -- so just have it "be" a delegate and implement
+    # wormhole_got_code() etc ... also journaling only works with
+    # Delegate I think? (Why?)
 
     def replace_state(new_state):
         old = state[0]

@@ -31,6 +31,7 @@ class _FowlProtocol(ProcessProtocol):
     def childDataReceived(self, childFD, data):
         try:
             js = json.loads(data)
+            print("XX", js)
         except Exception as e:
             print(data.decode("utf8"))
 ##            print(f"Not JSON: {data}")
