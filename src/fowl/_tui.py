@@ -14,7 +14,8 @@ from wormhole.errors import WormholeError, LonelyError
 import attr
 
 from .observer import Next, When
-from ._proto import wormhole_from_config
+from ._proto import wormhole_from_config, FowlDaemon, FowlWormhole
+from ._proto import Welcome, CodeAllocated, PeerConnected
 
 
 
@@ -38,8 +39,25 @@ class State:
 
 async def frontend_tui(reactor, config):
     print(f"Connecting: {config.relay_url}")
-    w = await wormhole_from_config(reactor, config)
-    welcome = await w.get_welcome()
+
+    import functools
+
+    got_welcome = When()
+    got_code = When()
+
+    @functools.singledispatch
+    def output_message(msg):
+        print(f"unhandled output: {msg}")
+
+    @output_message.register(Welcome)
+    def _(msg):
+        got_welcome.trigger(reactor, msg.welcome)
+
+    daemon = FowlDaemon(reactor, config, output_message)
+    w = await wormhole_from_config(reactor, config, daemon)
+
+
+    welcome = await got_welcome.when_triggered()
     print(f"Connected.")
     if "motd" in welcome:
         print(textwrap.fill(welcome["motd"].strip(), 80, initial_indent="    ", subsequent_indent="    "))
@@ -68,24 +86,14 @@ async def frontend_tui(reactor, config):
             print(f"\n{new_output}>>> ", end="", flush=True)
         state[0] = new_state
 
-    code_d = w.get_code()
-    def got_code(code):
-        replace_state(attr.evolve(state[0], code=code))
-        return code
-    code_d.addCallbacks(got_code, lambda _: None)
+    @output_message.register(CodeAllocated)
+    def _(msg):
+        replace_state(attr.evolve(state[0], code=msg.code))
 
-    versions_d = w.get_versions()
-    def got_versions(versions):
+    @output_message.register(PeerConnected)
+    def _(msg):
         w.dilate()
         replace_state(attr.evolve(state[0], connected=True))
-        return versions
-    versions_d.addCallbacks(got_versions, lambda _: None)
-
-    verifier_d = w.get_verifier()
-    def got_verifier(verifier):
-        replace_state(attr.evolve(state[0], verifier=verifier, connected=True))
-        return verifier
-    verifier_d.addCallbacks(got_verifier, lambda _: None)
 
     create_stdio = config.create_stdio or StandardIO
     command_reader = CommandReader(reactor)

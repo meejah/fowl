@@ -78,6 +78,14 @@ class Welcome(FowlOutputMessage):
 
 
 @frozen
+class WormholeClosed(FowlOutputMessage):
+    """
+    The wormhole has been terminated.
+    """
+    result: str
+
+
+@frozen
 class AllocateCode(FowlCommandMessage):
     """
     Create a fresh code on the server
@@ -108,6 +116,7 @@ class PeerConnected(FowlOutputMessage):
     """
     # hex-encoded 32-byte hash output (should match other peer)
     verifier: str
+    versions: dict
 
 
 @frozen
@@ -997,11 +1006,13 @@ class FowlWormhole:
     asynchronous things.
     """
 
-    def __init__(self, wormhole):
+    def __init__(self, reactor, wormhole):
+        self._reactor = reactor
         self._listening_ports = []
         self._wormhole = wormhole
         self._done = When() # we have shut down completely
         self._connected = When()  # our Peer has connected
+        self._got_welcome = When()  # we received the Welcome from the server
         self._command_queue = []
         self._running_command = None  # Deferred if we're running a command now
         self.connect_ep = self.control_proto = None
@@ -1012,6 +1023,7 @@ class FowlWormhole:
         """
         Process an incoming command
         """
+        print("COMMAND")
 
     # called from FowlDaemon when it has interactions to do
 
@@ -1027,11 +1039,14 @@ class FowlWormhole:
             #XXX error-handling
         elif isinstance(msg, SetCode):
             self._set_code(msg)
-        print(
-            json.dumps(fowld_output_to_json(msg)),
-            file=config.stdout,
-            flush=True,
-        )
+        elif isinstance(msg, Welcome):
+            self._got_welcome.trigger(self._reactor, msg.welcome)
+        else:
+            print(
+                json.dumps(fowld_output_to_json(msg)),
+                file=config.stdout,
+                flush=True,
+            )
 
     def _set_code(self, msg: SetCode) -> None:
         self._wormhole.set_code(msg.code)
@@ -1044,6 +1059,9 @@ class FowlWormhole:
         d.addCallbacks(got_code, self._handle_error)
 
     # our own callbacks / notifications
+
+    async def get_welcome(self):
+        return await self._got_welcome.when_triggered()
 
     def when_done(self):
         return self._done.when_triggered()
@@ -1092,94 +1110,45 @@ class FowlWormhole:
         )
 
 
-# XXX so, this is "just" the state-machine
-# ...really want this to still be the wormhole-delegate (that "not input" right?)
-class FowlDaemon:
-    """
-    This is the core 'fowld' protocol.
+    async def _post_dilation_setup(self):
+        # listen for commands from the other side on the control channel
+        assert self.control_ep is not None, "Need control connection"
+        fac = Factory.forProtocol(Commands)
+        fac.config = self._config
+        fac.connect_ep = self.connect_ep  # so we can pass it command handlers
+        self.control_proto = await self.control_ep.connect(fac)
 
-    This class MUST NOT do any I/O or any asynchronous things (no
-    "async def" or Deferred-returning methods).
+        # listen for incoming subchannel OPENs
+        in_factory = Factory.forProtocol(Incoming)
+        in_factory.config = self._config
+        in_factory.connect_ep = self.connect_ep
+        listen_port = await self.listen_ep.listen(in_factory)
+###        self._ports.append(listen_port)
 
-    There are two main pieces of I/O that we are concerned with here:
-    - stdin / stdout, line-based JSON messages
-    - wormhole interactions
+        await self._wormhole.get_unverified_key()
+        verifier_bytes = await self._wormhole.get_verifier()  # might WrongPasswordError
 
-    Most users of fowld will see the stdin/stdout message (only), as
-    that is how we communicate with the outside world.
+        self._connected.trigger(self._reactor, verifier_bytes)
+        self.peer_connected(verifier_bytes)
 
-    Internally (e.g. "tui", "fowl invite", tests) we are concerned
-    with both kinds of interactions. Especially for tests, sometimes
-    we want to "not actually interact" with the wormhole (but instead
-    confirm what this class _wants_ to do).
+        #XXX this isn't actually called -- we're cancelling some other
+        #deferred in the end. move to "cleanup" states + handlers in
+        #the state-machine
+        def cancelled(x):
+            print("hey hey cancelled", x)
+            d = listen_port.stopListening()
+            print("xx", d)
+            for port in self._listening_ports:
+                d = port.stopListening()
+                print("DDD", d)
+            print("close", self.control_proto)
+            self.control_proto.transport.loseConnection()
 
-    Follwing https://sans-io.readthedocs.io/how-to-sans-io.html and
-    related ideas and posts, instances of this class interact SOLELY
-    through two kinds of messages that encode the intent of this
-    sans-io core: `FowlOutputMessage` (messages from us to the
-    outside) and `FowlCommandMessage` (message from the outside to
-    us).
-
-    The `message_handler` you pass here will get instances of
-    `FowlOutputMessage` and is expected to "do the I/O" as
-    appropriate; in the "normal" case this means either dumping a JSON
-    line to stdout or calling a wormhole method (causing I/O to the
-    peer or mailbox server).
-
-    On the "input" side, something (e.g. `FowlWormhole`, above)
-    translates `FowlCommandMessage` innstances into inputs to our
-    state-machine. In the "normal" case this means parsing an incoming
-    line on stdin (see `parse_fowld_command`) and translating that to
-    an appropriate call to an `@m.input()` decorated method.
-    """
-    m = automat.MethodicalMachine()
-
-    def __init__(self, reactor, config, message_handler):
-        self._reactor = reactor
-        self._config = config
-        self._messages = []  # pending plaintext messages to peer
-        self._code = None
-        self._verifier = None
-        self._versions = None
-        self._message_out = message_handler
-
-    # _DelegatedWormhole callbacks; see also IWormholeDelegate
-
-    # _DelegatedWormhole callback
-    def wormhole_got_welcome(self, welcome: dict) -> None:
-        self._message_out(Welcome(welcome))
-        # what @input do we trigger?
-
-    # _DelegatedWormhole callback
-    def wormhole_got_code(self, code: str) -> None:
-        self._code = code
-        self.code_allocated()
-
-    # _DelegatedWormhole callback
-    def wormhole_got_unverified_key(self, key: bytes) -> None:  # XXX definitely bytes?
-        pass
-
-    # _DelegatedWormhole callback
-    def wormhole_got_verifier(self, verifier: bytes) -> None:  # XXX bytes, or str?
-        self._verifier = verifier
-        # we "should" get verifier, then versions .. but
-        if self._versions is not None and self._verifier is not None:
-            self.peer_connected(self._verifier, self._versions)
-
-    # _DelegatedWormhole callback
-    def wormhole_got_versions(self, versions: dict) -> None:
-        self._versions = versions
-        # we "should" get verifier, then versions .. but
-        if self._versions is not None and self._verifier is not None:
-            self.peer_connected(self._verifier, self._versions)
-
-    # _DelegatedWormhole callback
-    def wormhole_got_message(self, plaintext: bytes) -> None:  # XXX bytes, or str?
-        self.got_message(plaintext)
-
-    # _DelegatedWormhole callback
-    def wormhole_closed(self, result: str) -> None:
-        self._done.trigger(self.result)
+        try:
+            await Deferred(canceller=cancelled)
+        except CancelledError:
+            print("BADBADBAD")
+            raise
 
 
     def handle_command(self, cmd):
@@ -1228,6 +1197,205 @@ class FowlDaemon:
                 "Unknown command '{}'".format(cmd["kind"])
             )
 
+
+##XXXX
+# okay so if we really want "a sans-io core" then all
+# the "messages" have to be processed synchronously (by the state-machine)
+# so what _ARE_ the in / out messages?
+# we have two categories:
+# - "stuff for the wormhole" (async calls to / from .. _DelegatedWormhole instance)
+# - "stuff for the controller" (stdin/stdout)
+#
+# I _think_ it's okay to literally "be" the "delegate" (since all sync.)
+# so, brainstorming through this "in code":
+
+### wormhole messages
+# "to" the wormhole messages:
+
+class ToWormhole:
+    pass
+
+
+# is this maybe just "outside" the whole thing?
+# "somehow" we cause code_allocated() to be called (either "given to
+# us" or "we asked workhole for it")
+
+@frozen
+class SetCode(ToWormhole):
+    code: str
+
+
+@frozen
+class AllocateCode(ToWormhole):
+    code_length: int = 2
+
+
+@frozen
+class SendMessage(ToWormhole):
+    plaintext: str
+
+
+@frozen
+class CloseWormhole(ToWormhole):
+    pass
+
+
+# "from" the wormhole messages (eveything the "delegate" calls, wormhole_*)
+# (do we "bother" with these, or just hook the "delegate" directly in..?)
+
+# hrrrmmm .. from the 'state machine' perspective, we just use @m.input for all our input I guess?
+# otherwise, we just have a "process_input_message" that will do dumb type introspection
+# and call an actual @m.input method
+# ...so it's only for "emit_*" things that we have "actual message classes"
+# ..._OR_ we could I guess do a "delegate" sort of thing, like magic-wormhole
+
+
+### sans-io story here is this:
+### stuff "coming in" are @m.input() methods
+###   - (things on standard-in start as FowlInputMessages via ".command()")
+### stuff "going out" is a FowlOutputMessage subclass
+
+
+class FowlOutputMessage:
+    pass
+
+
+@frozen
+class GotMessageFromPeer(FowlOutputMessage):
+    plaintext: str
+
+
+@frozen
+class SendMessageToPeer(FowlOutputMessage):
+    plaintext: str
+
+
+@frozen
+class AllocateCode(FowlCommandMessage):
+    """
+    Create a fresh code on the server
+    """
+    length: Optional[int] = None
+
+
+@frozen
+class SetCode(FowlCommandMessage):
+    """
+    Give a code we know to the server
+    """
+    code: str
+
+
+@frozen
+class LocalListener(FowlCommandMessage):
+    """
+    We wish to open a local listener.
+    """
+    listen: str  # Twisted server-type endpoint string
+    connect: str  # Twisted client-type endpoint string
+
+
+@frozen
+class RemoteListener(FowlCommandMessage):
+    """
+    We wish to open a listener on the peer.
+    """
+    listen: str  # Twisted server-type endpoint string
+    connect: str  # Twisted client-type endpoint string
+
+
+# -to outside (i.e. "emit on stdout")
+
+# XXX so, this is "just" the state-machine
+# ...really want this to still be the wormhole-delegate (that "not input" right?)
+class FowlDaemon:
+    """
+    This is the core 'fowld' protocol.
+
+    This class MUST NOT do any I/O or any asynchronous things (no
+    "async def" or Deferred-returning methods).
+
+    There are two main pieces of I/O that we are concerned with here:
+    - stdin / stdout, line-based JSON messages
+    - wormhole interactions
+
+    Most users of fowld will see the stdin/stdout message (only), as
+    that is how we communicate with the outside world.
+
+    Internally (e.g. "tui", "fowl invite", tests) we are concerned
+    with both kinds of interactions. Especially for tests, sometimes
+    we want to "not actually interact" with the wormhole (but instead
+    confirm what this class _wants_ to do).
+
+    Follwing https://sans-io.readthedocs.io/how-to-sans-io.html and
+    related ideas and posts, instances of this class interact SOLELY
+    through "input" methods, or FowlCommandMessage (via the "input"
+    method "command()").
+
+    The `message_handler` you pass here will get instances of
+    `FowlOutputMessage` and is expected to "do the I/O" as
+    appropriate; in the "normal" case this means either dumping a JSON
+    line to stdout or calling a wormhole method (causing I/O to the
+    peer or mailbox server).
+
+    On the "input" side, JSON on stdin becomes `FowlCommandMessage`
+    instances, which are translated into the correct input method to
+    call. In the "normal" case this means parsing incoming lines with
+    `parse_fowld_command` and translating that to an appropriate call
+    to an `@m.input()` decorated method.
+
+    We are also the wormhole "delegate" so wormhole callbacks are
+    implemented directly as @m.input() methods.
+    """
+    m = automat.MethodicalMachine()
+
+    def __init__(self, reactor, config, message_handler):
+        self._reactor = reactor
+        self._config = config
+        self._messages = []  # pending plaintext messages to peer
+        self._code = None
+        self._verifier = None
+        self._versions = None
+        self._message_out = message_handler
+
+    # _DelegatedWormhole callbacks; see also IWormholeDelegate
+
+    # _DelegatedWormhole callback
+    def wormhole_got_welcome(self, welcome: dict) -> None:
+        self._message_out(Welcome(welcome))
+        # what @input do we trigger?
+
+    # _DelegatedWormhole callback
+    def wormhole_got_code(self, code: str) -> None:
+        self._code = code
+        self.code_allocated()
+
+    # _DelegatedWormhole callback
+    def wormhole_got_unverified_key(self, key: bytes) -> None:  # XXX definitely bytes?
+        pass
+
+    # _DelegatedWormhole callback
+    def wormhole_got_verifier(self, verifier: bytes) -> None:  # XXX bytes, or str?
+        self._verifier = verifier
+        # we "should" get verifier, then versions .. but
+        if self._versions is not None and self._verifier is not None:
+            self.peer_connected(self._verifier, self._versions)
+
+    # _DelegatedWormhole callback
+    def wormhole_got_versions(self, versions: dict) -> None:
+        self._versions = versions
+        # we "should" get verifier, then versions .. but
+        if self._versions is not None and self._verifier is not None:
+            self.peer_connected(self._verifier, self._versions)
+
+    # _DelegatedWormhole callback
+    def wormhole_got_message(self, plaintext: bytes) -> None:  # XXX bytes, or str?
+        self.got_message(plaintext)
+
+    # _DelegatedWormhole callback
+    def wormhole_closed(self, result: str) -> None:
+        self.shutdown(result)
+
     @m.state(initial=True)
     def waiting_code(self):
         """
@@ -1246,37 +1414,52 @@ class FowlDaemon:
         """
 
     @m.state()
-    def stopping(self):
+    def closed(self):
         """
-        We are shutting down.
-        """
-
-    @m.state()
-    def done(self):
-        """
-        Nothing more to accomplish
+        Nothing more to accomplish, the wormhole is closed
         """
 
     @m.input()
     def code_allocated(self):
         """
+        We have a wormhole code (either because it was "set" or because we
+        allcoated a new one).
         """
         # this happens either because we "set-code" or because we
-        # asked for a new code (i.e. "invite" or "accept")
+        # asked for a new code (i.e. "invite" or "accept") from the
+        # OUTSIDE (i.e. controlling function)
 
     @m.input()
-    def peer_connected(self, verifier, versions):
+    def peer_connected(self, verifier: bytes, versions: dict):
         """
+        We have a peer
+
+        :param verifier: a tagged hash of the peers symmetric
+            key. This should match what our peer sees (users can
+            verify out-of-band for extra security)
+
+        :param versions: arbitrary JSON-able data from the peer,
+            intended to be used for protocol and other negotiation. A
+            one-time, at-startup pre-communication mechanism (definitely
+            before any other messages). Also serves as key-confirmation.
         """
 
     @m.input()
     def got_message(self, plaintext):
         """
+        We received a message from our peer
         """
 
     @m.input()
     def send_message(self, plaintext):
         """
+        Pass a new message to our peer
+        """
+
+    @m.input()
+    def shutdown(self, result):
+        """
+        The wormhole has closed
         """
 
     @m.output()
@@ -1299,10 +1482,6 @@ class FowlDaemon:
         )
 
     @m.output()
-    def queue_message(self, plaintext):
-        self._message_queue.append(plaintext)
-
-    @m.output()
     def emit_send_message(self, plaintext):
         self._message_out(
             SendMessageToPeer(
@@ -1311,50 +1490,28 @@ class FowlDaemon:
         )
 
     @m.output()
+    def emit_got_message(self, plaintext):
+        self._message_out(
+            GotMessageFromPeer(
+                plaintext,
+            )
+        )
+
+    @m.output()
+    def queue_message(self, plaintext):
+        self._message_queue.append(plaintext)
+
+    @m.output()
     def send_queued_messages(self):
         to_send, self._messages = self._messages, []
         for m in to_send:
             self.emit_send_message(m)
 
-    async def _post_dilation_setup(self):
-        # listen for commands from the other side on the control channel
-        assert self.control_ep is not None, "Need control connection"
-        fac = Factory.forProtocol(Commands)
-        fac.config = self._config
-        fac.connect_ep = self.connect_ep  # so we can pass it command handlers
-        self.control_proto = await self.control_ep.connect(fac)
-
-        # listen for incoming subchannel OPENs
-        in_factory = Factory.forProtocol(Incoming)
-        in_factory.config = self._config
-        in_factory.connect_ep = self.connect_ep
-        listen_port = await self.listen_ep.listen(in_factory)
-###        self._ports.append(listen_port)
-
-        await self._wormhole.get_unverified_key()
-        verifier_bytes = await self._wormhole.get_verifier()  # might WrongPasswordError
-
-        self._connected.trigger(self._reactor, verifier_bytes)
-        self.peer_connected(verifier_bytes)
-
-        #XXX this isn't actually called -- we're cancelling some other
-        #deferred in the end. move to "cleanup" states + handlers in
-        #the state-machine
-        def cancelled(x):
-            print("hey hey cancelled", x)
-            d = listen_port.stopListening()
-            print("xx", d)
-            for port in self._listening_ports:
-                d = port.stopListening()
-                print("DDD", d)
-            print("close", self.control_proto)
-            self.control_proto.transport.loseConnection()
-
-        try:
-            await Deferred(canceller=cancelled)
-        except CancelledError:
-            print("BADBADBAD")
-            raise
+    @m.output()
+    def emit_shutdown(self, result):
+        self._message_out(
+            WormholeClosed(result)
+        )
 
     waiting_code.upon(
         code_allocated,
@@ -1365,6 +1522,11 @@ class FowlDaemon:
         send_message,
         enter=waiting_code,
         outputs=[queue_message]
+    )
+    waiting_code.upon(
+        shutdown,
+        enter=closed,
+        outputs=[emit_shutdown]
     )
 
     waiting_peer.upon(
@@ -1377,11 +1539,26 @@ class FowlDaemon:
         enter=connected,
         outputs=[emit_peer_connected, send_queued_messages],
     )
+    waiting_peer.upon(
+        shutdown,
+        enter=closed,
+        outputs=[emit_shutdown]
+    )
 
     connected.upon(
         send_message,
         enter=connected,
         outputs=[emit_send_message]
+    )
+    connected.upon(
+        got_message,
+        enter=connected,
+        outputs=[emit_got_message]
+    )
+    connected.upon(
+        shutdown,
+        enter=closed,
+        outputs=[emit_shutdown]
     )
     # XXX there's no notification to go from "connected" to
     # "waiting_peer" -- because Dilation will silently "do the right
