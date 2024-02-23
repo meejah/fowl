@@ -28,10 +28,9 @@ class State:
     @property
     def pretty_verifier(self):
         # space-ify this, for easier reading
-        hstr = binascii.hexlify(self.verifier).decode("utf8")
         return " ".join(
-            hstr[a:a+4]
-            for a in range(0, len(hstr), 4)
+            self.verifier[a:a+4]
+            for a in range(0, len(self.verifier), 4)
         )
 
 
@@ -51,18 +50,19 @@ async def frontend_tui(reactor, config):
 
     @output_message.register(Welcome)
     def _(msg):
-        got_welcome.trigger(reactor, msg.welcome)
+        print("\b\b\b\b", end="")
+        print(f"Connected.")
+        if "motd" in msg.welcome:
+            print(textwrap.fill(msg.welcome["motd"].strip(), 80, initial_indent="    ", subsequent_indent="    "))
+        print(">>> ", end="", flush=True)
 
     daemon = FowlDaemon(reactor, config, output_message)
-    w = await wormhole_from_config(reactor, config, daemon)
+    w = await wormhole_from_config(reactor, config)
+    wh = FowlWormhole(reactor, w, daemon)
+    wh.start()
+    print(wh)
 
-
-    welcome = await got_welcome.when_triggered()
-    print(f"Connected.")
-    if "motd" in welcome:
-        print(textwrap.fill(welcome["motd"].strip(), 80, initial_indent="    ", subsequent_indent="    "))
-
-    state = [State([])]
+    state = [State()]
 
     # XXX aaaaa, should use FowlDaemon instead
 
@@ -74,13 +74,15 @@ async def frontend_tui(reactor, config):
     # Delegate I think? (Why?)
 
     def replace_state(new_state):
+        print("replace with", new_state)
+        print(state[0])
         old = state[0]
         new_output = ""
         if new_state.connected and not old.connected:
             new_output += "Connected to peer!\n"
-        if new_state.code and not old.code:
+        if new_state.code and old.code is None:
             new_output += "Code: {}\n".format(new_state.code)
-        if new_state.verifier and not old.verifier:
+        if new_state.verifier and old.verifier is None:
             new_output += "Verifier: {}\n".format(new_state.pretty_verifier)
         if new_output:
             print(f"\n{new_output}>>> ", end="", flush=True)
@@ -93,7 +95,7 @@ async def frontend_tui(reactor, config):
     @output_message.register(PeerConnected)
     def _(msg):
         w.dilate()
-        replace_state(attr.evolve(state[0], connected=True))
+        replace_state(attr.evolve(state[0], connected=True, verifier=msg.verifier))
 
     create_stdio = config.create_stdio or StandardIO
     command_reader = CommandReader(reactor)
