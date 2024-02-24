@@ -5,6 +5,8 @@ import binascii
 import functools
 from typing import IO, Callable, Optional
 
+import humanize
+
 from twisted.internet.task import deferLater
 from twisted.internet.defer import ensureDeferred, DeferredList, race, Deferred
 from twisted.internet.stdio import StandardIO
@@ -16,8 +18,14 @@ import attr
 
 from .observer import Next, When
 from ._proto import wormhole_from_config, FowlDaemon, FowlWormhole
-from ._proto import Welcome, CodeAllocated, PeerConnected, WormholeClosed, AllocateCode, SetCode, LocalListener, Listening
+from ._proto import Welcome, CodeAllocated, PeerConnected, WormholeClosed, AllocateCode, SetCode, LocalListener, Listening, BytesIn, BytesOut, IncomingConnection, LocalConnection
 
+
+
+@attr.frozen
+class Connection:
+    i: int = 0
+    o: int = 0
 
 
 @attr.frozen
@@ -26,6 +34,7 @@ class State:
     connected: bool = False
     verifier: Optional[str] = None
     listeners: list = attr.Factory(list)
+    connections: dict[int, Connection] = attr.Factory(dict)
 
     @property
     def pretty_verifier(self):
@@ -52,6 +61,36 @@ async def frontend_tui(reactor, config):
     def _(msg):
         print(f"Listening: {msg.listen}")
         replace_state(attr.evolve(state[0], listeners=state[0].listeners + [msg.listen]))
+
+    @output_message.register(IncomingConnection)
+    def _(msg):
+        conn = state[0].connections
+        conn[msg.id] = Connection(0, 0)
+        replace_state(attr.evolve(state[0], connections=conn))
+
+    @output_message.register(LocalConnection)
+    def _(msg):
+        conn = state[0].connections
+        conn[msg.id] = Connection(0, 0)
+        replace_state(attr.evolve(state[0], connections=conn))
+
+    @output_message.register(BytesIn)
+    def _(msg):
+        conn = state[0].connections
+        conn[msg.id] = Connection(
+            conn[msg.id].i + msg.bytes,
+            conn[msg.id].o,
+        )
+        replace_state(attr.evolve(state[0], connections=conn))
+
+    @output_message.register(BytesOut)
+    def _(msg):
+        conn = state[0].connections
+        conn[msg.id] = Connection(
+            conn[msg.id].i,
+            conn[msg.id].o + msg.bytes,
+        )
+        replace_state(attr.evolve(state[0], connections=conn))
 
     @output_message.register(WormholeClosed)
     def _(msg):
@@ -85,6 +124,10 @@ async def frontend_tui(reactor, config):
             new_output += "Code: {}\n".format(new_state.code)
         if new_state.verifier and old.verifier is None:
             new_output += "Verifier: {}\n".format(new_state.pretty_verifier)
+        for conid, conn in new_state.connections.items():
+            b = conn.i + conn.o
+            if b:
+                new_output += f"{conid}: {humanize.naturalsize(b)}\n"
         if new_output:
             print(f"{new_output}>>> ", end="", flush=True)
         state[0] = new_state
