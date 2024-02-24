@@ -5,8 +5,14 @@ Get TCP streams from one computer to another, safely.
 
 (The base protocol below `Magic Wormhole <https://github.com/magic-wormhole/magic-wormhole>`_ provides a powerful account-less, peer-to-peer networking solution -- ``fowl`` helps you use this power immediately with existing programs)
 
-Why?
------
+
+.. image:: docs/_static/logo.svg
+    :width: 100%
+    :alt: Fowl Logo: a chicken head with two blue ethernet cables
+
+
+🤔 Why?
+-------
 
 We sometimes pair-program but don't like the idea of sending keystrokes over a third-party server.
 
