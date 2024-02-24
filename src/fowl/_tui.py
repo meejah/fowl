@@ -63,24 +63,17 @@ async def frontend_tui(reactor, config):
     daemon = FowlDaemon(reactor, config, output_message)
     w = await wormhole_from_config(reactor, config)
     wh = FowlWormhole(reactor, w, daemon, config)
+
+    # make into IService?
     wh.start()
 
     state = [State()]
 
-    # XXX aaaaa, should use FowlDaemon instead
-
-    # Hrrrmmm, thinking ahead: maybe DelegatedWormhole is a better
-    # move? Since essentially FowlDaemon will "hook up event-handlers"
-    # by doing stuff like get_code().addCallback(self.got_code) or
-    # similar -- so just have it "be" a delegate and implement
-    # wormhole_got_code() etc ... also journaling only works with
-    # Delegate I think? (Why?)
-
     def replace_state(new_state):
-        print("replace with", new_state)
-        print(state[0])
+        ##print("replace with", new_state)
+        ##print(state[0])
         old = state[0]
-        new_output = ""
+        new_output = "\b\b\b\b"
         if new_state.connected and not old.connected:
             new_output += "Connected to peer!\n"
         if new_state.code and old.code is None:
@@ -88,7 +81,7 @@ async def frontend_tui(reactor, config):
         if new_state.verifier and old.verifier is None:
             new_output += "Verifier: {}\n".format(new_state.pretty_verifier)
         if new_output:
-            print(f"\n{new_output}>>> ", end="", flush=True)
+            print(f"{new_output}>>> ", end="", flush=True)
         state[0] = new_state
 
     @output_message.register(CodeAllocated)
@@ -97,15 +90,14 @@ async def frontend_tui(reactor, config):
 
     @output_message.register(PeerConnected)
     def _(msg):
-        w.dilate()
         replace_state(attr.evolve(state[0], connected=True, verifier=msg.verifier))
 
     create_stdio = config.create_stdio or StandardIO
     command_reader = CommandReader(reactor)
     create_stdio(command_reader)
 
+    print(">>> ", end="", flush=True)
     while True:
-        print(">>> ", end="", flush=True)
         wc = ensureDeferred(command_reader.when_closed())
         what, result = await race([
             ensureDeferred(command_reader.next_command()),
