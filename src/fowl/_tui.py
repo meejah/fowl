@@ -18,7 +18,20 @@ import attr
 
 from .observer import Next, When
 from ._proto import wormhole_from_config, FowlDaemon, FowlWormhole
-from ._proto import Welcome, CodeAllocated, PeerConnected, WormholeClosed, AllocateCode, SetCode, LocalListener, Listening, BytesIn, BytesOut, IncomingConnection, LocalConnection
+from .messages import (
+    Welcome,
+    CodeAllocated,
+    PeerConnected,
+    WormholeClosed,
+    AllocateCode,
+    SetCode,
+    LocalListener,
+    Listening,
+    BytesIn,
+    BytesOut,
+    IncomingConnection,
+    LocalConnection,
+)
 
 
 
