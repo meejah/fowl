@@ -1056,6 +1056,7 @@ class FowlWormhole:
                     return
             verifier = results[0][1]
             versions = results[1][1]
+            self._wormhole.dilate()
             self._daemon.peer_connected(verifier, versions)
 
         # hook up "incoming message" to input
@@ -1079,8 +1080,6 @@ class FowlWormhole:
             self._done.trigger(self._reactor, reason)
             self._daemon.shutdown(reason)
         ensureDeferred(self._wormhole._closed_observer.when_fired()).addBoth(was_closed)
-
-
 
     # public API methods
 
