@@ -1192,9 +1192,7 @@ class FowlDaemon:
         self._versions = None
         self._message_out = message_handler
 
-
-
-    def _send_message(self, msg):
+    def _emit_message(self, msg):
         """
         Internal helper to pass a message to our external message handler
         (and do something useful on error)
@@ -1272,13 +1270,13 @@ class FowlDaemon:
 
     @m.output()
     def emit_code_allocated(self, code):
-        self._message_out(CodeAllocated(code))
+        self._emit_message(CodeAllocated(code))
 
     @m.output()
     def emit_peer_connected(self, verifier, versions):
         """
         """
-        self._message_out(
+        self._emit_message(
             PeerConnected(
                 binascii.hexlify(verifier).decode("utf8"),
                 versions,
@@ -1287,7 +1285,7 @@ class FowlDaemon:
 
     @m.output()
     def emit_send_message(self, plaintext):
-        self._message_out(
+        self._emit_message(
             SendMessageToPeer(
                 plaintext,
             )
@@ -1295,7 +1293,7 @@ class FowlDaemon:
 
     @m.output()
     def emit_got_message(self, plaintext):
-        self._message_out(
+        self._emit_message(
             GotMessageFromPeer(
                 plaintext,
             )
@@ -1313,7 +1311,7 @@ class FowlDaemon:
 
     @m.output()
     def emit_shutdown(self, result):
-        self._message_out(
+        self._emit_message(
             WormholeClosed(result)
         )
 
