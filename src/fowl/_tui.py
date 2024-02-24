@@ -15,7 +15,7 @@ import attr
 
 from .observer import Next, When
 from ._proto import wormhole_from_config, FowlDaemon, FowlWormhole
-from ._proto import Welcome, CodeAllocated, PeerConnected
+from ._proto import Welcome, CodeAllocated, PeerConnected, WormholeClosed
 
 
 
@@ -48,6 +48,10 @@ async def frontend_tui(reactor, config):
     def output_message(msg):
         print(f"unhandled output: {msg}")
 
+    @output_message.register(WormholeClosed)
+    def _(msg):
+        print(f"{msg.result}...", end="", flush=True)
+
     @output_message.register(Welcome)
     def _(msg):
         print("\b\b\b\b", end="")
@@ -60,7 +64,6 @@ async def frontend_tui(reactor, config):
     w = await wormhole_from_config(reactor, config)
     wh = FowlWormhole(reactor, w, daemon, config)
     wh.start()
-    print(wh)
 
     state = [State()]
 
@@ -130,7 +133,7 @@ async def frontend_tui(reactor, config):
     print("\nClosing mailbox...", end="", flush=True)
     try:
         await w.close()
-    except LonelyError:
+    except LonelyError as e:
         pass
     print("done.")
 

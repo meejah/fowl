@@ -1035,35 +1035,51 @@ class FowlWormhole:
             self._handle_error,
         )
 
-        # when we get the verifier and versions, we emit "peer connected"
-        results_d = DeferredList([
-            self._wormhole.get_verifier(),
-            self._wormhole.get_versions(),
-        ])
+        # when we get the verifier and versions, we emit "peer
+        # connected"
+        # (note that wormhole will "error" these Deferreds when the
+        # wormhole shuts down early, e.g. with LonelyError -- but we
+        # handle that elsewhere, so ignore errors here)
+        results_d = DeferredList(
+            [
+                self._wormhole.get_verifier(),
+                self._wormhole.get_versions(),
+            ],
+            consumeErrors=True,
+        )
 
         @results_d.addCallback
         def got_results(results):
             for ok, exc in results:
                 if not ok:
                     self._handle_error(exc)
-                    raise RuntimeError("Error retrieving verifier or versions")
+                    return
             verifier = results[0][1]
             versions = results[1][1]
             self._daemon.peer_connected(verifier, versions)
 
-        # XXX hook up "incoming message" to input
+        # hook up "incoming message" to input
         def got_message(plaintext):
             self._daemon.got_message(plaintext)
-            ensureDeferred(self._wormhole.get_message()).addCallbacks(
+            ensureDeferred(self._wormhole.get_message()).addCallback(
                 got_message,
-                self._handle_error,
-            )
-        ensureDeferred(self._wormhole.get_message()).addCallbacks(
+            ).addErrback(self._handle_error)
+        ensureDeferred(self._wormhole.get_message()).addCallback(
             got_message,
-            self._handle_error,
-        )
+        ).addErrback(self._handle_error)
 
-        # XXX hook up wormhole closed to input
+        # hook up wormhole closed to input
+        def was_closed(why):
+            if isinstance(why, str):
+                reason = why
+            elif isinstance(why.value, wormhole_errors.LonelyError):
+                reason = "lonely"
+            else:
+                reason = why.value.args[0]
+            self._done.trigger(self._reactor, reason)
+            self._daemon.shutdown(reason)
+        ensureDeferred(self._wormhole._closed_observer.when_fired()).addBoth(was_closed)
+
 
 
     # public API methods
@@ -1138,11 +1154,13 @@ class FowlWormhole:
         d.addBoth(lambda _: self.shutdown_finished())
 
     def _handle_error(self, f):
-        # note-amazing that this is how we get a "normal close"
-        # notification, but okay
-        if isinstance(f.value, wormhole_errors.WormholeClosed):
-            result = f.value.args[0]
-            self._daemon.shutdown(result)
+        # hmm, basically any of the "wormhole callbacks" we asked for
+        # stuff will definitely "errback" when we end the wormhole --
+        # sometimes with WormholeClosed, or LonelyError -- but also we
+        # should feedback those into the state-machine ONLY from one,
+        # like get_message (?) -- but what do we do with the others?
+        if isinstance(f.value, (wormhole_errors.WormholeClosed, wormhole_errors.LonelyError)):
+            pass
         else:
             print("HANDLE_ERROR", f)
             self._report_error(f.value)
