@@ -2,6 +2,7 @@
 import curses
 import textwrap
 import binascii
+import functools
 from typing import IO, Callable, Optional
 
 from twisted.internet.task import deferLater
@@ -15,7 +16,7 @@ import attr
 
 from .observer import Next, When
 from ._proto import wormhole_from_config, FowlDaemon, FowlWormhole
-from ._proto import Welcome, CodeAllocated, PeerConnected, WormholeClosed
+from ._proto import Welcome, CodeAllocated, PeerConnected, WormholeClosed, AllocateCode, SetCode, LocalListener, Listening
 
 
 
@@ -24,6 +25,7 @@ class State:
     code: Optional[str] = None
     connected: bool = False
     verifier: Optional[str] = None
+    listeners: list = attr.Factory(list)
 
     @property
     def pretty_verifier(self):
@@ -39,14 +41,17 @@ class State:
 async def frontend_tui(reactor, config):
     print(f"Connecting: {config.relay_url}")
 
-    import functools
-
     got_welcome = When()
     got_code = When()
 
     @functools.singledispatch
     def output_message(msg):
         print(f"unhandled output: {msg}")
+
+    @output_message.register(Listening)
+    def _(msg):
+        print(f"Listening: {msg.listen}")
+        replace_state(attr.evolve(state[0], listeners=state[0].listeners + [msg.listen]))
 
     @output_message.register(WormholeClosed)
     def _(msg):
@@ -116,9 +121,12 @@ async def frontend_tui(reactor, config):
                     print(f'No such command "{cmd_name}"')
                     print("Commands: {}".format(" ".join(commands.keys())))
                     print("Ctrl-d to quit")
+                    print(">>> ", end="", flush=True)
                     continue
                 # XXX should be passing "high level" FowlWormhole thing, not Wormhole direct
                 await cmd_fn(reactor, wh, state[0], *cmd[1:])
+            else:
+                print(">>> ", end="", flush=True)
         elif what == 1:
             break
 
@@ -161,7 +169,7 @@ async def _cmd_invite(reactor, wh, state, *args):
     if state.code is not None:
         print(f"Existing code: {state.code}")
     else:
-        wh._wormhole.allocate_code()
+        wh.command(AllocateCode())
 
 
 async def _cmd_accept(reactor, wh, state, *args):
@@ -174,12 +182,34 @@ async def _cmd_accept(reactor, wh, state, *args):
     if state.code is not None:
         print(f"Existing code: {state.code}")
     else:
-        # XXX fixme no private usage
-        wh._wormhole.set_code(args[0])
+        wh.command(SetCode(args[0]))
 
 
 async def _cmd_listen_local(reactor, wh, state, *args):
-    pass
+    try:
+        port = int(args[0])
+    except (ValueError, IndexError):
+        print("Requires a TCP port, as an integer.")
+        print("We will listen on this TCP port on localhost, and connect the same")
+        print("localhost port on the far side. Optionally, a second port may be")
+        print("specified to use a different far-side port")
+        return
+
+    if len(args) > 1:
+        try:
+            remote_port = int(args[1])
+        except ValueError:
+            print(f"Not port-number: {args[1]}")
+            return
+    else:
+        remote_port = port
+
+    wh.command(
+        LocalListener(
+            listen=f"tcp:{port}:interface=localhost",
+            connect=f"tcp:localhost:{remote_port}",
+        )
+    )
 
 
 async def _cmd_listen_remote(reactor, wh, state, *args):
