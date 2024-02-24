@@ -58,7 +58,7 @@ async def frontend_tui(reactor, config):
 
     daemon = FowlDaemon(reactor, config, output_message)
     w = await wormhole_from_config(reactor, config)
-    wh = FowlWormhole(reactor, w, daemon)
+    wh = FowlWormhole(reactor, w, daemon, config)
     wh.start()
     print(wh)
 
@@ -122,7 +122,8 @@ async def frontend_tui(reactor, config):
                     print("Commands: {}".format(" ".join(commands.keys())))
                     print("Ctrl-d to quit")
                     continue
-                await cmd_fn(reactor, w, state, *cmd[1:])
+                # XXX should be passing "high level" FowlWormhole thing, not Wormhole direct
+                await cmd_fn(reactor, wh, state[0], *cmd[1:])
         elif what == 1:
             break
 
@@ -134,7 +135,7 @@ async def frontend_tui(reactor, config):
     print("done.")
 
 
-async def _cmd_help(reactor, w, state, *args):
+async def _cmd_help(reactor, wh, state, *args):
     """
     Some helpful words
     """
@@ -154,31 +155,39 @@ async def _cmd_help(reactor, w, state, *args):
             print()
 
 
-async def _cmd_invite(reactor, w, state, *args):
+async def _cmd_invite(reactor, wh, state, *args):
     """
     Allocate a code (to give to a peer)
     """
     if args:
         print("No arguments allowed")
         return
-    w.allocate_code()
+    # XXX fixme no private usage
+    if state.code is not None:
+        print(f"Existing code: {state.code}")
+    else:
+        wh._wormhole.allocate_code()
 
 
-async def _cmd_accept(reactor, w, state, *args):
+async def _cmd_accept(reactor, wh, state, *args):
     """
     Consume an already-allocated code (from a peer)
     """
     if len(args) != 1:
         print('Require a secret code (e.g. from "invite" on the other side)')
         return
-    w.set_code(args[0])
+    if state.code is not None:
+        print(f"Existing code: {state.code}")
+    else:
+        # XXX fixme no private usage
+        wh._wormhole.set_code(args[0])
 
 
-async def _cmd_listen_local(reactor, w, state, *args):
+async def _cmd_listen_local(reactor, wh, state, *args):
     pass
 
 
-async def _cmd_listen_remote(reactor, w, state, *args):
+async def _cmd_listen_remote(reactor, wh, state, *args):
     pass
 
 

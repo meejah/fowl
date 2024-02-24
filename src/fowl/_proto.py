@@ -23,6 +23,7 @@ from twisted.protocols.basic import LineReceiver
 from twisted.python.failure import Failure
 from zope.interface import directlyProvides
 from wormhole.cli.public_relay import RENDEZVOUS_RELAY as PUBLIC_MAILBOX_URL
+import wormhole.errors as wormhole_errors
 
 from .observer import When
 
@@ -1002,10 +1003,11 @@ class FowlWormhole:
     Co-ordinates between the wormhole, user I/O and the daemon state-machine.
     """
 
-    def __init__(self, reactor, wormhole, daemon):
+    def __init__(self, reactor, wormhole, daemon, config):
         self._reactor = reactor
         self._listening_ports = []
         self._wormhole = wormhole
+        self._config = config
         self._daemon = daemon
         self._done = When() # we have shut down completely
         self._connected = When()  # our Peer has connected
@@ -1049,6 +1051,19 @@ class FowlWormhole:
             versions = results[1][1]
             self._daemon.peer_connected(verifier, versions)
 
+        # XXX hook up "incoming message" to input
+        def got_message(plaintext):
+            self._daemon.got_message(plaintext)
+            ensureDeferred(self._wormhole.get_message()).addCallbacks(
+                got_message,
+                self._handle_error,
+            )
+        ensureDeferred(self._wormhole.get_message()).addCallbacks(
+            got_message,
+            self._handle_error,
+        )
+
+        # XXX hook up wormhole closed to input
 
 
     # public API methods
@@ -1084,13 +1099,6 @@ class FowlWormhole:
 
     def _set_code(self, msg: SetCode) -> None:
         self._wormhole.set_code(msg.code)
-        d = self._wormhole.get_code()
-
-        def got_code(code):
-            self._code = code
-            self.code_allocated()
-            return code
-        d.addCallbacks(got_code, self._handle_error)
 
     # our own callbacks / notifications
 
@@ -1130,8 +1138,14 @@ class FowlWormhole:
         d.addBoth(lambda _: self.shutdown_finished())
 
     def _handle_error(self, f):
-        print("HANDLE_ERROR", f)
-        self._report_error(f.value)
+        # note-amazing that this is how we get a "normal close"
+        # notification, but okay
+        if isinstance(f.value, wormhole_errors.WormholeClosed):
+            result = f.value.args[0]
+            self._daemon.shutdown(result)
+        else:
+            print("HANDLE_ERROR", f)
+            self._report_error(f.value)
 
     def _report_error(self, e):
         print(
@@ -1423,7 +1437,7 @@ class FowlDaemon:
 
     # _DelegatedWormhole callback
     def wormhole_got_code(self, code: str) -> None:
-        self.code_allocated(code)
+        pass##self.code_allocated(code)
 
     # _DelegatedWormhole callback
     def wormhole_got_unverified_key(self, key: bytes) -> None:  # XXX definitely bytes?
