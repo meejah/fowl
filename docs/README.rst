@@ -7,7 +7,6 @@ Get TCP streams from one computer to another, safely.
 
 
 .. image:: docs/_static/logo.svg
-    :width: 100%
     :scale: 50%
     :align: right
     :alt: Fowl Logo: a chicken head with two blue ethernet cables
