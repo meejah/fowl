@@ -1,6 +1,11 @@
 Forward over Wormhole, Locally (fowl)
 =====================================
 
+.. image:: docs/_static/logo.svg
+    :scale: 50%
+    :align: right
+    :alt: Fowl Logo: a chicken head with two blue ethernet cables
+
 Get TCP streams from one computer to another, safely.
 
 (The base protocol below `Magic Wormhole <https://github.com/magic-wormhole/magic-wormhole>`_ provides a powerful account-less, peer-to-peer networking solution -- ``fowl`` helps you use this power immediately with existing programs)
