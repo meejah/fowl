@@ -19,6 +19,9 @@ We also like avoiding the extra work of "set up a server on a public IP address"
 
 For more context, see my blog posts: `Forwarding Streams over Magic Wormhole <https://meejah.ca/blog/fow-wormhole-forward>`_ and `Wizard Gardens vision <https://meejah.ca/blog/wizard-gardens-vision>`_.
 
+To generalize this a little: there are many client/server programs the _can_ be self-hosted -- ``fowl`` lets us use these sorts of programs in a peer-to-peer fashion.
+This means only depending on one general-purpose, public-IP-having server (the Magic Wormhole "mailbox server" used to set up connections).
+
 
 🦃 What?
 --------

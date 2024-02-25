@@ -63,9 +63,6 @@ class State:
 async def frontend_tui(reactor, config):
     print(f"Connecting: {config.relay_url}")
 
-    got_welcome = When()
-    got_code = When()
-
     @functools.singledispatch
     def output_message(msg):
         print(f"unhandled output: {msg}")
