@@ -3,19 +3,20 @@ from __future__ import print_function
 import sys
 import json
 import binascii
+import textwrap
 import functools
+import struct
 from typing import IO, Callable, Optional
 from functools import partial
 
-import struct
-from functools import partial
-
+import humanize
 from attrs import frozen, field, asdict
 
 import msgpack
 import automat
 from twisted.internet import reactor
 from twisted.internet.defer import returnValue, Deferred, succeed, ensureDeferred, maybeDeferred, CancelledError, DeferredList
+from twisted.internet.task import deferLater
 from twisted.internet.endpoints import serverFromString, clientFromString
 from twisted.internet.protocol import Factory, Protocol
 from twisted.internet.error import ConnectionDone
@@ -59,7 +60,6 @@ class _Config:
     """
     Represents a set of validated configuration
     """
-
     relay_url: str = PUBLIC_MAILBOX_URL
     code: str = None
     code_length: int = 2
@@ -105,26 +105,98 @@ async def wormhole_from_config(reactor, config, wormhole_create=None):
     return w
 
 
-async def frontend_invite(config, wormhole_coro):
+@frozen
+class Connection:
+    i: int = 0
+    o: int = 0
+
+
+async def frontend_accept_or_invite(reactor, config):
+
+    connections = dict()
+
+    @functools.singledispatch
+    def output_message(msg):
+        print(f"unhandled output: {msg}")
+
+    @output_message.register(CodeAllocated)
+    def _(msg):
+        print(f"Secret code: {msg.code}")
+
+    @output_message.register(PeerConnected)
+    def _(msg):
+        print(f"Peer is connected.\nVerifier: {msg.verifier}")
+
+    @output_message.register(Listening)
+    def _(msg):
+        print(f"Listening: {msg.listen}")
+
+    @output_message.register(IncomingConnection)
+    def _(msg):
+        connections[msg.id] = Connection(0, 0)
+
+    @output_message.register(LocalConnection)
+    def _(msg):
+        connections[msg.id] = Connection(0, 0)
+
+    @output_message.register(BytesIn)
+    def _(msg):
+        connections[msg.id] = Connection(
+            connections[msg.id].i + msg.bytes,
+            connections[msg.id].o,
+        )
+
+    @output_message.register(BytesOut)
+    def _(msg):
+        connections[msg.id] = Connection(
+            connections[msg.id].i,
+            connections[msg.id].o + msg.bytes,
+        )
+
+    @output_message.register(WormholeClosed)
+    def _(msg):
+        print(f"Closed: {msg.result}")
+
+    @output_message.register(Welcome)
+    def _(msg):
+        print(f"Connected.")
+        if "motd" in msg.welcome:
+            print(textwrap.fill(msg.welcome["motd"].strip(), 80, initial_indent="    ", subsequent_indent="    "))
+
+    daemon = FowlDaemon(reactor, config, output_message)
+    w = await wormhole_from_config(reactor, config)
+    wh = FowlWormhole(reactor, w, daemon, config)
+    wh.start()
+
+    kind = "invite" if config.code is None else "accept"
     if config.debug_file:
-        w.debug_set_trace("forward", which="B N M S O K SK R RC L C T", file=config.debug_file)
-    w = await wormhole_coro
-    print(w)
-    js = await w.get_welcome()
-    print(js)
-    w.allocate_code()
-    code = await w.get_code()
-    print(code)
+        w.debug_set_trace(kind, which="B N M S O K SK R RC L C T", file=config.debug_file)
 
+    if config.code is not None:
+        print("setting", config.code)
+        wh.command(
+            SetCode(config.code)
+        )
+    else:
+        print("allocate", config.code)
+        wh.command(
+            AllocateCode(config.code_length)
+        )
+        wh.command(
+            LocalListener(
+                "tcp:8000:interface=localhost",
+                "tcp:localhost:8008",
+            )
+        )
 
-
-async def frontend_accept(config, wormhole_coro):
-    w = await wormhole_coro
-    print(w)
-    w.set_code(config.code)
-    v = await w.get_versions()
-    w.dilate()
-    print("versions", v)
+    last_displayed = None
+    while True:
+        await deferLater(reactor, 1, lambda: None)
+        if connections and last_displayed != set(connections.values()):
+            for ident in sorted(connections.keys()):
+                conn = connections[ident]
+                print(f"{ident}: {humanize.naturalsize(conn.i)} in, {humanize.naturalsize(conn.o)} out")
+            last_displayed = set(connections.values())
 
 
 async def forward(config, wormhole_coro, reactor=reactor):

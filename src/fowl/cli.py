@@ -14,8 +14,7 @@ from ._proto import (
     _Config,
     wormhole_from_config,
     forward,
-    frontend_invite,
-    frontend_accept,
+    frontend_accept_or_invite,
     WELL_KNOWN_MAILBOXES,
 )
 from ._tui import frontend_tui
@@ -136,21 +135,9 @@ def invite(ctx, code_length):
     We allocate a code that can be used on another computer to join
     this session (i.e. "fowl accept")
     """
-
-    # todo:
-    # - convert all common options into .. FowlCommandMessage instances
-    # - send these to the loop/thing
-    # - processes them all .. probably "permissions first"
-    # - ditto for "accept"
-
     ctx.obj = evolve(ctx.obj, code_length=code_length)
     def run(reactor):
-        return ensureDeferred(
-            frontend_invite(
-                ctx.obj,
-                wormhole_from_config(reactor, ctx.obj),  # coroutine
-            )
-        )
+        return ensureDeferred(frontend_accept_or_invite(reactor, ctx.obj))
     return react(run)
 
 
@@ -166,7 +153,7 @@ def accept(ctx, code):
     """
     ctx.obj = evolve(ctx.obj, code=code)
     def run(reactor):
-        return ensureDeferred(frontend_accept(ctx.obj, wormhole_from_config(reactor, ctx.obj)))
+        return ensureDeferred(frontend_accept_or_invite(reactor, ctx.obj))
     return react(run)
 
 
