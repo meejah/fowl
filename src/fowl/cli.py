@@ -60,8 +60,8 @@ def fowld(ctx, ip_privacy, mailbox, debug):
     def run(reactor):
         return ensureDeferred(
             forward(
+                reactor,
                 ctx.obj,
-                wormhole_from_config(reactor, ctx.obj),  # coroutine
             )
         )
     return react(run)

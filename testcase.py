@@ -31,10 +31,8 @@ class _FowlProtocol(ProcessProtocol):
     def childDataReceived(self, childFD, data):
         try:
             js = json.loads(data)
-            print("XX", js)
         except Exception as e:
-            print(data.decode("utf8"))
-##            print(f"Not JSON: {data}")
+            print("BAD", data.decode("utf8"))
         else:
             self._maybe_notify(js)
 
@@ -83,7 +81,6 @@ async def main(reactor):
     )
     host_proto.send_message({"kind": "allocate-code"})
     msg = await host_proto.next_message("code-allocated")
-    print("got code", msg)
 
     guest_proto = _FowlProtocol()
     reactor.spawnProcess(
@@ -94,7 +91,6 @@ async def main(reactor):
     )
     guest_proto.send_message({"kind": "set-code", "code": msg["code"]})
     msg = await guest_proto.next_message("code-allocated")
-    print(msg)
 
     print("waiting for peers")
     await host_proto.next_message("peer-connected")

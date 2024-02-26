@@ -182,6 +182,8 @@ async def frontend_accept_or_invite(reactor, config):
         wh.command(
             AllocateCode(config.code_length)
         )
+        #XXX FIXME want to do a series of these (on either/both sides)
+        #depending on command-line options
         wh.command(
             LocalListener(
                 "tcp:8000:interface=localhost",
@@ -199,12 +201,11 @@ async def frontend_accept_or_invite(reactor, config):
             last_displayed = set(connections.values())
 
 
-async def forward(config, wormhole_coro, reactor=reactor):
+async def forward(reactor, config):
     """
     Set up a wormhole and process commands relating to forwarding.
     """
-    w = await wormhole_coro
-
+    w = await wormhole_from_config(reactor, config)
     if config.debug_file:
         w.debug_set_trace("forward", which="B N M S O K SK R RC L C T", file=config.debug_file)
 
@@ -975,9 +976,11 @@ class FowlWormhole:
             verifier = results[0][1]
             versions = results[1][1]
 
+            print("calling do dilate")
             d = self.do_dilate()
             @d.addCallback
             def did_dilate(arg):
+                print("did dilate")
                 self._daemon.peer_connected(verifier, versions)
                 return arg
 
@@ -1038,6 +1041,20 @@ class FowlWormhole:
             await _local_to_remote_forward(self._reactor, self._config, self.connect_ep, self._listening_ports.append, self._daemon._message_out, msg)
             # XXX cheating? private access (_daemon._message_out)
 
+        @cmd.register(RemoteListener)
+        async def _(msg):
+            await self.when_connected()
+            print("ZZZIN")
+            assert self.control_proto is not None, "need control_proto"
+            # XXX if we get this before we've dilated, just remember it?
+            # listens locally, conencts to other side
+
+            # XXX to get rid of the "await" part, we can just roll the
+            # "message_out" call and the "listening_ports.append" into
+            # one ...
+            await _remote_to_local_forward(self.control_proto, msg)
+            # XXX cheating? private access (_daemon._message_out)
+
         ensureDeferred(cmd(command)).addErrback(self._handle_error)
 
     # called from FowlDaemon when it has interactions to do
@@ -1047,7 +1064,7 @@ class FowlWormhole:
         Process messages coming out of FowlDaemon, handling both stdout
         interaction as well as wormhole interactions.
         """
-        print("ZINGA", msg)
+##        print("ZINGA", msg)
         # are we "crossing the streams" here, by having output messages
         # trigger either "wormhole I/O" or "stdin/out I/O"?
         if isinstance(msg, AllocateCode):
@@ -1100,7 +1117,7 @@ class FowlWormhole:
         Perform any (possibly async) tasks related to shutting down:
         - remove listeners
         """
-        print("do shutdown")
+        ##print("do shutdown")
         d = ensureDeferred(self.control_proto.when_done())
         self.control_proto.transport.loseConnection()
         d.addBoth(lambda _: self.shutdown_finished())
@@ -1114,10 +1131,12 @@ class FowlWormhole:
         if isinstance(f.value, (wormhole_errors.WormholeClosed, wormhole_errors.LonelyError)):
             pass
         else:
-            print("HANDLE_ERROR", f)
+##            print("HANDLE_ERROR", f)
             self._report_error(f.value)
 
     def _report_error(self, e):
+        print("report", e)
+        import traceback; traceback.print_stack()
         print(
             json.dumps({
                 "kind": "error",
@@ -1132,6 +1151,7 @@ class FowlWormhole:
         assert self.control_ep is not None, "Need control connection"
         fac = Factory.forProtocol(Commands)
         fac.config = self._config
+        fac.message_out = self._daemon._message_out  # XXX
         fac.connect_ep = self.connect_ep  # so we can pass it command handlers
         self.control_proto = await self.control_ep.connect(fac)
 
@@ -1145,27 +1165,8 @@ class FowlWormhole:
 
         await self._wormhole.get_unverified_key()
         verifier_bytes = await self._wormhole.get_verifier()  # might WrongPasswordError
-
         self._connected.trigger(self._reactor, verifier_bytes)
 
-        #XXX this isn't actually called -- we're cancelling some other
-        #deferred in the end. move to "cleanup" states + handlers in
-        #the state-machine
-        def cancelled(x):
-            print("hey hey cancelled", x)
-            d = listen_port.stopListening()
-            print("xx", d)
-            for port in self._listening_ports:
-                d = port.stopListening()
-                print("DDD", d)
-            print("close", self.control_proto)
-            self.control_proto.transport.loseConnection()
-
-        try:
-            await Deferred(canceller=cancelled)
-        except CancelledError:
-            print("BADBADBAD")
-            raise
 
     def ___handle_command(self, cmd):
         self._command_queue.append(cmd)
@@ -1255,6 +1256,7 @@ class FowlDaemon:
     to an `@m.input()` decorated method.
     """
     m = automat.MethodicalMachine()
+    set_trace = m._setTrace
 
     def __init__(self, reactor, config, message_handler):
         self._reactor = reactor
@@ -1348,6 +1350,7 @@ class FowlDaemon:
     def emit_peer_connected(self, verifier, versions):
         """
         """
+##        print("emit peer connected")
         self._emit_message(
             PeerConnected(
                 binascii.hexlify(verifier).decode("utf8"),
@@ -1491,11 +1494,19 @@ def fowld_output_to_json(msg: FowlOutputMessage) -> dict:
     Turn the given `msg` into a corresponding JSON-friendly dict
     (suitable for json.dumps() for example)
     """
+    # XXX maybe a @singledispatch would give better feedback when we
+    # miss one...
     js = asdict(msg)
     js["kind"] = {
+        Welcome: "welcome",
+        WormholeClosed: "closed",
         CodeAllocated: "code-allocated",
         PeerConnected: "peer-connected",
-        Welcome: "welcome",
+        Listening: "listening",
+        LocalConnection: "local-connection",
+        IncomingConnection: "incoming-connection",
+        BytesIn: "bytes-in",
+        BytesOut: "bytes-out",
     }[type(msg)]
     return js
 
@@ -1554,11 +1565,17 @@ async def _forward_loop(reactor, config, w):
             flush=True,
         )
 
-    sm = FowlDaemon(reactor, config, w, output_fowl_message)
+    sm = FowlDaemon(reactor, config, output_fowl_message)
+
+#    @sm.set_trace
+    def _(start, edge, end):
+        print(f"trace: {start} --[ {edge} ]--> {end}")
+    fowl = FowlWormhole(reactor, w, sm, config)
+    fowl.start()
 
     # arrange to read incoming commands from stdin
     create_stdio = config.create_stdio or StandardIO
-    dispatch = LocalCommandDispatch(config, sm)
+    dispatch = LocalCommandDispatch(config, fowl)
     create_stdio(dispatch)
 
     # if config.code:
@@ -1567,13 +1584,12 @@ async def _forward_loop(reactor, config, w):
     #     sm.allocate_code(config.code_length)
 
     try:
-        await sm.when_done()
+        await fowl.when_done()
     except Exception as e:
-        print("ZINGA", sm._listening_ports)
-        print("DING", type(e))
+##        print("DING", type(e))
         # XXXX okay, this fixes it .. but how to hook in cleanup etc "properly"
         # (probably via state-machine etc)
-        sm.shutdown()
+##        sm.shutdown()
         ###sm.control_proto.transport.loseConnection()
         raise
 
@@ -1596,7 +1612,7 @@ async def _local_to_remote_forward(reactor, config, connect_ep, on_listen, on_me
     on_message(Listening(cmd.listen, cmd.connect))
 
 
-async def _remote_to_local_forward(control_proto, on_listen, cmd):
+async def _remote_to_local_forward(control_proto, cmd):
     """
     Ask the remote side to listen on a port, forwarding back here
     (where our Incoming subchannel will be told what to connect
@@ -1616,6 +1632,7 @@ class Commands(Protocol):
     """
     Listen for (and send) commands over the command subchannel
     """
+    #XXX danger, proper ctor
     _ports = []
     _done = When()
 
@@ -1630,7 +1647,9 @@ class Commands(Protocol):
         assert bsize == expected_size + 2, "data has more than the message"
         msg = msgpack.unpackb(data[2:])
         if msg["kind"] == "remote-to-local":
+##            print("remote-to-local", msg)
             #XXX do this _after_ we're definitely listening
+            #XXX use Listening message
             print(
                 json.dumps({
                     "kind": "listening",
@@ -1644,6 +1663,7 @@ class Commands(Protocol):
             listen_ep = serverFromString(reactor, msg["listen-endpoint"])
             factory = Factory.forProtocol(LocalServer)
             factory.config = self.factory.config
+            factory.message_out = self.factory.message_out
             factory.connect_ep = self.factory.connect_ep
             factory.endpoint_str = msg["connect-endpoint"]
 
@@ -1651,7 +1671,7 @@ class Commands(Protocol):
             d = listen_ep.listen(factory)
 
             def got_port(port):
-                print("XXX got port", port)
+##                print("XXX got port", port)
                 self._ports.append(port)
                 return port
             d.addCallback(got_port)
@@ -1682,10 +1702,10 @@ class LocalCommandDispatch(LineReceiver):
     """
     delimiter = b"\n"
 
-    def __init__(self, cfg, daemon):
+    def __init__(self, cfg, fowl):
         super(LocalCommandDispatch, self).__init__()
         self.config = cfg
-        self.daemon = daemon
+        self.fowl = fowl
 
     def connectionMade(self):
         pass
@@ -1698,9 +1718,10 @@ class LocalCommandDispatch(LineReceiver):
         # answer, we need to do them in order)
         try:
             cmd = parse_fowld_command(line)
-            self.daemon.handle_command(cmd)
+##            print("run", cmd)
+            self.fowl.command(cmd)
         except Exception as e:
-            print("BAD", repr(e))
+##            print("BAD", repr(e))
             print(f"{line.strip()}: failed: {e}")
             raise
 
