@@ -941,17 +941,15 @@ class FowlWormhole:
     async def stop(self):
         print("STOP")
         for port in self._listening_ports:
-            print(port, dir(port))
-            print("QQQZ", port.port)
-            try:
-                await port.loseConnection()
-                await port.transport.loseConnection()
-            except Exception as e:
-                print("couldn't stop", e)
-            port.stopListening()
+            print(port)
+            print("QQQZ", id(port), port.port)
+            # note to self port.stopListening and port.loseConnection are THE SAME
+#                await port.stopListening()
+#                await port.transport.loseConnection()
         if self.control_proto is not None:
-            print("QQQ3", self.control_proto, dir(self.control_proto))
+            print("QQQ3", self.control_proto)
             self.control_proto.transport.loseConnection()
+            await self.control_proto.when_done()
 
     # XXX want to be an IService?
     def start(self):
@@ -1163,6 +1161,7 @@ class FowlWormhole:
         fac = Factory.forProtocol(Commands)
         fac.config = self._config
         fac.message_out = self._daemon._message_out  # XXX
+        fac.reactor = self._reactor
         fac.connect_ep = self.connect_ep  # so we can pass it command handlers
         self.control_proto = await self.control_ep.connect(fac)
 
@@ -1643,9 +1642,11 @@ class Commands(Protocol):
     """
     Listen for (and send) commands over the command subchannel
     """
-    #XXX danger, proper ctor
-    _ports = []
-    _done = When()
+
+    def __init__(self, *args, **kw):
+        super().__init__(*args, **kw)
+        self._ports = []
+        self._done = When()
 
     def when_done(self):
         return self._done.when_triggered()
@@ -1688,7 +1689,7 @@ class Commands(Protocol):
                 self._ports.append(port)
                 return port
             d.addCallback(got_port)
-            # XXX should await proto.stopListening() somewhere...at the appropriate time
+            # XXX should await port.stopListening() somewhere...at the appropriate time
         else:
             print(
                 json.dumps({
@@ -1700,16 +1701,24 @@ class Commands(Protocol):
                 flush=True,
             )
 
-    def _unregister_ports(self):
-        for port in self._ports:
-            print("UNREGISTER", port)
-            print(port.stopListening())
+    async def _unregister_ports(self):
+        unreg = self._ports
+        self._ports = []
+        for port in unreg:
+            print("STOPPPP", port)
+            # "might return Deferred" sucks...
+            d = port.stopListening()
+            if d is not None:
+                print("got a deferred from stopListening", port)
+                await d
 
     def connectionLost(self, reason):
-        print("LOST", reason)
-        self._unregister_ports()
-        #XXX needs reactor
-        #self._done.trigger(None)
+        print("LOST", id(self), reason)
+        d = ensureDeferred(self._unregister_ports())
+
+        @d.addCallback
+        def _(_):
+            self._done.trigger(self.factory.reactor, None)
 
 
 class LocalCommandDispatch(LineReceiver):
