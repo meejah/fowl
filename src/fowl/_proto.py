@@ -944,7 +944,7 @@ class FowlWormhole:
             print(port)
             print("QQQZ", id(port), port.port)
             # note to self port.stopListening and port.loseConnection are THE SAME
-#                await port.stopListening()
+            await port.stopListening()
 #                await port.transport.loseConnection()
         if self.control_proto is not None:
             print("QQQ3", self.control_proto)
