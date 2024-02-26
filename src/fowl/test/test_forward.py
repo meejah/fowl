@@ -285,8 +285,8 @@ async def test_forward(reactor, request, mailbox, datasize, who):
 
 
 @pytest_twisted.ensureDeferred
-@pytest.mark.parametrize("datasize", [2**6])#range(2**6, 2**16, 2**14))
-@pytest.mark.parametrize("who", [True])#[True, False])
+@pytest.mark.parametrize("datasize", range(2**6, 2**16, 2**14))
+@pytest.mark.parametrize("who", [True, False])
 @pytest.mark.parametrize("wait_peer", [True, False])
 async def test_drawrof(reactor, request, mailbox, datasize, who, wait_peer):
 
