@@ -938,6 +938,22 @@ class FowlWormhole:
         self.connect_ep = self.control_proto = None
 
     # XXX want to be an IService?
+    async def stop(self):
+        print("STOP")
+        for port in self._listening_ports:
+            print(port, dir(port))
+            print("QQQZ", port.port)
+            try:
+                await port.loseConnection()
+                await port.transport.loseConnection()
+            except Exception as e:
+                print("couldn't stop", e)
+            port.stopListening()
+        if self.control_proto is not None:
+            print("QQQ3", self.control_proto, dir(self.control_proto))
+            self.control_proto.transport.loseConnection()
+
+    # XXX want to be an IService?
     def start(self):
 
         # tie "we got a code" into the state-machine
@@ -1581,10 +1597,10 @@ async def _forward_loop(reactor, config, w):
     try:
         await fowl.when_done()
     except Exception as e:
-##        print("DING", type(e))
+        print("DING", type(e))
         # XXXX okay, this fixes it .. but how to hook in cleanup etc "properly"
         # (probably via state-machine etc)
-##        sm.shutdown()
+        await fowl.stop()
         ###sm.control_proto.transport.loseConnection()
         raise
 
@@ -1643,16 +1659,6 @@ class Commands(Protocol):
         msg = msgpack.unpackb(data[2:])
         if msg["kind"] == "remote-to-local":
 ##            print("remote-to-local", msg)
-            #XXX do this _after_ we're definitely listening
-            #XXX use Listening message
-            print(
-                json.dumps({
-                    "kind": "listening",
-                    "endpoint": msg["listen-endpoint"],
-                }),
-                file=self.factory.config.stdout,
-                flush=True,
-            )
 
             # XXX ask for permission
             listen_ep = serverFromString(reactor, msg["listen-endpoint"])
@@ -1667,6 +1673,18 @@ class Commands(Protocol):
 
             def got_port(port):
 ##                print("XXX got port", port)
+
+                #XXX do this _after_ we're definitely listening
+                #XXX use Listening message
+                print(
+                    json.dumps({
+                        "kind": "listening",
+                        "endpoint": msg["listen-endpoint"],
+                    }),
+                    file=self.factory.config.stdout,
+                    flush=True,
+                )
+
                 self._ports.append(port)
                 return port
             d.addCallback(got_port)
@@ -1684,11 +1702,14 @@ class Commands(Protocol):
 
     def _unregister_ports(self):
         for port in self._ports:
-            port.stopListening()
+            print("UNREGISTER", port)
+            print(port.stopListening())
 
     def connectionLost(self, reason):
+        print("LOST", reason)
         self._unregister_ports()
-        self._done.trigger(None)
+        #XXX needs reactor
+        #self._done.trigger(None)
 
 
 class LocalCommandDispatch(LineReceiver):
