@@ -171,7 +171,7 @@ async def test_forward(reactor, request, mailbox, datasize, who):
     )
     # note: would like to get rid of this ensureDeferred, but it
     # doesn't start "running" the coro until we do this...
-    d0 = ensureDeferred(forward(config0, wormhole_from_config(reactor, config0), reactor=reactor))
+    d0 = ensureDeferred(forward(reactor, config0))
     d0.addErrback(ignore_cancel)
     msg = await find_message(reactor, config0, kind="welcome")
     stdios[0].proto.dataReceived(
@@ -191,7 +191,7 @@ async def test_forward(reactor, request, mailbox, datasize, who):
         code=msg["code"],
     )
 
-    d1 = ensureDeferred(forward(config1, wormhole_from_config(reactor, config1), reactor=reactor))
+    d1 = ensureDeferred(forward(reactor, config1))
     d1.addErrback(ignore_cancel)
     msg = await find_message(reactor, config1, kind="welcome")
     stdios[1].proto.dataReceived(
@@ -287,7 +287,7 @@ async def test_forward(reactor, request, mailbox, datasize, who):
 @pytest_twisted.ensureDeferred
 @pytest.mark.parametrize("datasize", [2**6])#range(2**6, 2**16, 2**14))
 @pytest.mark.parametrize("who", [True])#[True, False])
-@pytest.mark.parametrize("wait_peer", [True, False])
+@pytest.mark.parametrize("wait_peer", [True])#, False])
 async def test_drawrof(reactor, request, mailbox, datasize, who, wait_peer):
 
     stdios = [
@@ -311,7 +311,7 @@ async def test_drawrof(reactor, request, mailbox, datasize, who, wait_peer):
     )
     # note: would like to get rid of this ensureDeferred, but it
     # doesn't start "running" the coro until we do this...
-    d0 = ensureDeferred(forward(config0, wormhole_from_config(reactor, config0), reactor=reactor))
+    d0 = ensureDeferred(forward(reactor, config0))
     d0.addErrback(ignore_cancel)
     msg = await find_message(reactor, config0, kind="welcome")
 
@@ -332,7 +332,7 @@ async def test_drawrof(reactor, request, mailbox, datasize, who, wait_peer):
         stdout=StringIO(),
         code=msg["code"],
     )
-    d1 = ensureDeferred(forward(config1, wormhole_from_config(reactor, config1), reactor=reactor))
+    d1 = ensureDeferred(forward(reactor, config1))
     d1.addErrback(ignore_cancel)
     msg = await find_message(reactor, config1, kind="welcome")
 

@@ -976,11 +976,9 @@ class FowlWormhole:
             verifier = results[0][1]
             versions = results[1][1]
 
-            print("calling do dilate")
             d = self.do_dilate()
             @d.addCallback
             def did_dilate(arg):
-                print("did dilate")
                 self._daemon.peer_connected(verifier, versions)
                 return arg
 
@@ -1044,7 +1042,6 @@ class FowlWormhole:
         @cmd.register(RemoteListener)
         async def _(msg):
             await self.when_connected()
-            print("ZZZIN")
             assert self.control_proto is not None, "need control_proto"
             # XXX if we get this before we've dilated, just remember it?
             # listens locally, conencts to other side
@@ -1135,8 +1132,6 @@ class FowlWormhole:
             self._report_error(f.value)
 
     def _report_error(self, e):
-        print("report", e)
-        import traceback; traceback.print_stack()
         print(
             json.dumps({
                 "kind": "error",
