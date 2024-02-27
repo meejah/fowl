@@ -104,7 +104,7 @@ def run_service(
     realargs = [sys.executable, "-m", "coverage", "run", "--parallel", "-m"] + args
     process = reactor.spawnProcess(
         protocol,
-        executable,
+        sys.executable,
         realargs,
         path=cwd,
         env=env,
