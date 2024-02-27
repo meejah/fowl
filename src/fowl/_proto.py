@@ -10,7 +10,7 @@ from typing import IO, Callable, Optional
 from functools import partial
 
 import humanize
-from attrs import frozen, field, asdict
+from attrs import frozen, field, asdict, Factory as AttrFactory
 
 import msgpack
 import automat
@@ -69,6 +69,7 @@ class _Config:
     stdout: IO = sys.stdout
     create_stdio: Callable = None  # returns a StandardIO work-alike, for testing
     debug_file: IO = None  # for state-machine transitions
+    commands: list[FowlCommandMessage] = AttrFactory(list)
 
 
 async def wormhole_from_config(reactor, config, wormhole_create=None):
@@ -181,14 +182,9 @@ async def frontend_accept_or_invite(reactor, config):
         wh.command(
             AllocateCode(config.code_length)
         )
-        #XXX FIXME want to do a series of these (on either/both sides)
-        #depending on command-line options
-        wh.command(
-            LocalListener(
-                "tcp:8000:interface=localhost",
-                "tcp:localhost:8008",
-            )
-        )
+
+    for command in config.commands:
+        wh.command(command)
 
     last_displayed = None
     while True:

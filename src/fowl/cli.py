@@ -18,6 +18,10 @@ from ._proto import (
     WELL_KNOWN_MAILBOXES,
 )
 from ._tui import frontend_tui
+from .messages import (
+    LocalListener,
+    RemoteListener,
+)
 
 
 # XXX need to replicate a bunch of "wormhole *" args?
@@ -85,13 +89,13 @@ def fowld(ctx, ip_privacy, mailbox, debug):
     type=click.File("w", encoding="utf8"),
 )
 @click.option(
-    "--local",
+    "--local", "-L",
     multiple=True,
     help="Listen locally, connect remotely (accepted multiple times)",
     metavar="listen-port[:connect-port]",
 )
 @click.option(
-    "--remote",
+    "--remote", "-R",
     multiple=True,
     help="Listen remotely, connect locally (accepted multiple times)",
     metavar="listen-port[:local-port]",
@@ -114,10 +118,28 @@ def fowl(ctx, ip_privacy, mailbox, debug, allow, local, remote):
     This frontend is meant for humans -- if you want machine-parsable
     data and commands, use fowld (or 'python -m fowl')
     """
+    def to_command(cls, cmd):
+        if ':' in cmd:
+            listen, connect = cmd.split(':')
+        else:
+            listen = connect = cmd
+        # XXX ipv6?
+        return cls(
+            f"tcp:{listen}:interface=localhost",
+            f"tcp:localhost:{connect}",
+        )
+
     ctx.obj = _Config(
         relay_url=WELL_KNOWN_MAILBOXES.get(mailbox, mailbox),
         use_tor=bool(ip_privacy),
         debug_file=debug,
+        commands=[
+            to_command(LocalListener, cmd)
+            for cmd in local
+        ] + [
+            to_command(RemoteListener, cmd)
+            for cmd in remote
+        ]
     )
 
 
