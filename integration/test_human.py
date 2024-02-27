@@ -33,22 +33,37 @@ class _FowlProtocol(ProcessProtocol):
 
     def __init__(self, reactor):
         self._reactor = reactor
-        self._messages = []
         self.exited = Deferred()
-        self._next = Next()
+        self._data = ""
+        self._waiting = []
 
     def processEnded(self, reason):
         self.exited.callback(None)
 
-    async def next_line(self):
-        msg = await self._next.next_item()
-        return msg
+    async def have_line(self, regex):
+        d = Deferred()
+        self._waiting.append((d, regex))
+        self._maybe_trigger()
+        return await d
+
+    def _maybe_trigger(self):
+        lines = [
+            line
+            for line in self._data.split("\n")
+            if line.strip()
+        ]
+        for i, item in enumerate(self._waiting):
+            d, regex = item
+            for line in lines:
+                m = re.match(regex, line)
+                if m:
+                    del self._waiting[i]
+                    d.callback(m)
+                    return
 
     def childDataReceived(self, childFD, data):
-        for line in data.decode("utf8").split("\n"):
-            if line.strip():
-                self._next.trigger(self._reactor, line)
-                self._messages.append(line)
+        self._data += data.decode("utf8")
+        self._maybe_trigger()
 
 
 async def fowl(reactor, request, subcommand, *extra_args, mailbox=None):
@@ -130,24 +145,22 @@ async def test_human(reactor, request, wormhole):
     """
     """
     f0 = await fowl(reactor, request, "invite", mailbox=wormhole.url)
-    msg = await f0.protocol.next_line()
-    assert "connect" in msg.lower()
-    msg = await f0.protocol.next_line()
-    m = re.match(".* code: (.*).*", msg)
-    assert m is not None, "Can't find secret code"
+    await f0.protocol.have_line("Connected.")
+    m = await f0.protocol.have_line(".* code: (.*).*")
     code = m.group(1)
-    print("code", code)
 
     f1 = await fowl(reactor, request, "accept", code, mailbox=wormhole.url)
-    msg = await f1.protocol.next_line()
-    print("f1", msg)
-    msg = await f1.protocol.next_line()
-    print("f1", msg)
 
     # both should say they're connected
-    msg = await f0.protocol.next_line()
-    assert "peer" in msg.lower() and "connected" in msg.lower()
+    await f0.protocol.have_line("Peer is connected.")
+    await f1.protocol.have_line("Peer is connected.")
 
-    msg = await f1.protocol.next_line()
-    assert "peer" in msg.lower() and "connected" in msg.lower()
+    # verifiers match
+    m = await f0.protocol.have_line("Verifier: (.*)")
+    f0_verify = m.group(1)
+
+    m = await f1.protocol.have_line("Verifier: (.*)")
+    f1_verify = m.group(1)
+    assert f1_verify == f0_verify, "Verifiers don't match"
+
 
