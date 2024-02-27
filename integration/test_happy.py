@@ -183,15 +183,11 @@ async def test_happy_remote(reactor, request, wormhole):
         "connect": "tcp:localhost:8888",
     })
 
-    print("f0 waiting for peer")
     await f0.protocol.next_message("peer-connected")
-    print("f1 waiting for peer")
     await f1.protocol.next_message("peer-connected")
-    print("have peers")
 
     # f1 send a remote-listen request, so f0 should receive it
     msg = await f0.protocol.next_message("listening")
-    print("listening", msg)
     assert msg == {'kind': 'listening', 'endpoint': 'tcp:1111:interface=localhost'}
 
     ep0 = serverFromString(reactor, "tcp:8888:interface=localhost")
