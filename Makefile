@@ -1,20 +1,26 @@
-.PHONY: ping
+.PHONY: pin release
 
 pin:
 	pip-compile --upgrade --allow-unsafe --generate-hashes --resolver=backtracking --output-file requirements-pinned.txt
+	git add -u
+	git commit -m "upgrade pins"
 
 test:
 	coverage erase
-	python -m pytest --disable-warnings -sv --cov=fowl src/fowl
-#	coverage run --source fowl -m pytest src/fowl
+	coverage run --parallel -m pytest --disable-warnings -sv src/fowl
+	coverage run --parallel -m pytest -v integration/
+	coverage combine
 	cuv graph
 
-release: pin
+#release: pin
+release:
 	python update-version.py
+	hatch version `git tag --sort -v:refname | head -1`
 	git add -u
 	git commit -m "update version"
-	hatch version `git tag --sort -v:refname | head -1`
 	hatchling build
+	twine check dist/fowl-`git describe --abbrev=0`-py3-none-any.whl
+	twine check dist/fowl-`git describe --abbrev=0`.tar.gz
 	gpg --pinentry=loopback -u meejah@meejah.ca --armor --detach-sign dist/fowl-`git describe --abbrev=0`-py3-none-any.whl
 	gpg --pinentry=loopback -u meejah@meejah.ca --armor --detach-sign dist/fowl-`git describe --abbrev=0`.tar.gz
 

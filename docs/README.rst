@@ -172,8 +172,8 @@ It's not pretty, but it works fine.
 
 However, we want to talk to other machines.
 This means we need:
-  * encryption;
-  * and a way to arrange network connectivity
+* encryption;
+* and a way to arrange network connectivity
 
 **These additional features are exactly what ``fowl`` gives us.**
 
