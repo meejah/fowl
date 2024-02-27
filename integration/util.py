@@ -66,7 +66,6 @@ class _MagicTextProtocol(ProcessProtocol):
 def run_service(
     reactor,
     request,
-    executable,
     args,
     magic_text=None,
     cwd=None,
@@ -85,8 +84,7 @@ def run_service(
     :param request: The pytest request object to use for cleanup.
     :param magic_text: Text to look for in the logs, that indicate the service
         is ready to accept requests.
-    :param executable: The executable to run.
-    :param args: The arguments to pass to the process.
+    :param args: The arguments to pass following "python -m ...", approximately.
     :param cwd: The working directory of the process.
 
     :return Deferred[IProcessTransport]: The started process.
@@ -100,10 +98,14 @@ def run_service(
 
     env = os.environ.copy()
     env['PYTHONUNBUFFERED'] = '1'
+    # if we're not running tests while we have "coverage" installed,
+    # are we even alive? (that is: not coverage here is not optional)
+    # shout-out to Ned Batchelder for this tool!
+    realargs = [sys.executable, "-m", "coverage", "run", "--parallel", "-m"] + args
     process = reactor.spawnProcess(
         protocol,
         executable,
-        args,
+        realargs,
         path=cwd,
         env=env,
     )
@@ -143,8 +145,6 @@ class WormholeMailboxServer:
     @classmethod
     async def create(cls, reactor, request):
         args = [
-            sys.executable,
-            "-m",
             "twisted",
             "wormhole-mailbox",
             # note, this tied to "url" below
@@ -153,7 +153,6 @@ class WormholeMailboxServer:
         transport = await run_service(
             reactor,
             request,
-            executable=sys.executable,
             args=args,
             magic_text="Starting reactor...",
             print_logs=False,  # twisted json struct-log

@@ -87,8 +87,6 @@ async def fowld(reactor, request, *extra_args, mailbox=None, startup=True):
     """
 
     args = [
-        sys.executable,
-        "-m",
         "fowl",
     ]
     if mailbox is not None:
@@ -100,7 +98,6 @@ async def fowld(reactor, request, *extra_args, mailbox=None, startup=True):
     transport = await run_service(
         reactor,
         request,
-        executable=sys.executable,
         args=args,
         protocol=proto,
     )
