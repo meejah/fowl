@@ -3,7 +3,7 @@
 import pytest
 import ipaddress
 from hypothesis.strategies import ip_addresses, one_of, integers, lists
-from hypothesis import given, assume
+from hypothesis import given, assume, reproduce_failure
 
 from twisted.internet.endpoints import TCP4ServerEndpoint, TCP6ServerEndpoint
 
@@ -73,4 +73,4 @@ def test_policy_specific_ports(reactor, port, allowed_ports, ipaddr):
     expected_result = True if is_local and is_allowed else False
 
     policy = LocalhostTcpPortsPolicy(allowed_ports)
-    assert policy.can_listen(endpoint) == expected_result
+    assert policy.can_listen(endpoint) == expected_result, f"what port={endpoint._port} if={endpoint._interface} {expected_result} {port} {allowed_ports} {ipaddr} {policy.can_listen(endpoint)}"

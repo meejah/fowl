@@ -34,9 +34,9 @@ class LocalhostAnyPortsPolicy:
     or localhost or 127.0.0.1/8) according to the "ipaddress" library.
     """
     def can_listen(self, endpoint) -> bool:
-        if not hasattr(endpoint, "_interface"):
-            return False
-        return is_localhost(endpoint._interface)
+        if isinstance(endpoint, (TCP6ServerEndpoint, TCP4ServerEndpoint)):
+            return is_localhost(endpoint._interface)
+        return False
 
 
 @implementer(IClientListenPolicy)
@@ -47,7 +47,7 @@ class LocalhostTcpPortsPolicy(LocalhostAnyPortsPolicy):
 
     def can_listen(self, endpoint) -> bool:
         if super().can_listen(endpoint):
-            if hasattr(endpoint, "port"):
-                if port in ports:
-                    return True
+            # if we're here, parent has checked types too
+            if endpoint._port in self.ports:
+                return True
         return False
