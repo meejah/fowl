@@ -1,6 +1,6 @@
 
-FoW Releases
-============
+Fowl Releases
+=============
 
 Stability: this is still a young project, all APIs should be considered unstable.
 That said, ``fowld`` input and output is intended to be stable and compatible.
