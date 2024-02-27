@@ -1,4 +1,4 @@
-name: Linux Testing
+name: Coverage
 
 on:
   push:
