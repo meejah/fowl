@@ -195,3 +195,7 @@ def _entry_fowld():
     The entry-point from setup.py
     """
     return fowld()
+
+
+if __name__ == "__main__":
+    _entry_fowl()

@@ -81,7 +81,7 @@ class _FowlProtocol(ProcessProtocol):
         ]
 
 
-async def fowld(reactor, request, *extra_args, mailbox=None, startup=True):
+async def fowld(reactor, request, *extra_args, mailbox=None):
     """
     Run `fowl` with a given subcommand
     """
@@ -101,8 +101,6 @@ async def fowld(reactor, request, *extra_args, mailbox=None, startup=True):
         args=args,
         protocol=proto,
     )
-    if startup:
-        await proto.next_message(kind="welcome")
     return _Fowl(transport, proto)
 
 
@@ -161,7 +159,7 @@ async def test_happy_remote(reactor, request, wormhole):
     A session forwarding a single connection using the
     ``kind="remote"`` command.
     """
-    f0 = await fowld(reactor, request, mailbox=wormhole.url, startup=False)
+    f0 = await fowld(reactor, request, mailbox=wormhole.url)
     msg = await f0.protocol.next_message(kind="welcome")
     f0.protocol.send_message({"kind": "allocate-code"})
     code_msg = await f0.protocol.next_message(kind="code-allocated")
@@ -170,7 +168,7 @@ async def test_happy_remote(reactor, request, wormhole):
 
     f1 = await fowld(
         reactor, request,
-        mailbox=wormhole.url, startup=False,
+        mailbox=wormhole.url
     )
     f1.protocol.send_message({"kind": "set-code", "code": code_msg["code"]})
     # open a listener of some sort
@@ -211,14 +209,13 @@ async def test_happy_local(reactor, request, wormhole):
     A session forwarding a single connection using the
     ``kind="local"`` command.
     """
-    f0 = await fowld(reactor, request, mailbox=wormhole.url, startup=False)
+    f0 = await fowld(reactor, request, mailbox=wormhole.url)
     f0.protocol.send_message({"kind": "allocate-code"})
     code_msg = await f0.protocol.next_message(kind="code-allocated")
 
     # normally the "code" is shared via human interaction
 
-    f1 = await fowld(reactor, request, mailbox=wormhole.url, startup=False,
-    )
+    f1 = await fowld(reactor, request, mailbox=wormhole.url)
     f1.protocol.send_message({"kind": "set-code", "code": code_msg["code"]})
     # open a listener of some sort
     f1.protocol.send_message({
