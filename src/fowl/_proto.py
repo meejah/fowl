@@ -83,6 +83,7 @@ async def wormhole_from_config(reactor, config, wormhole_create=None):
     tor = None
     if config.use_tor:
         tor = await get_tor(reactor)
+        # XXX use a Message
         print(
             json.dumps({
                 "kind": "tor",
@@ -173,12 +174,10 @@ async def frontend_accept_or_invite(reactor, config):
         w.debug_set_trace(kind, which="B N M S O K SK R RC L C T", file=config.debug_file)
 
     if config.code is not None:
-        print("setting", config.code)
         wh.command(
             SetCode(config.code)
         )
     else:
-        print("allocate", config.code)
         wh.command(
             AllocateCode(config.code_length)
         )
@@ -215,12 +214,11 @@ async def forward(reactor, config):
         await w.close()  # waits for ack
 
     except Exception as e:
-        print("hey it's an error: ", type(e), e)
         # if we catch an error, we should close and then return the original
         # error (the close might give us an error, but it isn't as important
         # as the original one)
         try:
-            await w.close()  # might be an error too
+            await w.close()  # might be an error too?
         except Exception as e:
             print("moar error", e)
             pass
@@ -890,6 +888,7 @@ class Incoming(Protocol):
         """
         Twisted API
         """
+        # XXX use an OutputMessage
         print(
             json.dumps({
                 "kind": "incoming-lost",
@@ -939,15 +938,10 @@ class FowlWormhole:
 
     # XXX want to be an IService?
     async def stop(self):
-        print("STOP")
         for port in self._listening_ports:
-            print(port)
-            print("QQQZ", id(port), port.port)
             # note to self port.stopListening and port.loseConnection are THE SAME
             await port.stopListening()
-#                await port.transport.loseConnection()
         if self.control_proto is not None:
-            print("QQQ3", self.control_proto)
             self.control_proto.transport.loseConnection()
             await self.control_proto.when_done()
 
@@ -1075,7 +1069,6 @@ class FowlWormhole:
         Process messages coming out of FowlDaemon, handling both stdout
         interaction as well as wormhole interactions.
         """
-##        print("ZINGA", msg)
         # are we "crossing the streams" here, by having output messages
         # trigger either "wormhole I/O" or "stdin/out I/O"?
         if isinstance(msg, AllocateCode):
@@ -1128,7 +1121,6 @@ class FowlWormhole:
         Perform any (possibly async) tasks related to shutting down:
         - remove listeners
         """
-        ##print("do shutdown")
         d = ensureDeferred(self.control_proto.when_done())
         self.control_proto.transport.loseConnection()
         d.addBoth(lambda _: self.shutdown_finished())
@@ -1142,10 +1134,10 @@ class FowlWormhole:
         if isinstance(f.value, (wormhole_errors.WormholeClosed, wormhole_errors.LonelyError)):
             pass
         else:
-##            print("HANDLE_ERROR", f)
             self._report_error(f.value)
 
     def _report_error(self, e):
+        #XXX use an OutputMessage
         print(
             json.dumps({
                 "kind": "error",
@@ -1360,7 +1352,6 @@ class FowlDaemon:
     def emit_peer_connected(self, verifier, versions):
         """
         """
-##        print("emit peer connected")
         self._emit_message(
             PeerConnected(
                 binascii.hexlify(verifier).decode("utf8"),
@@ -1569,6 +1560,7 @@ async def _forward_loop(reactor, config, w):
 
     def output_fowl_message(msg):
         js = fowld_output_to_json(msg)
+        #XXX use an outputmessage
         print(
             json.dumps(js),
             file=config.stdout,
@@ -1596,7 +1588,6 @@ async def _forward_loop(reactor, config, w):
     try:
         await fowl.when_done()
     except Exception as e:
-        print("DING", type(e))
         # XXXX okay, this fixes it .. but how to hook in cleanup etc "properly"
         # (probably via state-machine etc)
         await fowl.stop()
@@ -1659,8 +1650,6 @@ class Commands(Protocol):
         assert bsize == expected_size + 2, "data has more than the message"
         msg = msgpack.unpackb(data[2:])
         if msg["kind"] == "remote-to-local":
-##            print("remote-to-local", msg)
-
             # XXX ask for permission
             listen_ep = serverFromString(reactor, msg["listen-endpoint"])
             factory = Factory.forProtocol(LocalServer)
@@ -1673,10 +1662,7 @@ class Commands(Protocol):
             d = listen_ep.listen(factory)
 
             def got_port(port):
-##                print("XXX got port", port)
-
-                #XXX do this _after_ we're definitely listening
-                #XXX use Listening message
+                #XXX use a Message
                 print(
                     json.dumps({
                         "kind": "listening",
@@ -1691,6 +1677,7 @@ class Commands(Protocol):
             d.addCallback(got_port)
             # XXX should await port.stopListening() somewhere...at the appropriate time
         else:
+            # XXX use a Message
             print(
                 json.dumps({
                     "kind": "error",
@@ -1705,15 +1692,12 @@ class Commands(Protocol):
         unreg = self._ports
         self._ports = []
         for port in unreg:
-            print("STOPPPP", port)
             # "might return Deferred" sucks...
             d = port.stopListening()
             if d is not None:
-                print("got a deferred from stopListening", port)
                 await d
 
     def connectionLost(self, reason):
-        print("LOST", id(self), reason)
         d = ensureDeferred(self._unregister_ports())
 
         @d.addCallback
@@ -1743,10 +1727,8 @@ class LocalCommandDispatch(LineReceiver):
         # answer, we need to do them in order)
         try:
             cmd = parse_fowld_command(line)
-##            print("run", cmd)
             self.fowl.command(cmd)
         except Exception as e:
-##            print("BAD", repr(e))
             print(f"{line.strip()}: failed: {e}")
             raise
 
