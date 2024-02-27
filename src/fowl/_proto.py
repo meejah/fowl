@@ -127,7 +127,11 @@ async def frontend_accept_or_invite(reactor, config):
 
     @output_message.register(PeerConnected)
     def _(msg):
-        print(f"Peer is connected.\nVerifier: {msg.verifier}")
+        nice_verifier = " ".join(
+            msg.verifier[a:a+4]
+            for a in range(0, len(msg.verifier), 4)
+        )
+        print(f"Peer is connected.\nVerifier: {nice_verifier}")
 
     @output_message.register(Listening)
     def _(msg):

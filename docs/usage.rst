@@ -130,12 +130,10 @@ This uses the Magic Wormhole protocol to allocate a short, one-time code.
 
 
 This code is used by the "other end" to join this forwarding session with ``fowl accept``.
-Once that side has successfully set up, we will see a message:
-
-.. code-block::
+Once that side has successfully set up, we will see a message::
 
     Peer is connected.
-    Verifier: 89febc217da0c842d9129dc059e03b870292d4686ac3d0f98799e788f98ee594
+    Verifier: b191 e9d1 fd27 be77 f576 c3e7 f30d 1ff3 e9d3 840b 7f8e 1ce2 6730 55f4 d1fc bb4f
 
 After this, we reach the more "symmetric" state of the session: although under the hood one side is randomly "the Follower" and one side is "the Leader" in the Dilation session, at our level either side can request forwards from the other.
 
@@ -154,7 +152,7 @@ One side has to be the "second" user to a session and that person runs this comm
 Once the Magic Wormhole protocol has successfully set up a Dilation connection, a message will appear on ``stdout``::
 
     Peer is connected.d
-    Verifier: <long string of hex>
+    Verifier: b191 e9d1 fd27 be77 f576 c3e7 f30d 1ff3 e9d3 840b 7f8e 1ce2 6730 55f4 d1fc bb4f
 
 After this, we reach the more "symmetric" state of the session: although under the hood one side is randomly "the Follower" and one side is "the Leader" in the Dilation session, at our level either side can request forwards from the other.
 
