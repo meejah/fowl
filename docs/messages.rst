@@ -4,10 +4,10 @@
 Control Messages
 ================
 
-External programs control ``fowl`` by running it as a subprocess and exchanging messages via ``stdin`` and ``stdout``.
+External programs control ``fowld`` by running it as a subprocess and exchanging messages via ``stdin`` and ``stdout``.
 
 Every message is valid JSON.
-All messages MUST include a ``"message"`` key which indicates what sort of message it is.
+All messages MUST include a ``"kind"`` key which indicates what sort of message it is.
 
 We differentiate between "stdout" and "stdin" messages -- that is, things the program tells the user and things the user tells the program.
 Here, "user" is often another program.
@@ -21,7 +21,7 @@ Valid ``stdin`` Messages
 ------------------------
 
 ``kind=local``
-`````````````````
+``````````````
 
 This listens on a local port and establishes a :ref:`forwarding-subchannel` to the other side (making a client-type connection on that side).
 

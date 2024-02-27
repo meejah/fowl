@@ -61,9 +61,9 @@ I could fire up such a server myself and use it with my friends...
 
 ...but with ``fowl``, one side can run a localhost ``tty-share`` server and the other side can run a ``tty-share`` client that connects to a ``localhost`` endpoint -- data flows over the wormhole connection (only).
 
-Key advantage: *no need to expose keystrokes to a third-party server*.
+**Key advantage**: *no need to expose keystrokes to a third-party server*.
 
-Additional advantage: *no need to set up a server on a public IP address*.
+**Additional advantage**: *no need to set up a server on a public IP address*.
 
 
 🐃 Why is This Particular Yak Being Shorn?
@@ -172,15 +172,15 @@ It's not pretty, but it works fine.
 
 However, we want to talk to other machines.
 This means we need:
-* encryption;
-* a way to arrange network connectivity
+  * encryption;
+  * and a way to arrange network connectivity
 
-These additional features are exactly what ``fowl`` gives us.
+**These additional features are exactly what ``fowl`` gives us.**
 
 So, we still run the exact same ``nc`` and ``telnet`` commands, but first do some ``fowl`` magic on each machine.
 
 On the *second* machine (the one running ``telnet``) we'll need to add in something that listens on port 8888.
-This thing is ``fowl``: ``fowl invite --listen 8888``
+This thing is: ``fowl --listen 8888 invite``
 When connected to the public Mailbox Server, this will print out a ``<secret code>`` like ``1-foo-bar``
 
 Next we want all the information this listener gets to be magically forwarded to the first machine (the one running ``nc``).

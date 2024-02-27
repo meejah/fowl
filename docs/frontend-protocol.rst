@@ -4,6 +4,10 @@
 The ``fowld`` Frontend Protocol
 ================================
 
+.. WARNING::
+
+    This is still "documentation-driven development" and not everything written here may currently work
+
 The ``fowld`` program speaks a line-based protocol on stdin and stdout.
 
 Every message is a single line, terminated with a single newline (``\n``) character.
