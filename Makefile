@@ -2,6 +2,8 @@
 
 pin:
 	pip-compile --upgrade --allow-unsafe --generate-hashes --resolver=backtracking --output-file requirements-pinned.txt
+	git add -u
+	git commit -m "upgrade pins"
 
 test:
 	coverage erase
