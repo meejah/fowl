@@ -11,6 +11,8 @@ Programs that integrate with (or otherwise want stable, machine-parsable output)
 Under the hood, ``fowl`` commands actually use ``fowld`` (via a Python API).
 All functionality should be available to users of either program.
 
+If you want very similar operation to ``fowld``, but without having to remember JSON syntex, use ``fowl tui``.
+
 
 High-Level Overview
 -------------------
@@ -18,7 +20,7 @@ High-Level Overview
 What we aim to accomplish here is to easily set up the forwarding of TCP or Unix streams over a secure, identity-less and durable connection.
 
 These streams may be anything at all -- but the core use-case is aimed at eliminating the need to run public-IP services.
-Our canonical "hello world" example is a simple chat system: running ``nc`` (aka "netcat") on one side, and ``telnet`` (see :ref:`hello-world-chat` for a fully-worked example).
+Our canonical "hello world" example is a simple chat system: running ``nc`` (aka "netcat") on one side, and ``telnet`` on the other (see :ref:`hello-world-chat` for a fully-worked example).
 
 Although ``nc`` and ``telnet`` provide no security, using them here we get an end-to-end-encrypted chat session.
 We also get "durability" (if one side loses conenction or changes to a different network, we will eventually resume uninterrupted).
@@ -40,7 +42,7 @@ Many options are available via normal command-line arguments.
 Although we'll still avoid gratuitous compatilibity problems, the output SHOULD NOT be considered machine-parsable and may change from release to release.
 
 By contrast, the commands that ``fowld`` accepts and the messages it outputs MUST all be well-formed JSON lines.
-Generally, backwards-incompatibilities SHOULD be avoided.
+Generally, backwards-compatibility SHOULD be available.
 
 There should be few (ideally no) command-line options for ``fowld``.
 Programs integrating with it should be able to use any version of the software (that is, to upgrade seamlessly).
@@ -63,7 +65,7 @@ We are cautious by default, so any incoming stream requests will result in a "y/
 
 Since the Dilation protocol is fairly symmetric, most options are available under ``fowl`` instead of the sub-commands ``fowl accept`` and ``fowl invite``
 
-For example, whether you started or joined a session, either side can ask the other side to start forwarding a port.
+For example, whether you started or joined a session, either side can ask the other side to start forwarding a port (``--remote``) or start one on the near side (``--local``).
 Thus, the options for what to allow are required on both sides.
 
 
@@ -130,13 +132,15 @@ This uses the Magic Wormhole protocol to allocate a short, one-time code.
 This code is used by the "other end" to join this forwarding session with ``fowl accept``.
 Once that side has successfully set up, we will see a message:
 
-.. code-block:: json
+.. code-block::
 
-    {
-        "kind": "connected"
-    }
+    Peer is connected.
+    Verifier: 89febc217da0c842d9129dc059e03b870292d4686ac3d0f98799e788f98ee594
 
 After this, we reach the more "symmetric" state of the session: although under the hood one side is randomly "the Follower" and one side is "the Leader" in the Dilation session, at our level either side can request forwards from the other.
+
+The "Verifier" is a way to confirm that the session keys match; confirming both sides have the same verifier is optional.
+However, confirming them means you can be 100% sure (instead of 99.85% sure or 1 in 65536) nobody has become a MitM.
 
 See below.
 
@@ -149,7 +153,8 @@ One side has to be the "second" user to a session and that person runs this comm
 
 Once the Magic Wormhole protocol has successfully set up a Dilation connection, a message will appear on ``stdout``::
 
-    ``Peer connected. Verifier: <long string of hex>``
+    Peer is connected.d
+    Verifier: <long string of hex>
 
 After this, we reach the more "symmetric" state of the session: although under the hood one side is randomly "the Follower" and one side is "the Leader" in the Dilation session, at our level either side can request forwards from the other.
 
