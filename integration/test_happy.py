@@ -57,6 +57,10 @@ class _FowlProtocol(ProcessProtocol):
         else:
             self._messages.append(js)
 
+    def send_message(self, js):
+        data = json.dumps(js).encode("utf8") + b"\n"
+        self.transport.write(data)
+
     def next_message(self, kind):
         d = Deferred()
         for idx, msg in enumerate(self._messages):
@@ -77,7 +81,7 @@ class _FowlProtocol(ProcessProtocol):
         ]
 
 
-async def fowl(reactor, request, subcommand, *extra_args, mailbox=None, startup=True):
+async def fowld(reactor, request, *extra_args, mailbox=None, startup=True):
     """
     Run `fowl` with a given subcommand
     """
@@ -91,7 +95,6 @@ async def fowl(reactor, request, subcommand, *extra_args, mailbox=None, startup=
         args.extend([
             "--mailbox", mailbox,
         ])
-    args.append(subcommand)
     args.extend(extra_args)
     proto = _FowlProtocol()
     transport = await run_service(
@@ -161,29 +164,34 @@ async def test_happy_remote(reactor, request, wormhole):
     A session forwarding a single connection using the
     ``kind="remote"`` command.
     """
-    f0 = await fowl(reactor, request, "invite", mailbox=wormhole.url, startup=False)
-    code_msg = await f0.protocol.next_message(kind="wormhole-code")
+    f0 = await fowld(reactor, request, mailbox=wormhole.url, startup=False)
+    msg = await f0.protocol.next_message(kind="welcome")
+    f0.protocol.send_message({"kind": "allocate-code"})
+    code_msg = await f0.protocol.next_message(kind="code-allocated")
 
     # normally the "code" is shared via human interaction
 
-    f1 = await fowl(
-        reactor, request, "accept", code_msg["code"],
+    f1 = await fowld(
+        reactor, request,
         mailbox=wormhole.url, startup=False,
     )
+    f1.protocol.send_message({"kind": "set-code", "code": code_msg["code"]})
     # open a listener of some sort
-    f1.transport.write(
-        json.dumps({
-            "kind": "remote",
-            "remote-endpoint": "tcp:1111:interface=localhost",
-            "local-endpoint": "tcp:localhost:8888",
-        }).encode("utf8") + b"\n"
-    )
+    f1.protocol.send_message({
+        "kind": "remote",
+        "listen": "tcp:1111:interface=localhost",
+        "connect": "tcp:localhost:8888",
+    })
 
-    await f0.protocol.next_message("connected")
-    await f1.protocol.next_message("connected")
+    print("f0 waiting for peer")
+    await f0.protocol.next_message("peer-connected")
+    print("f1 waiting for peer")
+    await f1.protocol.next_message("peer-connected")
+    print("have peers")
 
     # f1 send a remote-listen request, so f0 should receive it
     msg = await f0.protocol.next_message("listening")
+    print("listening", msg)
     assert msg == {'kind': 'listening', 'endpoint': 'tcp:1111:interface=localhost'}
 
     ep0 = serverFromString(reactor, "tcp:8888:interface=localhost")
@@ -200,7 +208,7 @@ async def test_happy_remote(reactor, request, wormhole):
     data0 = await client.when_done()
     assert data0 == b"some test data" * 1000
 
-    forwarded = await f1.protocol.next_message("forward-bytes")
+    forwarded = await f1.protocol.next_message("bytes-in")
     assert forwarded["bytes"] == len(b"some test data" * 1000)
 
 
@@ -210,12 +218,12 @@ async def test_happy_local(reactor, request, wormhole):
     A session forwarding a single connection using the
     ``kind="local"`` command.
     """
-    f0 = await fowl(reactor, request, "invite", mailbox=wormhole.url, startup=False)
-    code_msg = await f0.protocol.next_message(kind="wormhole-code")
+    f0 = await fowld(reactor, request, mailbox=wormhole.url, startup=False)
+    code_msg = await f0.protocol.next_message(kind="code-allocated")
 
     # normally the "code" is shared via human interaction
 
-    f1 = await fowl(
+    f1 = await fowld(
         reactor, request, "accept", code_msg["code"],
         mailbox=wormhole.url, startup=False,
     )
@@ -223,8 +231,8 @@ async def test_happy_local(reactor, request, wormhole):
     f1.transport.write(
         json.dumps({
             "kind": "local",
-            "listen-endpoint": "tcp:8888:interface=localhost",
-            "local-endpoint": "tcp:localhost:1111",
+            "listen": "tcp:8888:interface=localhost",
+            "connect": "tcp:localhost:1111",
         }).encode("utf8") + b"\n"
     )
 
