@@ -19,6 +19,8 @@ release:
 	git add -u
 	git commit -m "update version"
 	hatchling build
+	twine check dist/fowl-`git describe --abbrev=0`-py3-none-any.whl
+	twine check dist/fowl-`git describe --abbrev=0`.tar.gz
 	gpg --pinentry=loopback -u meejah@meejah.ca --armor --detach-sign dist/fowl-`git describe --abbrev=0`-py3-none-any.whl
 	gpg --pinentry=loopback -u meejah@meejah.ca --armor --detach-sign dist/fowl-`git describe --abbrev=0`.tar.gz
 
