@@ -215,29 +215,27 @@ async def test_happy_local(reactor, request, wormhole):
     ``kind="local"`` command.
     """
     f0 = await fowld(reactor, request, mailbox=wormhole.url, startup=False)
+    f0.protocol.send_message({"kind": "allocate-code"})
     code_msg = await f0.protocol.next_message(kind="code-allocated")
 
     # normally the "code" is shared via human interaction
 
-    f1 = await fowld(
-        reactor, request, "accept", code_msg["code"],
-        mailbox=wormhole.url, startup=False,
+    f1 = await fowld(reactor, request, mailbox=wormhole.url, startup=False,
     )
+    f1.protocol.send_message({"kind": "set-code", "code": code_msg["code"]})
     # open a listener of some sort
-    f1.transport.write(
-        json.dumps({
-            "kind": "local",
-            "listen": "tcp:8888:interface=localhost",
-            "connect": "tcp:localhost:1111",
-        }).encode("utf8") + b"\n"
-    )
+    f1.protocol.send_message({
+        "kind": "local",
+        "listen": "tcp:8888:interface=localhost",
+        "connect": "tcp:localhost:1111",
+    })
 
-    await f0.protocol.next_message("connected")
-    await f1.protocol.next_message("connected")
+    await f0.protocol.next_message("peer-connected")
+    await f1.protocol.next_message("peer-connected")
 
     # f1 send a remote-listen request, so f0 should receive it
     msg = await f1.protocol.next_message("listening")
-    assert msg == {'kind': 'listening', 'endpoint': 'tcp:8888:interface=localhost', 'connect-endpoint': 'tcp:localhost:1111'}
+    assert msg == {'kind': 'listening', 'listen': 'tcp:8888:interface=localhost', 'connect': 'tcp:localhost:1111'}
 
     ep0 = serverFromString(reactor, "tcp:1111:interface=localhost")
     ep1 = clientFromString(reactor, "tcp:localhost:8888")
@@ -252,5 +250,5 @@ async def test_happy_local(reactor, request, wormhole):
     data0 = await client.when_done()
     assert data0 == b"some test data" * 1000
 
-    forwarded = await f0.protocol.next_message("forward-bytes")
+    forwarded = await f0.protocol.next_message("bytes-in")
     assert forwarded["bytes"] == len(b"some test data" * 1000)
