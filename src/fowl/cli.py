@@ -14,11 +14,21 @@ from ._proto import (
     _Config,
     wormhole_from_config,
     forward,
+    frontend_accept_or_invite,
+    WELL_KNOWN_MAILBOXES,
+)
+from ._tui import frontend_tui
+from .messages import (
+    LocalListener,
+    RemoteListener,
 )
 
 
 # XXX need to replicate a bunch of "wormhole *" args?
 # e.g. tor stuff, mailbox url, ..
+
+# XXX there ar repeated args for "fowl" and "fowld" -- can we have a
+# "common args" ... decorator? function?
 
 @click.option(
     "--ip-privacy/--clearnet",
@@ -28,7 +38,8 @@ from ._proto import (
 @click.option(
     "--mailbox",
     default=PUBLIC_MAILBOX_URL,
-    help="URL for the mailbox server to use",
+    help='URL for the mailbox server to use (or "default", "local" or "winden" to use well-known servers)',
+    metavar="URL or NAME",
 )
 @click.option(
     "--debug",
@@ -36,19 +47,99 @@ from ._proto import (
     help="Output wormhole state-machine transitions to the given file",
     type=click.File("w", encoding="utf8"),
 )
+@click.command()
+@click.pass_context
+def fowld(ctx, ip_privacy, mailbox, debug):
+    """
+    Forward Over Wormhole Daemon
+
+    Low-level daemon to set up and forward streams over Dilated magic
+    wormhole connections
+    """
+    ctx.obj = _Config(
+        relay_url=WELL_KNOWN_MAILBOXES.get(mailbox, mailbox),
+        use_tor=bool(ip_privacy),
+        debug_file=debug,
+    )
+    def run(reactor):
+        return ensureDeferred(
+            forward(
+                reactor,
+                ctx.obj,
+            )
+        )
+    return react(run)
+
+
+@click.option(
+    "--ip-privacy/--clearnet",
+    default=False,
+    help="Enable operation over Tor (default is public Internet)",
+)
+@click.option(
+    "--mailbox",
+    default=PUBLIC_MAILBOX_URL,
+    help='URL for the mailbox server to use (or "default" or "winden" to use well-known servers)',
+    metavar="URL or NAME",
+)
+@click.option(
+    "--debug",
+    default=None,
+    help="Output wormhole state-machine transitions to the given file",
+    type=click.File("w", encoding="utf8"),
+)
+@click.option(
+    "--local", "-L",
+    multiple=True,
+    help="Listen locally, connect remotely (accepted multiple times)",
+    metavar="listen-port[:connect-port]",
+)
+@click.option(
+    "--remote", "-R",
+    multiple=True,
+    help="Listen remotely, connect locally (accepted multiple times)",
+    metavar="listen-port[:local-port]",
+)
+@click.option(
+    "--allow",
+    multiple=True,
+    help="Accept a request to listen on a port (optionally which port to open on the far-side connection). Accepted multiple times",
+    metavar="port[:connect-port]",
+)
 @click.group()
 @click.pass_context
-def fowl(ctx, ip_privacy, mailbox, debug):
+def fowl(ctx, ip_privacy, mailbox, debug, allow, local, remote):
     """
-    Forward Over Wormhole
+    Forward Over Wormhole, Locally
 
     Bi-directional streaming data over secure and durable Dilated
     magic-wormhole connections.
+
+    This frontend is meant for humans -- if you want machine-parsable
+    data and commands, use fowld (or 'python -m fowl')
     """
+    def to_command(cls, cmd):
+        if ':' in cmd:
+            listen, connect = cmd.split(':')
+        else:
+            listen = connect = cmd
+        # XXX ipv6?
+        return cls(
+            f"tcp:{listen}:interface=localhost",
+            f"tcp:localhost:{connect}",
+        )
+
     ctx.obj = _Config(
-        relay_url=mailbox,
+        relay_url=WELL_KNOWN_MAILBOXES.get(mailbox, mailbox),
         use_tor=bool(ip_privacy),
         debug_file=debug,
+        commands=[
+            to_command(LocalListener, cmd)
+            for cmd in local
+        ] + [
+            to_command(RemoteListener, cmd)
+            for cmd in remote
+        ]
     )
 
 
@@ -61,17 +152,14 @@ def fowl(ctx, ip_privacy, mailbox, debug):
 )
 def invite(ctx, code_length):
     """
-    Start a new forwarding session, allocating a code that can be used
-    on another computer to join a forwarding session
+    Start a new forwarding session.
+
+    We allocate a code that can be used on another computer to join
+    this session (i.e. "fowl accept")
     """
     ctx.obj = evolve(ctx.obj, code_length=code_length)
     def run(reactor):
-        return ensureDeferred(
-            forward(
-                ctx.obj,
-                wormhole_from_config(ctx.obj),  # coroutine
-            )
-        )
+        return ensureDeferred(frontend_accept_or_invite(reactor, ctx.obj))
     return react(run)
 
 
@@ -80,12 +168,28 @@ def invite(ctx, code_length):
 @click.argument("code")
 def accept(ctx, code):
     """
-    Join a forwarding session by consuming a wormhole code usually
-    created by 'fow invite'
+    Join an exiting forwarding session.
+
+    This consumes an existing invite code (usually created by 'fow
+    invite')
     """
     ctx.obj = evolve(ctx.obj, code=code)
     def run(reactor):
-        return ensureDeferred(forward(ctx.obj, wormhole_from_config(ctx.obj)))
+        return ensureDeferred(frontend_accept_or_invite(reactor, ctx.obj))
+    return react(run)
+
+
+@fowl.command()
+@click.pass_context
+def tui(ctx):
+    """
+    Run an interactive text user-interface (TUI)
+
+    Allows one to use a human-readable version of the controller
+    protocol directly to set up listeners, monitor streams, etc
+    """
+    def run(reactor):
+        return ensureDeferred(frontend_tui(reactor, ctx.obj))
     return react(run)
 
 
@@ -101,8 +205,19 @@ def readme():
     click.echo_via_pager(readme.decode('utf8'))
 
 
-def _entry():
+def _entry_fowl():
     """
     The entry-point from setup.py
     """
     return fowl()
+
+
+def _entry_fowld():
+    """
+    The entry-point from setup.py
+    """
+    return fowld()
+
+
+if __name__ == "__main__":
+    _entry_fowl()

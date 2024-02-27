@@ -32,8 +32,7 @@ class _FowlProtocol(ProcessProtocol):
         try:
             js = json.loads(data)
         except Exception as e:
-            print(data.decode("utf8"))
-##            print(f"Not JSON: {data}")
+            print("BAD", data.decode("utf8"))
         else:
             self._maybe_notify(js)
 
@@ -77,36 +76,44 @@ async def main(reactor):
     reactor.spawnProcess(
         host_proto,
         sys.executable,
-        [sys.executable, "-m", "fowl", "--mailbox", "ws://localhost:4000/v1", "invite"],
+        [sys.executable, "-m", "fowl", "--mailbox", "ws://localhost:4000/v1"],
         env={"PYTHONUNBUFFERED": "1"},
     )
-    msg = await host_proto.next_message("wormhole-code")
-    print("got code")
+    host_proto.send_message({"kind": "allocate-code"})
+    msg = await host_proto.next_message("code-allocated")
 
     guest_proto = _FowlProtocol()
     reactor.spawnProcess(
-        host_proto,
+        guest_proto,
         sys.executable,
-        [sys.executable, "-m", "fowl", "--mailbox", "ws://localhost:4000/v1", "accept", msg["code"]],
+        [sys.executable, "-m", "fowl", "--mailbox", "ws://localhost:4000/v1"],
         env={"PYTHONUNBUFFERED": "1"},
     )
-    print("connected")
-    print(host_proto.all_messages())
-    print(guest_proto.all_messages())
+    guest_proto.send_message({"kind": "set-code", "code": msg["code"]})
+    msg = await guest_proto.next_message("code-allocated")
 
-    if False:
+    print("waiting for peers")
+    await host_proto.next_message("peer-connected")
+    print("one peer")
+    await guest_proto.next_message("peer-connected")
+    print("two peers")
+
+    if 'remote' in sys.argv:
         host_proto.send_message({
             "kind": "local",
-            "listen-endpoint": "tcp:8888",
-            "local-endpoint": "tcp:localhost:1111"
+            "listen": "tcp:8888",
+            "connect": "tcp:localhost:1111"
         })
+
+        m = await host_proto.next_message("listening")
     else:
+        print("local forward")
         host_proto.send_message({
             "kind": "remote",
-            "remote-endpoint": "tcp:8888",
-            "local-endpoint": "tcp:localhost:1111"
+            "listen": "tcp:8888",
+            "connect": "tcp:localhost:1111"
         })
-    m = await host_proto.next_message("listening")
+        m = await guest_proto.next_message("listening")
     print("got it", m)
 
 
@@ -159,7 +166,7 @@ async def main(reactor):
     who = True
     for size in range(2**6, 2**18, 2**10):
         print("TEST", size, who)
-        client = clientFromString(reactor, "tcp:localhost:1111")
+        client = clientFromString(reactor, "tcp:localhost:8888")
         client_proto = await client.connect(Factory.forProtocol(Client))
         server = await listener.next_client()
 
@@ -172,3 +179,9 @@ async def main(reactor):
             msg = await client_proto.next_message(len(data))
         who = not who
         assert msg == data, "Incorrect data transfer"
+
+    print(host_proto.all_messages())
+    print(guest_proto.all_messages())
+
+    guest_proto.transport.signalProcess('TERM')
+    host_proto.transport.signalProcess('TERM')

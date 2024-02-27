@@ -32,6 +32,7 @@ dependencies = [
     "humanize",
     "twisted",
     "magic-wormhole[dilate]",
+    "ipaddress",
 ]
 
 [project.optional-dependencies]
@@ -41,6 +42,7 @@ test = [
     "pytest-cov",
     "magic-wormhole-mailbox-server",
     "cuvner",
+    "hypothesis",
 ]
 dev = [
     "twine",
@@ -52,7 +54,8 @@ dev = [
 ]
 
 [project.scripts]
-fowl = "fowl.cli:_entry"
+fowl = "fowl.cli:_entry_fowl"
+fowld = "fowl.cli:_entry_fowld"
 
 [tool.hatch.version]
 path = "src/fowl/__init__.py"

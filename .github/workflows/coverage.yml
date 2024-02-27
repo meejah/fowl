@@ -1,4 +1,4 @@
-name: Unit Testing
+name: Coverage
 
 on:
   push:
@@ -7,15 +7,12 @@ on:
     branches: [ main ]
 
 jobs:
-  unit-tests:
+  integration-tests:
     strategy:
       matrix:
         os:
           - runs-on: ubuntu-latest
         python-version:
-          - "3.9"
-          - "3.10"
-          - "3.11"
           - "3.12"
     runs-on: ${{ matrix.os.runs-on }}
     steps:
@@ -39,8 +36,14 @@ jobs:
         python -m pip install --upgrade pip
         pip install --editable .[test]
 
-    - name: pytest
-      run: python -m pytest --disable-warnings --cov=fowl -s -v src/fowl/test/
+    - name: Run Integration Tests
+      run: coverage run --parallel -m pytest -s -v integration/
+
+    - name: Run Unit Tests
+      run: coverage run --parallel -m pytest -s -v src/fowl/test
+
+    - name: Combine Coverage
+      run: coverage combine
 
     - name: Coverage graph
       shell: bash

@@ -11,7 +11,7 @@ import pytest
 import pytest_twisted
 
 from twisted.internet.task import deferLater
-from twisted.internet.defer import ensureDeferred, Deferred
+from twisted.internet.defer import ensureDeferred, Deferred, CancelledError
 from twisted.internet.protocol import ProcessProtocol, Protocol, Factory
 from twisted.internet.endpoints import serverFromString, clientFromString
 
@@ -25,6 +25,7 @@ from fowl._proto import (
     forward,
 )
 from fowl.observer import (
+    When,
     Next,
     Accumulate,
 )
@@ -110,11 +111,16 @@ async def find_message(reactor, config, kind=None, timeout=10):
     Await a message of particular kind in the stdout of config
     """
     for _ in range(timeout):
-        for msg in [json.loads(line) for line in config.stdout.getvalue().split("\n") if line]:
+        messages = [
+            json.loads(line)
+            for line in config.stdout.getvalue().split("\n")
+            if line
+        ]
+        for msg in messages:
             if msg["kind"] == kind:
                 return msg
         await sleep(reactor, 1)
-        print(config.stdout.getvalue())
+        print("no '{}' yet: {}".format(kind, " ".join([m.get("kind", "<kind missing>") for m in messages])))
     raise RuntimeError(
         f"Waited {timeout}s for message of kind={kind}"
     )
@@ -122,6 +128,7 @@ async def find_message(reactor, config, kind=None, timeout=10):
 
 class FakeStandardIO(object):
     def __init__(self, proto, reactor, messages):
+        self.disconnecting = False  ## XXX why? this is in normal one?
         self.proto = proto
         self.reactor = reactor
         self.messages = messages
@@ -131,25 +138,30 @@ class FakeStandardIO(object):
             self.proto.dataReceived(msg)
 
 
+def ignore_cancel(f):
+    if f.trap(CancelledError):
+        return None
+    return f
+
 
 # maybe Hypothesis better, via strategies.binary() ?
 @pytest_twisted.ensureDeferred
-@pytest.mark.parametrize("datasize", range(2**6, 2**16, 2**14))
+@pytest.mark.parametrize("datasize", range(2**6, 2**17, 2**15))
 @pytest.mark.parametrize("who", [True, False])
 async def test_forward(reactor, request, mailbox, datasize, who):
 
+    stdios = [
+        None,
+        None,
+    ]
+
     def create_stdin0(proto, reactor=None):
-        return FakeStandardIO(proto, reactor, messages=[
-            # when connected, issue a "open listener" to one side
-            json.dumps({
-                "kind": "local",
-                "listen-endpoint": "tcp:8888",
-                "local-endpoint": "tcp:localhost:1111",
-            }).encode("utf8") + b"\n"
-        ])
+        stdios[0] = FakeStandardIO(proto, reactor, messages=[])
+        return stdios[0]
 
     def create_stdin1(proto, reactor=None):
-        return FakeStandardIO(proto, reactor, messages=[])
+        stdios[1] = FakeStandardIO(proto, reactor, messages=[])
+        return stdios[1]
 
     config0 = _Config(
         relay_url=mailbox.url,
@@ -159,8 +171,16 @@ async def test_forward(reactor, request, mailbox, datasize, who):
     )
     # note: would like to get rid of this ensureDeferred, but it
     # doesn't start "running" the coro until we do this...
-    d0 = ensureDeferred(forward(config0, wormhole_from_config(config0), reactor=reactor))
-    msg = await find_message(reactor, config0, kind="wormhole-code")
+    d0 = ensureDeferred(forward(reactor, config0))
+    d0.addErrback(ignore_cancel)
+    msg = await find_message(reactor, config0, kind="welcome")
+    stdios[0].proto.dataReceived(
+        json.dumps({
+            "kind": "allocate-code",
+        }).encode("utf8") + b"\n"
+    )
+
+    msg = await find_message(reactor, config0, kind="code-allocated")
     assert 'code' in msg, "Missing code"
 
     config1 = _Config(
@@ -171,8 +191,18 @@ async def test_forward(reactor, request, mailbox, datasize, who):
         code=msg["code"],
     )
 
-    d1 = ensureDeferred(forward(config1, wormhole_from_config(config1), reactor=reactor))
-    msg = await find_message(reactor, config1, kind="connected")
+    d1 = ensureDeferred(forward(reactor, config1))
+    d1.addErrback(ignore_cancel)
+    msg = await find_message(reactor, config1, kind="welcome")
+    stdios[1].proto.dataReceived(
+        json.dumps({
+            "kind": "set-code",
+            "code": config1.code,
+        }).encode("utf8") + b"\n"
+    )
+
+    await find_message(reactor, config0, kind="peer-connected")
+    await find_message(reactor, config1, kind="peer-connected")
 
     class Server(Protocol):
         _message = Accumulate(b"")
@@ -216,131 +246,29 @@ async def test_forward(reactor, request, mailbox, datasize, who):
     listener = ServerFactory()
     server_port = await serverFromString(reactor, "tcp:1111").listen(listener)
 
+    # both sides are connected -- now we can issue a "remote listen"
+    # request
+    stdios[0].proto.dataReceived(
+        json.dumps({
+            "kind": "local",
+            "listen": "tcp:7777",
+            "connect": "tcp:localhost:1111",
+        }).encode("utf8") + b"\n"
+    )
     msg = await find_message(reactor, config0, kind="listening")
 
     # if we do 'too many' test-cases debian complains about
     # "twisted.internet.error.ConnectBindError: Couldn't bind: 24: Too
     # many open files."
     # gc.collect() doesn't fix it.
-    client = clientFromString(reactor, "tcp:localhost:8888") # NB: same port as in "kind=local" message!
+    client = clientFromString(reactor, "tcp:localhost:7777") # NB: same port as in "kind=local" message!
     client_proto = await client.connect(Factory.forProtocol(Client))
     server = await listener.next_client()
 
     def cleanup():
         d0.cancel()
         d1.cancel()
-        server.transport.loseConnection()
-        pytest_twisted.blockon(
-            server_port.stopListening()
-        )
         client_proto.transport.loseConnection()
-    request.addfinalizer(cleanup)
-
-    data = os.urandom(datasize)
-    if who:
-        client_proto.send(data)
-        msg = await server.next_message(len(data))
-    else:
-        server.send(data)
-        msg = await client_proto.next_message(len(data))
-    who = not who
-    assert msg == data, "Incorrect data transfer"
-
-
-@pytest_twisted.ensureDeferred
-@pytest.mark.parametrize("datasize", range(2**6, 2**16, 2**14))
-@pytest.mark.parametrize("who", [True, False])
-async def test_drawrof(reactor, request, mailbox, datasize, who):
-
-    def create_stdin0(proto, reactor=None):
-        return FakeStandardIO(proto, reactor, messages=[
-            # when connected, issue a "open listener" to one side
-            json.dumps({
-                "kind": "remote",
-                "remote-endpoint": "tcp:7777",
-                "local-endpoint": "tcp:localhost:2222",
-            }).encode("utf8") + b"\n"
-        ])
-
-    def create_stdin1(proto, reactor=None):
-        return FakeStandardIO(proto, reactor, messages=[])
-
-    config0 = _Config(
-        relay_url=mailbox.url,
-        use_tor=False,
-        create_stdio=create_stdin0,
-        stdout=StringIO(),
-    )
-    # note: would like to get rid of this ensureDeferred, but it
-    # doesn't start "running" the coro until we do this...
-    d0 = ensureDeferred(forward(config0, wormhole_from_config(config0), reactor=reactor))
-
-    msg = await find_message(reactor, config0, kind="wormhole-code")
-    assert 'code' in msg, "Missing code"
-
-    config1 = _Config(
-        relay_url=mailbox.url,
-        use_tor=False,
-        create_stdio=create_stdin1,
-        stdout=StringIO(),
-        code=msg["code"],
-    )
-    d1 = ensureDeferred(forward(config1, wormhole_from_config(config1), reactor=reactor))
-    msg = await find_message(reactor, config1, kind="connected")
-
-    class Server(Protocol):
-        _message = Accumulate(b"")
-
-        def dataReceived(self, data):
-            self._message.some_results(reactor, data)
-
-        async def next_message(self, expected_size):
-            return await self._message.next_item(reactor, expected_size)
-
-        def send(self, data):
-            self.transport.write(data)
-
-    class Client(Protocol):
-        _message = Accumulate(b"")
-
-        def dataReceived(self, data):
-            self._message.some_results(reactor, data)
-
-        async def next_message(self, expected_size):
-            return await self._message.next_item(reactor, expected_size)
-
-        def send(self, data):
-            self.transport.write(data)
-
-    class ServerFactory(Factory):
-        protocol = Server
-        noisy = True
-        _got_protocol = Next()
-
-        async def next_client(self):
-            return await self._got_protocol.next_item()
-
-        def buildProtocol(self, *args):
-            p = super().buildProtocol(*args)
-            self._got_protocol.trigger(reactor, p)
-            return p
-
-    listener = ServerFactory()
-    server_port = await serverFromString(reactor, "tcp:2222").listen(listener)
-
-    msg = await find_message(reactor, config1, kind="listening")
-
-    # if we do 'too many' test-cases debian complains about
-    # "twisted.internet.error.ConnectBindError: Couldn't bind: 24: Too
-    # many open files."
-    # gc.collect() doesn't fix it.
-    client = clientFromString(reactor, "tcp:localhost:7777")  # NB: same as remote-endpoint
-    client_proto = await client.connect(Factory.forProtocol(Client))
-    server = await listener.next_client()
-
-    def cleanup():
-        d0.cancel()
-        d1.cancel()
         server.transport.loseConnection()
         server_port.stopListening()
     request.addfinalizer(cleanup)
@@ -356,20 +284,24 @@ async def test_drawrof(reactor, request, mailbox, datasize, who):
     assert msg == data, "Incorrect data transfer"
 
 
-async def test_forward(reactor, request, mailbox):
+@pytest_twisted.ensureDeferred
+@pytest.mark.parametrize("datasize", range(2**6, 2**17, 2**15))
+@pytest.mark.parametrize("who", [True, False])
+@pytest.mark.parametrize("wait_peer", [True, False])
+async def test_drawrof(reactor, request, mailbox, datasize, who, wait_peer):
+
+    stdios = [
+        None,
+        None,
+    ]
 
     def create_stdin0(proto, reactor=None):
-        return FakeStandardIO(proto, reactor, messages=[
-            # when connected, issue a "open listener" to one side
-            json.dumps({
-                "kind": "local",
-                "listen-endpoint": "tcp:8888",
-                "local-endpoint": "tcp:localhost:1111",
-            }).encode("utf8") + b"\n"
-        ])
+        stdios[0] = FakeStandardIO(proto, reactor, messages=[])
+        return stdios[0]
 
     def create_stdin1(proto, reactor=None):
-        return FakeStandardIO(proto, reactor, messages=[])
+        stdios[1] = FakeStandardIO(proto, reactor, messages=[])
+        return stdios[1]
 
     config0 = _Config(
         relay_url=mailbox.url,
@@ -379,8 +311,18 @@ async def test_forward(reactor, request, mailbox):
     )
     # note: would like to get rid of this ensureDeferred, but it
     # doesn't start "running" the coro until we do this...
-    d0 = ensureDeferred(forward(config0, wormhole_from_config(config0), reactor=reactor))
-    msg = await find_message(reactor, config0, kind="wormhole-code")
+    d0 = ensureDeferred(forward(reactor, config0))
+    d0.addErrback(ignore_cancel)
+    msg = await find_message(reactor, config0, kind="welcome")
+
+    # when connected, issue a "open listener" to one side
+    stdios[0].proto.dataReceived(
+        json.dumps({
+            "kind": "allocate-code",
+        }).encode("utf8") + b"\n"
+    )
+
+    msg = await find_message(reactor, config0, kind="code-allocated")
     assert 'code' in msg, "Missing code"
 
     config1 = _Config(
@@ -390,12 +332,21 @@ async def test_forward(reactor, request, mailbox):
         stdout=StringIO(),
         code=msg["code"],
     )
+    d1 = ensureDeferred(forward(reactor, config1))
+    d1.addErrback(ignore_cancel)
+    msg = await find_message(reactor, config1, kind="welcome")
 
-    d1 = ensureDeferred(forward(config1, wormhole_from_config(config1), reactor=reactor))
-    msg = await find_message(reactor, config1, kind="connected")
+    # now we can set the code on this side
+    stdios[1].proto.dataReceived(
+        json.dumps({
+            "kind": "set-code",
+            "code": config1.code,
+        }).encode("utf8") + b"\n"
+    )
 
     class Server(Protocol):
         _message = Accumulate(b"")
+        _done = When()
 
         def dataReceived(self, data):
             self._message.some_results(reactor, data)
@@ -403,8 +354,15 @@ async def test_forward(reactor, request, mailbox):
         async def next_message(self, expected_size):
             return await self._message.next_item(reactor, expected_size)
 
+        async def when_closed(self):
+            return await self._done.when_triggered()
+
         def send(self, data):
             self.transport.write(data)
+
+        def connectionLost(self, reason):
+            print("lost", self, reason)
+            self._done.trigger(reactor, None)
 
 
     class Client(Protocol):
@@ -418,7 +376,6 @@ async def test_forward(reactor, request, mailbox):
 
         def send(self, data):
             self.transport.write(data)
-
 
     class ServerFactory(Factory):
         protocol = Server
@@ -434,26 +391,53 @@ async def test_forward(reactor, request, mailbox):
             return p
 
     listener = ServerFactory()
-    server_port = await serverFromString(reactor, "tcp:1111").listen(listener)
+    server_port = await serverFromString(reactor, "tcp:3333").listen(listener)
 
-    msg = await find_message(reactor, config0, kind="listening")
+    # whether we explicitly wait for our peer, the underlying fowl
+    # code should "do the right thing" if we just start issuing
+    # listen/etc commands
+    if wait_peer:
+        print("Explicitly awaiting peers")
+        msg = await find_message(reactor, config0, kind="peer-connected")
+        msg = await find_message(reactor, config1, kind="peer-connected")
+        print("Both sides have a peer")
+
+    # both sides are connected -- now we can issue a "remote listen"
+    # request
+    stdios[0].proto.dataReceived(
+        json.dumps({
+            "kind": "remote",
+            "listen": "tcp:8888",
+            "connect": "tcp:localhost:3333",
+        }).encode("utf8") + b"\n"
+    )
+
+    msg = await find_message(reactor, config1, kind="listening")
+    print("listening", msg)
 
     # if we do 'too many' test-cases debian complains about
     # "twisted.internet.error.ConnectBindError: Couldn't bind: 24: Too
     # many open files."
     # gc.collect() doesn't fix it.
-    client = clientFromString(reactor, "tcp:localhost:8888") # NB: same port as in "kind=local" message!
+    client = clientFromString(reactor, "tcp:localhost:8888")  # NB: same as remote-endpoint
     client_proto = await client.connect(Factory.forProtocol(Client))
+    print("waiting next client")
     server = await listener.next_client()
+    print("got", server)
 
     def cleanup():
+        print("cleanup")
+        print("cancel d0", d0)
         d0.cancel()
+        print("cancel d1", d1)
         d1.cancel()
+        print("cancelled")
         server.transport.loseConnection()
-        pytest_twisted.blockon(
-            server_port.stopListening()
-        )
-        client_proto.transport.loseConnection()
+        server_port.stopListening()
+        d = ensureDeferred(server.when_closed())
+        print("DDD", d)
+        pytest_twisted.blockon(d)
+        print("done listening")
     request.addfinalizer(cleanup)
 
     data = os.urandom(datasize)
@@ -463,5 +447,4 @@ async def test_forward(reactor, request, mailbox):
     else:
         server.send(data)
         msg = await client_proto.next_message(len(data))
-    who = not who
     assert msg == data, "Incorrect data transfer"
