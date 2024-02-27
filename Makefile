@@ -1,4 +1,4 @@
-.PHONY: ping
+.PHONY: pin release
 
 pin:
 	pip-compile --upgrade --allow-unsafe --generate-hashes --resolver=backtracking --output-file requirements-pinned.txt
@@ -12,7 +12,8 @@ test:
 	coverage combine
 	cuv graph
 
-release: pin
+#release: pin
+release:
 	python update-version.py
 	git add -u
 	git commit -m "update version"
