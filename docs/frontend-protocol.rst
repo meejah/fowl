@@ -133,7 +133,7 @@ An example message:
 Guidance for UX: most errors are probably interesting to the user.
 
 
-Output: ``kind=welcome``
+Output: ``kind: welcome``
 ------------------------
 
 This message is emitted to both sides once per session when we connect to the Mailbox Server.
