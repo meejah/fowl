@@ -138,13 +138,27 @@ class HappyConnector(Protocol):
         return d
 
 
+class Echo(Protocol):
+    def dataReceived(self, data):
+        self.transport.write(data)
+
+
+class Hello(Protocol):
+    def connectionMade(self):
+        self._data = b""
+        self.transport.write(b"Hello, world!")
+
+    def dataReceived(self, data):
+        self._data += data
+
+
 # could use hypothesis to try 'a bunch of ports' but fixed ports seem
 # easier to reason about to me
 @pytest_twisted.ensureDeferred
 async def test_human(reactor, request, wormhole):
     """
     """
-    f0 = await fowl(reactor, request, "invite", mailbox=wormhole.url)
+    f0 = await fowl(reactor, request, "--local", "8000:8008", "invite", mailbox=wormhole.url)
     await f0.protocol.have_line("Connected.")
     m = await f0.protocol.have_line(".* code: (.*).*")
     code = m.group(1)
@@ -163,4 +177,20 @@ async def test_human(reactor, request, wormhole):
     f1_verify = m.group(1)
     assert f1_verify == f0_verify, "Verifiers don't match"
 
+    print("Making a local connection")
+    port = serverFromString(reactor, "tcp:8008:interface=localhost").listen(
+        Factory.forProtocol(Echo)
+    )
+    print("  listening on 8008")
 
+    ep1 = clientFromString(reactor, "tcp:localhost:8000")
+    print("  connecting to 8000")
+    proto = await ep1.connect(Factory.forProtocol(Hello))
+    print("  sending data, awaiting reply")
+
+    for _ in range(5):
+        await deferLater(reactor, 0.2, lambda: None)
+        if proto._data == b"Hello, world!":
+            break
+    print(f"  got {len(proto._data)} bytes reply")
+    assert proto._data == b"Hello, world!", "Did not see expected echo reply across wormhole"
