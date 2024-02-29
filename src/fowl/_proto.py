@@ -727,16 +727,10 @@ class Incoming(Protocol):
     def forward_data(self, data):
         assert self._buffer is None, "Internal error: still buffering"
         assert self._local_connection is not None, "expected local connection by now"
+        self._local_connection.transport.write(data)
         self.factory.message_out(
             BytesOut(self._conn_id, len(data))
         )
-
-        # XXX handle in Dilation? or something? (yes)
-        max_noise = 65000
-        while len(data):
-            d = data[:max_noise]
-            data = data[max_noise:]
-            self._local_connection.transport.write(d)
 
     @m.output()
     def find_message(self, data):
