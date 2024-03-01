@@ -24,12 +24,6 @@ from .messages import (
 )
 
 
-# XXX need to replicate a bunch of "wormhole *" args?
-# e.g. tor stuff, mailbox url, ..
-
-# XXX there ar repeated args for "fowl" and "fowld" -- can we have a
-# "common args" ... decorator? function?
-
 @click.option(
     "--ip-privacy/--clearnet",
     default=False,
@@ -106,9 +100,24 @@ def fowld(ctx, ip_privacy, mailbox, debug):
     help="Accept a request to listen on a port (optionally which port to open on the far-side connection). Accepted multiple times",
     metavar="listen-port[:connect-port]",
 )
-@click.group()
-@click.pass_context
-def fowl(ctx, ip_privacy, mailbox, debug, allow, local, remote):
+@click.option(
+    "--code-length",
+    default=2,
+    help="Length of the Wormhole code (if we allocate one)",
+)
+@click.option(
+    "--readme", "-r",
+    help="Display the full project README",
+    is_flag=True,
+)
+@click.option(
+    "--interactive", "-i",
+    help="Run in interactive mode, a human-friendly fowld",
+    is_flag=True,
+)
+@click.argument("code", required=False)
+@click.command()
+def fowl(ip_privacy, mailbox, debug, allow, local, remote, code_length, code, readme, interactive):
     """
     Forward Over Wormhole, Locally
 
@@ -117,7 +126,15 @@ def fowl(ctx, ip_privacy, mailbox, debug, allow, local, remote):
 
     This frontend is meant for humans -- if you want machine-parsable
     data and commands, use fowld (or 'python -m fowl')
+
+    This will create a new session (allocating a fresh code) by
+    default. To join an existing session (e.g. you've been given a
+    code) add the code as an (optional) argument on the command-line.
     """
+    if readme:
+        display_readme()
+        return
+
     def to_command(cls, cmd):
         if ':' in cmd:
             listen, connect = cmd.split(':')
@@ -129,10 +146,12 @@ def fowl(ctx, ip_privacy, mailbox, debug, allow, local, remote):
             f"tcp:localhost:{connect}",
         )
 
-    ctx.obj = _Config(
+    cfg = _Config(
         relay_url=WELL_KNOWN_MAILBOXES.get(mailbox, mailbox),
         use_tor=bool(ip_privacy),
         debug_file=debug,
+        code=code,
+        code_length=code_length,
         commands=[
             to_command(LocalListener, cmd)
             for cmd in local
@@ -142,59 +161,28 @@ def fowl(ctx, ip_privacy, mailbox, debug, allow, local, remote):
         ]
     )
 
+    if interactive:
+        return tui(cfg)
 
-@fowl.command()
-@click.pass_context
-@click.option(
-    "--code-length",
-    default=2,
-    help="Length of the Wormhole code",
-)
-def invite(ctx, code_length):
-    """
-    Start a new forwarding session.
-
-    We allocate a code that can be used on another computer to join
-    this session (i.e. "fowl accept")
-    """
-    ctx.obj = evolve(ctx.obj, code_length=code_length)
     def run(reactor):
-        return ensureDeferred(frontend_accept_or_invite(reactor, ctx.obj))
+        return ensureDeferred(frontend_accept_or_invite(reactor, cfg))
     return react(run)
 
 
-@fowl.command()
-@click.pass_context
-@click.argument("code")
-def accept(ctx, code):
-    """
-    Join an existing forwarding session.
-
-    This consumes an existing invite code (usually created by 'fowl
-    invite')
-    """
-    ctx.obj = evolve(ctx.obj, code=code)
-    def run(reactor):
-        return ensureDeferred(frontend_accept_or_invite(reactor, ctx.obj))
-    return react(run)
-
-
-@fowl.command()
-@click.pass_context
-def tui(ctx):
+def tui(cfg):
     """
     Run an interactive text user-interface (TUI)
 
     Allows one to use a human-readable version of the controller
     protocol directly to set up listeners, monitor streams, etc
     """
+
     def run(reactor):
-        return ensureDeferred(frontend_tui(reactor, ctx.obj))
+        return ensureDeferred(frontend_tui(reactor, cfg))
     return react(run)
 
 
-@fowl.command()
-def readme():
+def display_readme():
     """
     Display the project README
     """
@@ -205,19 +193,5 @@ def readme():
     click.echo_via_pager(readme.decode('utf8'))
 
 
-def _entry_fowl():
-    """
-    The entry-point from setup.py
-    """
-    return fowl()
-
-
-def _entry_fowld():
-    """
-    The entry-point from setup.py
-    """
-    return fowld()
-
-
 if __name__ == "__main__":
-    _entry_fowl()
+    fowl()

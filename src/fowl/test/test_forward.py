@@ -17,8 +17,6 @@ from twisted.internet.endpoints import serverFromString, clientFromString
 
 
 from fowl.cli import fowl
-#from fow.cli import accept
-from fowl.cli import invite
 from fowl._proto import (
     _Config,
     wormhole_from_config,
@@ -120,7 +118,8 @@ async def find_message(reactor, config, kind=None, timeout=10):
             if msg["kind"] == kind:
                 return msg
         await sleep(reactor, 1)
-        print("no '{}' yet: {}".format(kind, " ".join([m.get("kind", "<kind missing>") for m in messages])))
+        if False:
+            print("no '{}' yet: {}".format(kind, " ".join([m.get("kind", "<kind missing>") for m in messages])))
     raise RuntimeError(
         f"Waited {timeout}s for message of kind={kind}"
     )
@@ -413,7 +412,7 @@ async def test_drawrof(reactor, request, mailbox, datasize, who, wait_peer):
     )
 
     msg = await find_message(reactor, config1, kind="listening")
-    print("listening", msg)
+    print(f"Listening: {msg}")
 
     # if we do 'too many' test-cases debian complains about
     # "twisted.internet.error.ConnectBindError: Couldn't bind: 24: Too
@@ -421,23 +420,14 @@ async def test_drawrof(reactor, request, mailbox, datasize, who, wait_peer):
     # gc.collect() doesn't fix it.
     client = clientFromString(reactor, "tcp:localhost:8888")  # NB: same as remote-endpoint
     client_proto = await client.connect(Factory.forProtocol(Client))
-    print("waiting next client")
     server = await listener.next_client()
-    print("got", server)
 
     def cleanup():
-        print("cleanup")
-        print("cancel d0", d0)
         d0.cancel()
-        print("cancel d1", d1)
         d1.cancel()
-        print("cancelled")
         server.transport.loseConnection()
         server_port.stopListening()
-        d = ensureDeferred(server.when_closed())
-        print("DDD", d)
-        pytest_twisted.blockon(d)
-        print("done listening")
+        pytest_twisted.blockon(ensureDeferred(server.when_closed()))
     request.addfinalizer(cleanup)
 
     data = os.urandom(datasize)

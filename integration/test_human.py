@@ -91,51 +91,18 @@ async def fowl(reactor, request, subcommand, *extra_args, mailbox=None):
     return _Fowl(transport, proto)
 
 
-class HappyListener(Protocol):
-    def __init__(self):
-        self._waiting = []
-
-    def when_made(self):
-        d = Deferred()
-        self._waiting.append(d)
-        return d
-
+class Echo(Protocol):
     def dataReceived(self, data):
-        print(f"unexpected client data: {data}")
-
-    def connectionMade(self):
-        self.transport.write(b"some test data" * 1000)
-        self._waiting, waiting = [], self._waiting
-        for d in waiting:
-            d.callback(None)
-        self.transport.loseConnection()
+        self.transport.write(data)
 
 
-class HappyConnector(Protocol):
-    """
-    A client-type protocol for testing. Collects all data.
-    """
-
+class Hello(Protocol):
     def connectionMade(self):
         self._data = b""
-        self._waiting_exit = []
+        self.transport.write(b"Hello, world!")
 
     def dataReceived(self, data):
         self._data += data
-
-    def connectionLost(self, reason):
-        self._waiting_exit, waiting = [], self._waiting_exit
-        for d in waiting:
-            d.callback(self._data)
-
-    def when_done(self):
-        """
-        :returns Deferred: fires when the connection closes and delivers
-            all data so far
-        """
-        d = Deferred()
-        self._waiting_exit.append(d)
-        return d
 
 
 # could use hypothesis to try 'a bunch of ports' but fixed ports seem
@@ -144,12 +111,12 @@ class HappyConnector(Protocol):
 async def test_human(reactor, request, wormhole):
     """
     """
-    f0 = await fowl(reactor, request, "invite", mailbox=wormhole.url)
+    f0 = await fowl(reactor, request, "--local", "8000:8008", mailbox=wormhole.url)
     await f0.protocol.have_line("Connected.")
     m = await f0.protocol.have_line(".* code: (.*).*")
     code = m.group(1)
 
-    f1 = await fowl(reactor, request, "accept", code, mailbox=wormhole.url)
+    f1 = await fowl(reactor, request, code, mailbox=wormhole.url)
 
     # both should say they're connected
     await f0.protocol.have_line("Peer is connected.")
@@ -163,4 +130,20 @@ async def test_human(reactor, request, wormhole):
     f1_verify = m.group(1)
     assert f1_verify == f0_verify, "Verifiers don't match"
 
+    print("Making a local connection")
+    port = serverFromString(reactor, "tcp:8008:interface=localhost").listen(
+        Factory.forProtocol(Echo)
+    )
+    print("  listening on 8008")
 
+    ep1 = clientFromString(reactor, "tcp:localhost:8000")
+    print("  connecting to 8000")
+    proto = await ep1.connect(Factory.forProtocol(Hello))
+    print("  sending data, awaiting reply")
+
+    for _ in range(5):
+        await deferLater(reactor, 0.2, lambda: None)
+        if proto._data == b"Hello, world!":
+            break
+    print(f"  got {len(proto._data)} bytes reply")
+    assert proto._data == b"Hello, world!", "Did not see expected echo reply across wormhole"
