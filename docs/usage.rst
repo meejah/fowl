@@ -121,15 +121,13 @@ Common ``fowl`` Options
 * ``--remote port:[local-port]``: listen on the remote peer's ``port``. On any connection to this port (on the peer's side), we will ask our local side to open a connection to ``port`` (or instead to ``local-port`` if specified).
 
 
+Starting a Session
+------------------
 
-``fowl invite``
----------------
-
-One side has to begin first, and this side runs ``fowl invite``.
+One side has to begin first, and this side runs ``fowl`` (possibly with some options).
 This uses the Magic Wormhole protocol to allocate a short, one-time code.
 
-
-This code is used by the "other end" to join this forwarding session with ``fowl accept``.
+This code is used by the "other end" to join this forwarding session with ``fowl <code>``.
 Once that side has successfully set up, we will see a message::
 
     Peer is connected.
@@ -143,15 +141,15 @@ However, confirming them means you can be 100% sure (instead of 99.85% sure or 1
 See below.
 
 
-``fowl accept``
----------------
+Joining a Session
+-----------------
 
 One side has to be the "second" user to a session and that person runs this command.
-``fowl accept`` consumes a Wormhole code and must receive it from the human who ran the ``fowl invite`` command.
+``fowl <code>`` consumes a Wormhole code and must receive it from the human who ran the ``fowl`` command which allocated the code.
 
 Once the Magic Wormhole protocol has successfully set up a Dilation connection, a message will appear on ``stdout``::
 
-    Peer is connected.d
+    Peer is connected.
     Verifier: b191 e9d1 fd27 be77 f576 c3e7 f30d 1ff3 e9d3 840b 7f8e 1ce2 6730 55f4 d1fc bb4f
 
 After this, we reach the more "symmetric" state of the session: although under the hood one side is randomly "the Follower" and one side is "the Leader" in the Dilation session, at our level either side can request forwards from the other.
@@ -170,3 +168,14 @@ All interactions (besides CLI options) are via a line-based protocol: each line 
 Most humans should use ``fowl`` instead.
 
 See :ref:`frontend-protocol` for details on the stdin / stdout protocol that is spoken by ``fowld``.
+
+
+``fowl-tui`` Usage
+==================
+
+Mostly aimed at developers or advanced usage, this command essentially directly maps the frontend protocol (see :ref:`frontend-protocol`) to interactive commands.
+
+At the `>>>` prompt, certain commands are accepted.
+These map directly to ``"kind"` JSON commands from the above-referenced protocol.
+
+That is, you _could_ just run ``fowld`` and type in JSON directly -- but this is a little nicer!
