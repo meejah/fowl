@@ -51,7 +51,7 @@ from .messages import (
 @click.pass_context
 def fowld(ctx, ip_privacy, mailbox, debug):
     """
-    Forward Over Wormhole Daemon
+    Forward Over Wormhole, Locally, Daemon
 
     Low-level daemon to set up and forward streams over Dilated magic
     wormhole connections
@@ -98,13 +98,13 @@ def fowld(ctx, ip_privacy, mailbox, debug):
     "--remote", "-R",
     multiple=True,
     help="Listen remotely, connect locally (accepted multiple times)",
-    metavar="listen-port[:local-port]",
+    metavar="listen-port[:connect-port]",
 )
 @click.option(
     "--allow",
     multiple=True,
     help="Accept a request to listen on a port (optionally which port to open on the far-side connection). Accepted multiple times",
-    metavar="port[:connect-port]",
+    metavar="listen-port[:connect-port]",
 )
 @click.group()
 @click.pass_context
@@ -168,9 +168,9 @@ def invite(ctx, code_length):
 @click.argument("code")
 def accept(ctx, code):
     """
-    Join an exiting forwarding session.
+    Join an existing forwarding session.
 
-    This consumes an existing invite code (usually created by 'fow
+    This consumes an existing invite code (usually created by 'fowl
     invite')
     """
     ctx.obj = evolve(ctx.obj, code=code)

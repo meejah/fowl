@@ -11,7 +11,7 @@ Programs that integrate with (or otherwise want stable, machine-parsable output)
 Under the hood, ``fowl`` commands actually use ``fowld`` (via a Python API).
 All functionality should be available to users of either program.
 
-If you want very similar operation to ``fowld``, but without having to remember JSON syntex, use ``fowl tui``.
+If you want very similar operation to ``fowld``, but without having to remember JSON syntax, use ``fowl tui``.
 
 
 High-Level Overview
@@ -151,7 +151,7 @@ One side has to be the "second" user to a session and that person runs this comm
 
 Once the Magic Wormhole protocol has successfully set up a Dilation connection, a message will appear on ``stdout``::
 
-    Peer is connected.d
+    Peer is connected.
     Verifier: b191 e9d1 fd27 be77 f576 c3e7 f30d 1ff3 e9d3 840b 7f8e 1ce2 6730 55f4 d1fc bb4f
 
 After this, we reach the more "symmetric" state of the session: although under the hood one side is randomly "the Follower" and one side is "the Leader" in the Dilation session, at our level either side can request forwards from the other.
