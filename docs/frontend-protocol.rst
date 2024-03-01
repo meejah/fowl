@@ -32,6 +32,29 @@ An "input" message is one that ``fowld`` accepts on stdin.
 An "output" message is one that ``fowld`` may produce on stdout.
 
 
+Input: ``kind: allocate-code``
+------------------------------
+
+This message tells ``fowld`` to allocate a fresh code.
+These look like ``1-foo-bar`` (you can control how many words).
+Note that we interact with the server to reserve the "nameplate" (the short number) but the words are chosen locally (and randomly).
+
+Keys allowed:
+
+- ``code-length`` (optional): how many words to use
+
+At some point in the future, a ``kind: code-allocated`` message will be emitted.
+
+
+Input: ``kind: set-code``
+-------------------------
+
+Tell ``fowld`` a specific code to use.
+This likely came from a corresponding use of ``kind: allocate-code`` (in another instance of ``fowld`` on another computer).
+
+- ``code`` (required): the secret code to use
+
+
 Input: ``kind: local``
 ----------------------
 
@@ -138,9 +161,19 @@ Output: ``kind: welcome``
 
 This message is emitted to both sides once per session when we connect to the Mailbox Server.
 
-  - ``"welcome"``: a ``dict`` containing whatever the Mailbox server sent in its Welcome message.
+- ``"welcome"``: a ``dict`` containing whatever the Mailbox server sent in its Welcome message.
 
 Guidance for UX: the user should be informed that progress has been made (e.g. the Mailbox Server is available).
+
+
+Output: ``kind: code-allocated``
+--------------------------------
+
+This is emitted once ``fowld`` has a secret code.
+We could have been given one with ``kind: set-code`` or created a new one with ``kind: allocate-code``.
+In either case, this message is emitted.
+
+- ``"code"``: the secret code
 
 
 Output: ``kind: peer-connected``
