@@ -98,13 +98,13 @@ def fowld(ctx, ip_privacy, mailbox, debug):
     "--remote", "-R",
     multiple=True,
     help="Listen remotely, connect locally (accepted multiple times)",
-    metavar="listen-port[:local-port]",
+    metavar="listen-port[:connect-port]",
 )
 @click.option(
     "--allow",
     multiple=True,
     help="Accept a request to listen on a port (optionally which port to open on the far-side connection). Accepted multiple times",
-    metavar="port[:connect-port]",
+    metavar="listen-port[:connect-port]",
 )
 @click.group()
 @click.pass_context
