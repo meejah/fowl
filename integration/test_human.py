@@ -91,53 +91,6 @@ async def fowl(reactor, request, subcommand, *extra_args, mailbox=None):
     return _Fowl(transport, proto)
 
 
-class HappyListener(Protocol):
-    def __init__(self):
-        self._waiting = []
-
-    def when_made(self):
-        d = Deferred()
-        self._waiting.append(d)
-        return d
-
-    def dataReceived(self, data):
-        print(f"unexpected client data: {data}")
-
-    def connectionMade(self):
-        self.transport.write(b"some test data" * 1000)
-        self._waiting, waiting = [], self._waiting
-        for d in waiting:
-            d.callback(None)
-        self.transport.loseConnection()
-
-
-class HappyConnector(Protocol):
-    """
-    A client-type protocol for testing. Collects all data.
-    """
-
-    def connectionMade(self):
-        self._data = b""
-        self._waiting_exit = []
-
-    def dataReceived(self, data):
-        self._data += data
-
-    def connectionLost(self, reason):
-        self._waiting_exit, waiting = [], self._waiting_exit
-        for d in waiting:
-            d.callback(self._data)
-
-    def when_done(self):
-        """
-        :returns Deferred: fires when the connection closes and delivers
-            all data so far
-        """
-        d = Deferred()
-        self._waiting_exit.append(d)
-        return d
-
-
 class Echo(Protocol):
     def dataReceived(self, data):
         self.transport.write(data)
