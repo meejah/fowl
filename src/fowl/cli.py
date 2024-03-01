@@ -194,4 +194,4 @@ def display_readme():
 
 
 if __name__ == "__main__":
-    _entry_fowl()
+    fowl()
