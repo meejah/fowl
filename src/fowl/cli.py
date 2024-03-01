@@ -24,12 +24,6 @@ from .messages import (
 )
 
 
-# XXX need to replicate a bunch of "wormhole *" args?
-# e.g. tor stuff, mailbox url, ..
-
-# XXX there ar repeated args for "fowl" and "fowld" -- can we have a
-# "common args" ... decorator? function?
-
 @click.option(
     "--ip-privacy/--clearnet",
     default=False,
@@ -106,9 +100,14 @@ def fowld(ctx, ip_privacy, mailbox, debug):
     help="Accept a request to listen on a port (optionally which port to open on the far-side connection). Accepted multiple times",
     metavar="port[:connect-port]",
 )
-@click.group()
-@click.pass_context
-def fowl(ctx, ip_privacy, mailbox, debug, allow, local, remote):
+@click.option(
+    "--code-length",
+    default=2,
+    help="Length of the Wormhole code",
+)
+@click.argument("code", required=False)
+@click.command()
+def fowl(ip_privacy, mailbox, debug, allow, local, remote, code_length, code):
     """
     Forward Over Wormhole, Locally
 
@@ -117,6 +116,10 @@ def fowl(ctx, ip_privacy, mailbox, debug, allow, local, remote):
 
     This frontend is meant for humans -- if you want machine-parsable
     data and commands, use fowld (or 'python -m fowl')
+
+    This will create a new session (allocating a fresh code) by
+    default. To join an existing session (e.g. you've been given a
+    code) add the code as an (optional) argument on the command-line.
     """
     def to_command(cls, cmd):
         if ':' in cmd:
@@ -129,10 +132,12 @@ def fowl(ctx, ip_privacy, mailbox, debug, allow, local, remote):
             f"tcp:localhost:{connect}",
         )
 
-    ctx.obj = _Config(
+    cfg = _Config(
         relay_url=WELL_KNOWN_MAILBOXES.get(mailbox, mailbox),
         use_tor=bool(ip_privacy),
         debug_file=debug,
+        code=code,
+        code_length=code_length,
         commands=[
             to_command(LocalListener, cmd)
             for cmd in local
@@ -142,45 +147,13 @@ def fowl(ctx, ip_privacy, mailbox, debug, allow, local, remote):
         ]
     )
 
-
-@fowl.command()
-@click.pass_context
-@click.option(
-    "--code-length",
-    default=2,
-    help="Length of the Wormhole code",
-)
-def invite(ctx, code_length):
-    """
-    Start a new forwarding session.
-
-    We allocate a code that can be used on another computer to join
-    this session (i.e. "fowl accept")
-    """
-    ctx.obj = evolve(ctx.obj, code_length=code_length)
     def run(reactor):
-        return ensureDeferred(frontend_accept_or_invite(reactor, ctx.obj))
+        return ensureDeferred(frontend_accept_or_invite(reactor, cfg))
     return react(run)
 
 
-@fowl.command()
-@click.pass_context
-@click.argument("code")
-def accept(ctx, code):
-    """
-    Join an exiting forwarding session.
-
-    This consumes an existing invite code (usually created by 'fow
-    invite')
-    """
-    ctx.obj = evolve(ctx.obj, code=code)
-    def run(reactor):
-        return ensureDeferred(frontend_accept_or_invite(reactor, ctx.obj))
-    return react(run)
-
-
-@fowl.command()
-@click.pass_context
+#@fowl.command()
+#@click.pass_context
 def tui(ctx):
     """
     Run an interactive text user-interface (TUI)
@@ -193,7 +166,7 @@ def tui(ctx):
     return react(run)
 
 
-@fowl.command()
+#@fowl.command()
 def readme():
     """
     Display the project README

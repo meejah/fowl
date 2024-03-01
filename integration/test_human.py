@@ -158,12 +158,12 @@ class Hello(Protocol):
 async def test_human(reactor, request, wormhole):
     """
     """
-    f0 = await fowl(reactor, request, "--local", "8000:8008", "invite", mailbox=wormhole.url)
+    f0 = await fowl(reactor, request, "--local", "8000:8008", mailbox=wormhole.url)
     await f0.protocol.have_line("Connected.")
     m = await f0.protocol.have_line(".* code: (.*).*")
     code = m.group(1)
 
-    f1 = await fowl(reactor, request, "accept", code, mailbox=wormhole.url)
+    f1 = await fowl(reactor, request, code, mailbox=wormhole.url)
 
     # both should say they're connected
     await f0.protocol.have_line("Peer is connected.")
