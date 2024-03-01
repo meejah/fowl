@@ -244,3 +244,10 @@ If you are developing on top of ``fowl``, please get in touch so we know what yo
 All releases are on PyPI with versioning following a `CalVer <https://calver.org>`_ variant: ``year.month.number``, like ``23.4.0`` (for the first release in April, 2023).
 
 See ``NEWS.rst`` for specific release information.
+
+
+🧙 Contributors
+---------------
+
+- `meejah <https://meejah.ca>`_: main development
+- `balejk <https://github.com/balejk>`_: early feedback, proof-reading, review and testing
