@@ -106,13 +106,18 @@ def fowld(ctx, ip_privacy, mailbox, debug):
     help="Length of the Wormhole code (if we allocate one)",
 )
 @click.option(
-    "--readme", "-i",
+    "--readme", "-r",
     help="Display the full project README",
+    is_flag=True,
+)
+@click.option(
+    "--interactive", "-i",
+    help="Run in interactive mode, a human-friendly fowld",
     is_flag=True,
 )
 @click.argument("code", required=False)
 @click.command()
-def fowl(ip_privacy, mailbox, debug, allow, local, remote, code_length, code, readme):
+def fowl(ip_privacy, mailbox, debug, allow, local, remote, code_length, code, readme, interactive):
     """
     Forward Over Wormhole, Locally
 
@@ -156,34 +161,21 @@ def fowl(ip_privacy, mailbox, debug, allow, local, remote, code_length, code, re
         ]
     )
 
+    if interactive:
+        return tui(cfg)
+
     def run(reactor):
         return ensureDeferred(frontend_accept_or_invite(reactor, cfg))
     return react(run)
 
 
-@click.option(
-    "--ip-privacy/--clearnet",
-    default=False,
-    help="Enable operation over Tor (default is public Internet)",
-)
-@click.option(
-    "--mailbox",
-    default=PUBLIC_MAILBOX_URL,
-    help='URL for the mailbox server to use (or "default" or "winden" to use well-known servers)',
-    metavar="URL or NAME",
-)
-@click.command()
-def tui(mailbox, ip_privacy):
+def tui(cfg):
     """
     Run an interactive text user-interface (TUI)
 
     Allows one to use a human-readable version of the controller
     protocol directly to set up listeners, monitor streams, etc
     """
-    cfg = _Config(
-        relay_url=WELL_KNOWN_MAILBOXES.get(mailbox, mailbox),
-        use_tor=bool(ip_privacy),
-    )
 
     def run(reactor):
         return ensureDeferred(frontend_tui(reactor, cfg))
