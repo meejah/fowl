@@ -11,7 +11,7 @@ Programs that integrate with (or otherwise want stable, machine-parsable output)
 Under the hood, ``fowl`` commands actually use ``fowld`` (via a Python API).
 All functionality should be available to users of either program.
 
-If you want very similar operation to ``fowld``, but without having to remember JSON syntex, use ``fowl tui``.
+If you want very similar operation to ``fowld``, but without having to remember JSON syntax, use ``fowl tui``.
 
 
 High-Level Overview

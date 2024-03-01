@@ -18,7 +18,7 @@ Once a "Dilated Magic Wormhole" has been established, we have:
 All subchannels are in-order, reliable and durable streams.
 "Durable" and "reliable" here means that the underlying Dilation code does the hard work of re-connecting to the peer -- we don't have to worry about acknowledgements, re-connection, re-trying, etc.
 
-Thus it can sometimes take more time than expected for byets to be delivered (for example, if some re-connecting is going on behind the scenes).
+Thus it can sometimes take more time than expected for bytes to be delivered (for example, if some re-connecting is going on behind the scenes).
 
 
 General Message Format
@@ -72,7 +72,7 @@ Because we use Twisted endpoint strings, many protocols are possible on either s
    This flexibility can be both good and bad; part of the stdin/out protocol can include a "consent" API allowing controlling applications (ultimately, users) to allow or deny each connection or listener.
    If you do this, **we recommend whitelisting** only known-good kinds of strings for most users.
 
-   In ``fow`` itself there are command-line options to both widen and further limit the defaults.
+   In ``fowl`` itself there are command-line options to both widen and further limit the defaults.
 
 .. NOTE::
 
