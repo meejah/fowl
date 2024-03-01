@@ -1,6 +1,11 @@
 
 .. _dilation-protocol:
 
+Audience: developers of fowl.
+
+This describes a low-level protocol used by fowl itself; users will never see this.
+
+
 Dilation Application Protocol
 =============================
 
