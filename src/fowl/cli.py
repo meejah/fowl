@@ -103,11 +103,16 @@ def fowld(ctx, ip_privacy, mailbox, debug):
 @click.option(
     "--code-length",
     default=2,
-    help="Length of the Wormhole code",
+    help="Length of the Wormhole code (if we allocate one)",
+)
+@click.option(
+    "--readme", "-i",
+    help="Display the full project README",
+    is_flag=True,
 )
 @click.argument("code", required=False)
 @click.command()
-def fowl(ip_privacy, mailbox, debug, allow, local, remote, code_length, code):
+def fowl(ip_privacy, mailbox, debug, allow, local, remote, code_length, code, readme):
     """
     Forward Over Wormhole, Locally
 
@@ -121,6 +126,10 @@ def fowl(ip_privacy, mailbox, debug, allow, local, remote, code_length, code):
     default. To join an existing session (e.g. you've been given a
     code) add the code as an (optional) argument on the command-line.
     """
+    if readme:
+        display_readme()
+        return
+
     def to_command(cls, cmd):
         if ':' in cmd:
             listen, connect = cmd.split(':')
@@ -152,22 +161,36 @@ def fowl(ip_privacy, mailbox, debug, allow, local, remote, code_length, code):
     return react(run)
 
 
-#@fowl.command()
-#@click.pass_context
-def tui(ctx):
+@click.option(
+    "--ip-privacy/--clearnet",
+    default=False,
+    help="Enable operation over Tor (default is public Internet)",
+)
+@click.option(
+    "--mailbox",
+    default=PUBLIC_MAILBOX_URL,
+    help='URL for the mailbox server to use (or "default" or "winden" to use well-known servers)',
+    metavar="URL or NAME",
+)
+@click.command()
+def tui(mailbox, ip_privacy):
     """
     Run an interactive text user-interface (TUI)
 
     Allows one to use a human-readable version of the controller
     protocol directly to set up listeners, monitor streams, etc
     """
+    cfg = _Config(
+        relay_url=WELL_KNOWN_MAILBOXES.get(mailbox, mailbox),
+        use_tor=bool(ip_privacy),
+    )
+
     def run(reactor):
-        return ensureDeferred(frontend_tui(reactor, ctx.obj))
+        return ensureDeferred(frontend_tui(reactor, cfg))
     return react(run)
 
 
-#@fowl.command()
-def readme():
+def display_readme():
     """
     Display the project README
     """
@@ -176,20 +199,6 @@ def readme():
     # examples of "convert this rST string to anything else" .. :/ but
     # we should "render" it to text
     click.echo_via_pager(readme.decode('utf8'))
-
-
-def _entry_fowl():
-    """
-    The entry-point from setup.py
-    """
-    return fowl()
-
-
-def _entry_fowld():
-    """
-    The entry-point from setup.py
-    """
-    return fowld()
 
 
 if __name__ == "__main__":
