@@ -14,6 +14,12 @@ Unreleased
 * (Put new changelog items here)
 
 
+24.3.1: March 1, 2024
+---------------------
+
+* Upgrade dependencies (msgpack, twisted)
+
+
 24.3.0: March 1, 2024
 ---------------------
 
