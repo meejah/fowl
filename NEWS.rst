@@ -14,6 +14,20 @@ Unreleased
 * (Put new changelog items here)
 
 
+24.3.1: March 1, 2024
+---------------------
+
+* Upgrade dependencies (msgpack, twisted)
+
+
+24.3.0: March 1, 2024
+---------------------
+
+* Simplify ``fowl`` to have no sub-commands
+* One side runs ``fowl``, one side runs ``fowl --code 1-foo-bar``
+* More complete and accurate documentation
+
+
 24.2.0: February 27, 2024
 -------------------------
 
