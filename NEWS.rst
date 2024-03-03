@@ -24,7 +24,7 @@ Unreleased
 ---------------------
 
 * Simplify ``fowl`` to have no sub-commands
-* One side runs ``fowl``, one side runs ``fowl --code 1-foo-bar``
+* One side runs ``fowl``, the other one runs ``fowl 1-foo-bar``
 * More complete and accurate documentation
 
 
