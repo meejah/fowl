@@ -1006,8 +1006,10 @@ class FowlWormhole:
                 reason = why
             elif isinstance(why.value, wormhole_errors.LonelyError):
                 reason = "lonely"
-            else:
+            elif why.value.args:
                 reason = why.value.args[0]
+            else:
+                reason = str(why)
             self._done.trigger(self._reactor, reason)
             self._daemon.shutdown(reason)
         ensureDeferred(self._wormhole._closed_observer.when_fired()).addBoth(was_closed)
