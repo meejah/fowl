@@ -32,6 +32,7 @@ undo-release:
 release-upload:
 	@ls dist/fowl-`git describe --abbrev=0`*
 	twine upload --username __token__ --password `cat PRIVATE-release-token` dist/fowl-`git describe --abbrev=0`*
+	git push github `git describe --abbrev=0`
 
 wg.png: wizard-garden-app-interaction.seq
 	# pip install seqdiag 'pillow<10'
