@@ -137,3 +137,8 @@ class BytesIn(FowlOutputMessage):
 class BytesOut(FowlOutputMessage):
     id: int
     bytes: int
+
+
+@frozen
+class WormholeError(FowlOutputMessage):
+    message: str
