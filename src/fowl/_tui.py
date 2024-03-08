@@ -211,7 +211,7 @@ async def _cmd_help(reactor, wh, state, *args):
     for fn, aliases in funs.items():
         name = sorted(aliases)[-1]
         rest = " ".join(sorted(aliases)[:-1])
-        helptext = fn.__doc__
+        helptext = textwrap.dedent(fn.__doc__)
         if helptext:
             print(f"{name} ({rest})")
             print(textwrap.fill(helptext.strip(), 80, initial_indent="    ", subsequent_indent="    "))
@@ -246,6 +246,10 @@ async def _cmd_accept(reactor, wh, state, *args):
 
 
 async def _cmd_listen_local(reactor, wh, state, *args):
+    """
+    Listen locally on the given port; connect to the remote side on
+    the same port (or a custom one if two ports are passed)
+    """
     try:
         port = int(args[0])
     except (ValueError, IndexError):

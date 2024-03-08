@@ -120,6 +120,14 @@ class IncomingConnection(FowlOutputMessage):
 
 
 @frozen
+class IncomingLost(FowlOutputMessage):
+    """
+    We have lost one of our connections
+    """
+    id: int
+
+
+@frozen
 class BytesIn(FowlOutputMessage):
     id: int
     bytes: int
