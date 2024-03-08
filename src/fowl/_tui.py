@@ -30,6 +30,7 @@ from .messages import (
     BytesIn,
     BytesOut,
     IncomingConnection,
+    IncomingLost,
     LocalConnection,
 )
 
@@ -76,6 +77,12 @@ async def frontend_tui(reactor, config):
     def _(msg):
         conn = state[0].connections
         conn[msg.id] = Connection(0, 0)
+        replace_state(attr.evolve(state[0], connections=conn))
+
+    @output_message.register(IncomingLost)
+    def _(msg):
+        conn = state[0].connections
+        del conn[msg.id]
         replace_state(attr.evolve(state[0], connections=conn))
 
     @output_message.register(LocalConnection)
