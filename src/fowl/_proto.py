@@ -1108,7 +1108,7 @@ class FowlWormhole:
             self._report_error(f.value)
 
     def _report_error(self, e):
-        self.factory.message_out(
+        self._daemon._message_out(
             WormholeError(str(e))
         )
 
@@ -1471,8 +1471,10 @@ def fowld_output_to_json(msg: FowlOutputMessage) -> dict:
         Listening: "listening",
         LocalConnection: "local-connection",
         IncomingConnection: "incoming-connection",
+        IncomingLost: "incoming-lost",
         BytesIn: "bytes-in",
         BytesOut: "bytes-out",
+        WormholeError: "error",
     }[type(msg)]
     return js
 
@@ -1634,7 +1636,18 @@ class Commands(Protocol):
                 )
                 self._ports.append(port)
                 return port
+
+            def error(f):
+                self.factory.message_out(
+                    WormholeError(
+                        'Failed to listen on "{}": {}'.format(
+                            msg["listen-endpoint"],
+                            f.value,
+                        )
+                    )
+                )
             d.addCallback(got_port)
+            d.addErrback(error)
             # XXX should await port.stopListening() somewhere...at the appropriate time
         else:
             self.factory.message_out(
