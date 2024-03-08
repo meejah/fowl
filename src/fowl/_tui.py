@@ -30,6 +30,7 @@ from .messages import (
     BytesIn,
     BytesOut,
     IncomingConnection,
+    IncomingLost,
     LocalConnection,
 )
 
@@ -76,6 +77,12 @@ async def frontend_tui(reactor, config):
     def _(msg):
         conn = state[0].connections
         conn[msg.id] = Connection(0, 0)
+        replace_state(attr.evolve(state[0], connections=conn))
+
+    @output_message.register(IncomingLost)
+    def _(msg):
+        conn = state[0].connections
+        del conn[msg.id]
         replace_state(attr.evolve(state[0], connections=conn))
 
     @output_message.register(LocalConnection)
@@ -204,7 +211,7 @@ async def _cmd_help(reactor, wh, state, *args):
     for fn, aliases in funs.items():
         name = sorted(aliases)[-1]
         rest = " ".join(sorted(aliases)[:-1])
-        helptext = fn.__doc__
+        helptext = textwrap.dedent(fn.__doc__)
         if helptext:
             print(f"{name} ({rest})")
             print(textwrap.fill(helptext.strip(), 80, initial_indent="    ", subsequent_indent="    "))
@@ -239,6 +246,10 @@ async def _cmd_accept(reactor, wh, state, *args):
 
 
 async def _cmd_listen_local(reactor, wh, state, *args):
+    """
+    Listen locally on the given port; connect to the remote side on
+    the same port (or a custom one if two ports are passed)
+    """
     try:
         port = int(args[0])
     except (ValueError, IndexError):
@@ -266,7 +277,34 @@ async def _cmd_listen_local(reactor, wh, state, *args):
 
 
 async def _cmd_listen_remote(reactor, wh, state, *args):
-    pass
+    """
+    Listen on the remote side on the given port; connect back to this
+    side on the same port (or a custom one if two ports are passed)
+    """
+    try:
+        remote_port = int(args[0])
+    except (ValueError, IndexError):
+        print("Requires a TCP port, as an integer.")
+        print("We will listen on this TCP port on the remote side and connect to the same")
+        print("localhost port on this side. Optionally, a second port may be specified")
+        print("to use a different local port")
+        return
+
+    if len(args) > 1:
+        try:
+            local_port = int(args[1])
+        except ValueError:
+            print(f"Not port-number: {args[1]}")
+            return
+    else:
+        local_port = remote_port
+
+    wh.command(
+        RemoteListener(
+            listen=f"tcp:{remote_port}:interface=localhost",
+            connect=f"tcp:localhost:{local_port}",
+        )
+    )
 
 
 class CommandReader(LineReceiver):

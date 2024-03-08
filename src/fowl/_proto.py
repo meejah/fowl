@@ -394,6 +394,12 @@ class ForwardConnecter(Protocol):
         enter=evaluating,
         outputs=[check_message]
     )
+    await_confirmation.upon(
+        subchannel_closed,
+        enter=finished,
+        outputs=[],
+    )
+
     evaluating.upon(
         remote_connected,
         enter=forwarding_bytes,
@@ -565,15 +571,11 @@ class LocalServer(Protocol):
         d.addCallback(got_proto)
 
         def err(f):
-            # XXX fixme use a OutputMessage
-            print(
-                json.dumps({
-                    "kind": "error",
-                    "id": self._conn_id,
-                    "message": str(f.value),
-                }),
-                file=self.factory.config.stdout,
-                flush=True,
+            self.factory.message_out(
+                WormholeError(
+                    str(f.value),
+                    # extra={"id": self._conn_id}
+                )
             )
         d.addErrback(err)
         return d
@@ -590,25 +592,10 @@ class LocalServer(Protocol):
             self.remote.transport.loseConnection()
 
     def dataReceived(self, data):
-        # XXX FIXME if len(data) >= 65535 must split "because noise"
-        # -- handle in Dilation code? (yes)
-
         self.factory.message_out(
             BytesIn(self._conn_id, len(data))
         )
-        if False:
-            max_noise = 65000
-            while len(data):
-                d = data[:max_noise]
-                data = data[max_noise:]
-
-                if self.queue is not None:
-                    self.queue.append(d)
-                else:
-                    self.remote.transport.write(d)
-        else:
-            ## if Dilation handling of "more than noise packet" works
-            self.remote.transport.write(data)
+        self.remote.transport.write(data)
 
 
 class Incoming(Protocol):
@@ -760,7 +747,7 @@ class Incoming(Protocol):
         """
         Reply to the other side that we've connected properly
         """
-        # XXX another section like this: pack_netstring() or something
+        # XXX there's other sections like this; factor to pack_netstring() or something
         msg = msgpack.packb({
             "connected": True,
         })
@@ -787,15 +774,11 @@ class Incoming(Protocol):
         d = ep.connect(factory)
 
         def bad(fail):
-            # XXXX use an OutputMessage
-            print(
-                json.dumps({
-                    "kind": "error",
-                    "id": self._conn_id,
-                    "message": fail.getErrorMessage(),
-                }),
-                file=self.factory.config.stdout,
-                flush=True,
+            self.factory.message_out(
+                WormholeError(
+                    fail.getErrorMessage(),
+                    # extra={"id": self._conn_id}
+                )
             )
             reactor.callLater(0, lambda: self.connection_failed())
             return None
@@ -882,14 +865,8 @@ class Incoming(Protocol):
         """
         Twisted API
         """
-        # XXX use an OutputMessage
-        print(
-            json.dumps({
-                "kind": "incoming-lost",
-                "id": self._conn_id,
-            }),
-            file=self.factory.config.stdout,
-            flush=True,
+        self.factory.message_out(
+            IncomingLost(self._conn_id)
         )
         self.subchannel_closed()
 
@@ -1000,8 +977,10 @@ class FowlWormhole:
                 reason = why
             elif isinstance(why.value, wormhole_errors.LonelyError):
                 reason = "lonely"
-            else:
+            elif why.value.args:
                 reason = why.value.args[0]
+            else:
+                reason = str(why)
             self._done.trigger(self._reactor, reason)
             self._daemon.shutdown(reason)
         ensureDeferred(self._wormhole._closed_observer.when_fired()).addBoth(was_closed)
@@ -1100,9 +1079,7 @@ class FowlWormhole:
         """
         return self._connected.when_triggered()
 
-    #XXX
     def do_dilate(self):
-##XXX wait for do_dilate + _post_dilation_setup() to run before emitting the "code-allocated" message.....it's currently not working (the control connection)
         self.control_ep, self.connect_ep, self.listen_ep = self._wormhole.dilate(
             transit_relay_location="tcp:magic-wormhole-transit.debian.net:4001",
         )
@@ -1131,14 +1108,8 @@ class FowlWormhole:
             self._report_error(f.value)
 
     def _report_error(self, e):
-        #XXX use an OutputMessage
-        print(
-            json.dumps({
-                "kind": "error",
-                "message": str(e),
-            }),
-            file=self._config.stdout,
-            flush=True,
+        self._daemon._message_out(
+            WormholeError(str(e))
         )
 
     async def _post_dilation_setup(self):
@@ -1500,8 +1471,10 @@ def fowld_output_to_json(msg: FowlOutputMessage) -> dict:
         Listening: "listening",
         LocalConnection: "local-connection",
         IncomingConnection: "incoming-connection",
+        IncomingLost: "incoming-lost",
         BytesIn: "bytes-in",
         BytesOut: "bytes-out",
+        WormholeError: "error",
     }[type(msg)]
     return js
 
@@ -1554,7 +1527,6 @@ async def _forward_loop(reactor, config, w):
 
     def output_fowl_message(msg):
         js = fowld_output_to_json(msg)
-        #XXX use an outputmessage
         print(
             json.dumps(js),
             file=config.stdout,
@@ -1656,30 +1628,32 @@ class Commands(Protocol):
             d = listen_ep.listen(factory)
 
             def got_port(port):
-                #XXX use a Message
-                print(
-                    json.dumps({
-                        "kind": "listening",
-                        "endpoint": msg["listen-endpoint"],
-                    }),
-                    file=self.factory.config.stdout,
-                    flush=True,
+                self.factory.message_out(
+                    Listening(
+                        msg["listen-endpoint"],
+                        msg["connect-endpoint"],
+                    )
                 )
-
                 self._ports.append(port)
                 return port
+
+            def error(f):
+                self.factory.message_out(
+                    WormholeError(
+                        'Failed to listen on "{}": {}'.format(
+                            msg["listen-endpoint"],
+                            f.value,
+                        )
+                    )
+                )
             d.addCallback(got_port)
+            d.addErrback(error)
             # XXX should await port.stopListening() somewhere...at the appropriate time
         else:
-            # XXX use a Message
-            print(
-                json.dumps({
-                    "kind": "error",
-                    f"message": "Unknown control command: {msg[kind]}",
-                    "endpoint": msg["listen-endpoint"],
-                }),
-                file=self.factory.config.stdout,
-                flush=True,
+            self.factory.message_out(
+                WormholeError(
+                    "Unknown control command: {msg[kind]}",
+                )
             )
 
     async def _unregister_ports(self):
@@ -1714,11 +1688,6 @@ class LocalCommandDispatch(LineReceiver):
         pass
 
     def lineReceived(self, line):
-        # XXX FIXME since we don't have req/resp IDs etc we should
-        # only allow ONE command to be run at a time, and then its
-        # answer printed (so e.g. even if our controller gets
-        # ahead and issues 3 commands without waiting for the
-        # answer, we need to do them in order)
         try:
             cmd = parse_fowld_command(line)
             self.fowl.command(cmd)

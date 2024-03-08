@@ -183,7 +183,11 @@ async def test_happy_remote(reactor, request, wormhole):
 
     # f1 send a remote-listen request, so f0 should receive it
     msg = await f0.protocol.next_message("listening")
-    assert msg == {'kind': 'listening', 'endpoint': 'tcp:1111:interface=localhost'}
+    assert msg == {
+        'kind': 'listening',
+        'listen': 'tcp:1111:interface=localhost',
+        'connect': 'tcp:localhost:8888',
+    }
 
     ep0 = serverFromString(reactor, "tcp:8888:interface=localhost")
     ep1 = clientFromString(reactor, "tcp:localhost:1111")
