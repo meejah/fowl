@@ -277,7 +277,34 @@ async def _cmd_listen_local(reactor, wh, state, *args):
 
 
 async def _cmd_listen_remote(reactor, wh, state, *args):
-    pass
+    """
+    Listen on the remote side on the given port; connect back to this
+    side on the same port (or a custom one if two ports are passed)
+    """
+    try:
+        remote_port = int(args[0])
+    except (ValueError, IndexError):
+        print("Requires a TCP port, as an integer.")
+        print("We will listen on this TCP port on the remote side and connect to the same")
+        print("localhost port on this side. Optionally, a second port may be specified")
+        print("to use a different local port")
+        return
+
+    if len(args) > 1:
+        try:
+            local_port = int(args[1])
+        except ValueError:
+            print(f"Not port-number: {args[1]}")
+            return
+    else:
+        local_port = remote_port
+
+    wh.command(
+        RemoteListener(
+            listen=f"tcp:{remote_port}:interface=localhost",
+            connect=f"tcp:localhost:{local_port}",
+        )
+    )
 
 
 class CommandReader(LineReceiver):
