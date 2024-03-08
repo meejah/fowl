@@ -12,6 +12,9 @@ Unreleased
 ----------
 
 * (Put new changelog items here)
+* Fix up some fallout from refactoring
+* Enable "remote" command in --interactive
+* Proper error-message rendering
 
 
 24.3.1: March 1, 2024
