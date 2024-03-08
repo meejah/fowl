@@ -394,6 +394,12 @@ class ForwardConnecter(Protocol):
         enter=evaluating,
         outputs=[check_message]
     )
+    await_confirmation.upon(
+        subchannel_closed,
+        enter=finished,
+        outputs=[],
+    )
+
     evaluating.upon(
         remote_connected,
         enter=forwarding_bytes,
