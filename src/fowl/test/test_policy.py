@@ -7,7 +7,7 @@ from hypothesis import given, assume, reproduce_failure
 
 from twisted.internet.endpoints import TCP4ServerEndpoint, TCP6ServerEndpoint
 
-from fowl.policy import LocalhostAnyPortsPolicy, LocalhostTcpPortsPolicy
+from fowl.policy import LocalhostAnyPortsListenPolicy, LocalhostTcpPortsListenPolicy
 
 
 def ip_address_to_listener(reactor, port, ipaddr):
@@ -38,7 +38,7 @@ def test_policy_any_acceptable(reactor, port, ipaddr):
     we might like
     """
     endpoint = ip_address_to_listener(reactor, port, ipaddr)
-    policy = LocalhostAnyPortsPolicy()
+    policy = LocalhostAnyPortsListenPolicy()
     assert policy.can_listen(endpoint) == True, "Listen on a localhost port"
 
 
@@ -53,7 +53,7 @@ def test_policy_any_bad(reactor, port, ipaddr):
     """
     assume(not ipaddress.ip_address(ipaddr).is_loopback)
     endpoint = ip_address_to_listener(reactor, port, ipaddr)
-    policy = LocalhostAnyPortsPolicy()
+    policy = LocalhostAnyPortsListenPolicy()
     assert policy.can_listen(endpoint) == False, "Should only allow loopback addresses"
 
 
@@ -72,5 +72,5 @@ def test_policy_specific_ports(reactor, port, allowed_ports, ipaddr):
     endpoint = ip_address_to_listener(reactor, port, ipaddr)
     expected_result = True if is_local and is_allowed else False
 
-    policy = LocalhostTcpPortsPolicy(allowed_ports)
+    policy = LocalhostTcpPortsListenPolicy(allowed_ports)
     assert policy.can_listen(endpoint) == expected_result, f"what port={endpoint._port} if={endpoint._interface} {expected_result} {port} {allowed_ports} {ipaddr} {policy.can_listen(endpoint)}"

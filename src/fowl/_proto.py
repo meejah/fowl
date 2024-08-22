@@ -29,6 +29,7 @@ import wormhole.errors as wormhole_errors
 
 from .observer import When
 from .messages import *
+from .policy import IClientListenPolicy, IClientConnectPolicy
 
 
 
@@ -70,6 +71,8 @@ class _Config:
     create_stdio: Callable = None  # returns a StandardIO work-alike, for testing
     debug_file: IO = None  # for state-machine transitions
     commands: list[FowlCommandMessage] = AttrFactory(list)
+    connect_policy: IClientConnectPolicy = None
+    listen_policy: IClientListenPolicy = None
 
 
 async def wormhole_from_config(reactor, config, wormhole_create=None):
@@ -761,6 +764,14 @@ class Incoming(Protocol):
         """
         data = msgpack.unpackb(msg)
         ep = clientFromString(reactor, data["local-destination"])
+
+        if self.factory.config.connect_policy is not None:
+            if not self.factory.config.connect_policy.can_connect(ep):
+                # XXX error -- do we send an error message back first?
+                # (like "against local policy")
+                self.transport.loseConnection()
+                return
+
         factory = Factory.forProtocol(ConnectionForward)
         factory.other_proto = self
         factory.config = self.factory.config
@@ -1569,6 +1580,11 @@ async def _local_to_remote_forward(reactor, config, connect_ep, on_listen, on_me
     # XXX these lines are "uncovered" but we clearly run them ... so
     # something wrong with subprocess coverage?? again???
     ep = serverFromString(reactor, cmd.listen)
+
+    if config.listen_policy is not None:
+        if not config.listen_policy.can_listen(ep):
+            raise ValueError('Policy doesn\'t allow listening on "{}"'.format(ep._port))
+
     factory = Factory.forProtocol(LocalServer)
     factory.config = config
     factory.endpoint_str = cmd.connect
@@ -1616,8 +1632,15 @@ class Commands(Protocol):
         assert bsize == expected_size + 2, "data has more than the message"
         msg = msgpack.unpackb(data[2:])
         if msg["kind"] == "remote-to-local":
-            # XXX ask for permission
             listen_ep = serverFromString(reactor, msg["listen-endpoint"])
+
+            if self.factory.config.listen_policy is not None:
+                if not self.factory.config.listen_policy.can_listen(listen_ep):
+                    # XXX error -- do we send an error message back first?
+                    # (like "against local policy")
+                    self.transport.loseConnection()
+                    return
+
             factory = Factory.forProtocol(LocalServer)
             factory.config = self.factory.config
             factory.message_out = self.factory.message_out

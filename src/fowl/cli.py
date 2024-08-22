@@ -22,6 +22,7 @@ from .messages import (
     LocalListener,
     RemoteListener,
 )
+from .policy import LocalhostTcpPortsListenPolicy, LocalhostTcpPortsConnectPolicy
 
 
 @click.option(
@@ -54,6 +55,10 @@ def fowld(ctx, ip_privacy, mailbox, debug):
         relay_url=WELL_KNOWN_MAILBOXES.get(mailbox, mailbox),
         use_tor=bool(ip_privacy),
         debug_file=debug,
+        # these will be empty; client must activate ports by sending
+        # messages to allow listening (or connecting)
+        listen_policy = LocalhostTcpPortsListenPolicy([]),
+        connect_policy = LocalhostTcpPortsConnectPolicy([]),
     )
     def run(reactor):
         return ensureDeferred(
@@ -95,10 +100,16 @@ def fowld(ctx, ip_privacy, mailbox, debug):
     metavar="listen-port[:connect-port]",
 )
 @click.option(
-    "--allow",
+    "--allow-listen",
     multiple=True,
-    help="Accept a request to listen on a port (optionally which port to open on the far-side connection). Accepted multiple times",
-    metavar="listen-port[:connect-port]",
+    help="Accept a connection to this local port. Accepted multiple times. Note that local listeners added via --local are already allowed and do not need this option.",
+    metavar="listen-port",
+)
+@click.option(
+    "--allow-connect",
+    multiple=True,
+    help="Accept a connection to this local port. Accepted multiple times",
+    metavar="connect-port",
 )
 @click.option(
     "--code-length",
@@ -117,7 +128,7 @@ def fowld(ctx, ip_privacy, mailbox, debug):
 )
 @click.argument("code", required=False)
 @click.command()
-def fowl(ip_privacy, mailbox, debug, allow, local, remote, code_length, code, readme, interactive):
+def fowl(ip_privacy, mailbox, debug, allow_listen, allow_connect, local, remote, code_length, code, readme, interactive):
     """
     Forward Over Wormhole, Locally
 
@@ -146,6 +157,13 @@ def fowl(ip_privacy, mailbox, debug, allow, local, remote, code_length, code, re
             f"tcp:localhost:{connect}",
         )
 
+    def to_listener(cmd):
+        if ':' in cmd:
+            listen, _ = cmd.split(':')
+        else:
+            listen = cmd
+        return int(listen)
+
     cfg = _Config(
         relay_url=WELL_KNOWN_MAILBOXES.get(mailbox, mailbox),
         use_tor=bool(ip_privacy),
@@ -158,7 +176,9 @@ def fowl(ip_privacy, mailbox, debug, allow, local, remote, code_length, code, re
         ] + [
             to_command(RemoteListener, cmd)
             for cmd in remote
-        ]
+        ],
+        listen_policy = LocalhostTcpPortsListenPolicy([to_listener(cmd) for cmd in local]),
+        connect_policy = LocalhostTcpPortsConnectPolicy([int(conn) for conn in allow_connect]),
     )
 
     if interactive:
