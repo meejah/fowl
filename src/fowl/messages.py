@@ -125,6 +125,7 @@ class LocalConnection(FowlOutputMessage):
     Something has connected to one of our listeners
     """
     id: int
+    endpoint: str
 
 
 @frozen

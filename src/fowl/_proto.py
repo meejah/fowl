@@ -113,6 +113,7 @@ async def wormhole_from_config(reactor, config, wormhole_create=None):
 
 @frozen
 class Connection:
+    endpoint: str
     i: int = 0
     o: int = 0
 
@@ -155,12 +156,12 @@ async def frontend_accept_or_invite(reactor, config):
 
     @output_message.register(IncomingConnection)
     def _(msg):
-        connections[msg.id] = Connection(0, 0)
+        connections[msg.id] = Connection(msg.endpoint, 0, 0)
 
     @output_message.register(RemoteConnectFailed)
     def _(msg):
+        print("Forwarding to {} failed: {}".format(connections[msg.id].endpoint, msg.reason))
         del connections[msg.id]
-        print("Forwarding id={} failed: {}".format(msg.id, msg.reason))
 
     @output_message.register(IncomingLost)
     def _(msg):
@@ -171,7 +172,7 @@ async def frontend_accept_or_invite(reactor, config):
 
     @output_message.register(LocalConnection)
     def _(msg):
-        connections[msg.id] = Connection(0, 0)
+        connections[msg.id] = Connection(msg.endpoint, 0, 0)
 
     @output_message.register(BytesIn)
     def _(msg):
@@ -483,7 +484,7 @@ class SubchannelForwarder(Protocol):
 
     def connectionMade(self):
         self._buffer = b""
-        self.do_trace(lambda o, i, n: print("{} --[ {} ]--> {}".format(o, i, n)))
+        # self.do_trace(lambda o, i, n: print("{} --[ {} ]--> {}".format(o, i, n)))
 
     def dataReceived(self, data):
         self.got_bytes(data)
@@ -595,7 +596,7 @@ class LocalServer(Protocol):
             proto.transport.write(prefix + msg)
 
             self.factory.message_out(
-                LocalConnection(self._conn_id)
+                LocalConnection(self._conn_id, self.factory.endpoint_str)
             )
 
             # MUST wait for reply first -- queueing all data until
@@ -852,10 +853,8 @@ class Incoming(Protocol):
             if not self.factory.config.connect_policy.can_connect(ep):
                 # XXX error -- do we send an error message back first?
                 # (like "against local policy")
-                self._negative("ZZZAgainst local policy")
-                print(self.transport)
+                self._negative("Against local policy")
                 self.transport.loseConnection()
-                print(self.transport)
                 return
 
         d = ep.connect(factory)
@@ -948,15 +947,14 @@ class Incoming(Protocol):
         # (want some kind of opt-in on this side, probably)
         self._buffer = b""
         self._local_connection = None
-        def tracer(o, i, n):
-            print("{} --[ {} ]--> {}".format(o, i, n))
-        self.set_trace(tracer)
+        # def tracer(o, i, n):
+        #     print("{} --[ {} ]--> {}".format(o, i, n))
+        # self.set_trace(tracer)
 
     def connectionLost(self, reason):
         """
         Twisted API
         """
-        print("lost", reason)
         self.factory.message_out(
             IncomingLost(self._conn_id, reason)
         )
