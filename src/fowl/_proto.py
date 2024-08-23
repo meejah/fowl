@@ -1628,6 +1628,9 @@ async def _remote_to_local_forward(control_proto, cmd):
     })
     prefix = struct.pack("!H", len(msg))
     control_proto.transport.write(prefix + msg)
+    # XXX there should be some kind of answer, both positive and negative
+    #  - there's "listening" for positive (although it's not _necessarily_ in response to this)
+    #  - nothing for "negative" yet
     return None
 
 
