@@ -144,6 +144,13 @@ async def frontend_accept_or_invite(reactor, config):
     def _(msg):
         connections[msg.id] = Connection(0, 0)
 
+    @output_message.register(IncomingLost)
+    def _(msg):
+        try:
+            del connections[msg.id]
+        except KeyError:
+            print("WEIRD: got IncomingLost(id={}) but don't have that connection".format(msg.id))
+
     @output_message.register(LocalConnection)
     def _(msg):
         connections[msg.id] = Connection(0, 0)
@@ -377,6 +384,11 @@ class ForwardConnecter(Protocol):
             )
             self.factory.other_proto.transport.write(d)
 
+    @m.output()
+    def emit_incoming_lost(self):
+        # do we need a like "OutgoingLost"?
+        self.factory.message_out(IncomingLost(self.factory.conn_id))
+
     await_confirmation.upon(
         no_confirmation,
         enter=forwarding_bytes,
@@ -400,7 +412,7 @@ class ForwardConnecter(Protocol):
     await_confirmation.upon(
         subchannel_closed,
         enter=finished,
-        outputs=[],
+        outputs=[emit_incoming_lost],
     )
 
     evaluating.upon(
@@ -765,13 +777,6 @@ class Incoming(Protocol):
         data = msgpack.unpackb(msg)
         ep = clientFromString(reactor, data["local-destination"])
 
-        if self.factory.config.connect_policy is not None:
-            if not self.factory.config.connect_policy.can_connect(ep):
-                # XXX error -- do we send an error message back first?
-                # (like "against local policy")
-                self.transport.loseConnection()
-                return
-
         factory = Factory.forProtocol(ConnectionForward)
         factory.other_proto = self
         factory.config = self.factory.config
@@ -781,6 +786,16 @@ class Incoming(Protocol):
         self.factory.message_out(
             IncomingConnection(self._conn_id, data["local-destination"])
         )
+
+        # note: do this policy check after the IncomingConnection
+        # message is emitted (otherwise there will be cases where we
+        # emit _just_ a IncomingLost which is confusing)
+        if self.factory.config.connect_policy is not None:
+            if not self.factory.config.connect_policy.can_connect(ep):
+                # XXX error -- do we send an error message back first?
+                # (like "against local policy")
+                self.transport.loseConnection()
+                return
 
         d = ep.connect(factory)
 
@@ -830,11 +845,12 @@ class Incoming(Protocol):
         enter=finished,
         outputs=[close_connection]  # send-negative-reply?
     )
-#FIXME enable    local_connect.upon(
-#        subchannel_closed,
-#        enter=finished,
-#        outputs=[cancel_connect]
-#    )
+    # this will happen if our policy doesn't allow this port, for example
+    local_connect.upon(
+        subchannel_closed,
+        enter=finished,
+        outputs=[]
+    )
 
     forwarding_bytes.upon(
         got_bytes,
