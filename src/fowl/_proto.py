@@ -145,9 +145,22 @@ async def frontend_accept_or_invite(reactor, config):
     def _(msg):
         print(f"Listening: {msg.listen}")
 
+    @output_message.register(RemoteListeningSucceeded)
+    def _(msg):
+        print(f"Peer is listening: {msg.listen}")
+
+    @output_message.register(RemoteListeningFailed)
+    def _(msg):
+        print(f"Peer failed to listen: {msg.listen}: {msg.reason}")
+
     @output_message.register(IncomingConnection)
     def _(msg):
         connections[msg.id] = Connection(0, 0)
+
+    @output_message.register(RemoteConnectFailed)
+    def _(msg):
+        del connections[msg.id]
+        print("Forwarding id={} failed: {}".format(msg.id, msg.reason))
 
     @output_message.register(IncomingLost)
     def _(msg):
@@ -240,7 +253,7 @@ async def forward(reactor, config):
         raise
 
 
-class ForwardConnecter(Protocol):
+class SubchannelForwarder(Protocol):
     """
     This is the side of the protocol that was listening .. so it has
     opened a subchannel and sent the initial message. So the
@@ -301,13 +314,13 @@ class ForwardConnecter(Protocol):
         """
 
     @m.input()
-    def remote_not_connected(self):
+    def remote_not_connected(self, reason):
         """
         The reply message was negative
         """
 
     @m.input()
-    def too_much_data(self):
+    def too_much_data(self, reason):
         """
         Too many bytes sent in the reply.
         """
@@ -315,7 +328,7 @@ class ForwardConnecter(Protocol):
         # on the other side...
 
     @m.input()
-    def subchannel_closed(self):
+    def subchannel_closed(self, reason):
         """
         Our subchannel has closed
         """
@@ -351,7 +364,7 @@ class ForwardConnecter(Protocol):
         if msg.get("connected", False):
             self.remote_connected()
         else:
-            self.remote_not_connected()
+            self.remote_not_connected(msg.get("reason", "Unknown"))
 
     @m.output()
     def send_queued_data(self):
@@ -360,6 +373,12 @@ class ForwardConnecter(Protocol):
         """
         self.factory.other_proto.transport.resumeProducing()
         self.factory.other_proto._maybe_drain_queue()
+
+    @m.output()
+    def emit_remote_failed(self, reason):
+        self.factory.message_out(
+            RemoteConnectFailed(self.factory.conn_id, reason)
+        )
 
     @m.output()
     def close_connection(self):
@@ -392,7 +411,7 @@ class ForwardConnecter(Protocol):
     @m.output()
     def emit_incoming_lost(self):
         # do we need a like "OutgoingLost"?
-        self.factory.message_out(IncomingLost(self.factory.conn_id))
+        self.factory.message_out(IncomingLost(self.factory.conn_id, "Unknown"))
 
     await_confirmation.upon(
         no_confirmation,
@@ -428,7 +447,12 @@ class ForwardConnecter(Protocol):
     evaluating.upon(
         remote_not_connected,
         enter=finished,
-        outputs=[close_connection]
+        outputs=[emit_remote_failed, close_connection]
+    )
+    evaluating.upon(
+        subchannel_closed,
+        enter=finished,
+        outputs=[]
     )
     forwarding_bytes.upon(
         got_bytes,
@@ -459,13 +483,13 @@ class ForwardConnecter(Protocol):
 
     def connectionMade(self):
         self._buffer = b""
-        ##self.do_trace(lambda o, i, n: print("{} --[ {} ]--> {}".format(o, i, n)))
+        self.do_trace(lambda o, i, n: print("{} --[ {} ]--> {}".format(o, i, n)))
 
     def dataReceived(self, data):
         self.got_bytes(data)
 
     def connectionLost(self, reason):
-        self.subchannel_closed()
+        self.subchannel_closed(str(reason))
         if self.factory.other_proto:
             self.factory.other_proto.transport.loseConnection()
 
@@ -544,6 +568,7 @@ class ConnectionForward(Protocol):
         self.got_bytes(data)
 
     def connectionLost(self, reason):
+        print("lost to time", reason)
         self.stream_closed()
 
 
@@ -559,6 +584,7 @@ class LocalServer(Protocol):
         self.remote = None
         self._conn_id = allocate_connection_id()
 
+        # XXX refactor into SubchannelForwarder.onOpen or whatever, since that exists anyway?
         def got_proto(proto):
             proto.local = self
             self.remote = proto
@@ -578,7 +604,7 @@ class LocalServer(Protocol):
             return proto
 
         # XXX do we need registerProducer somewhere here?
-        factory = Factory.forProtocol(ForwardConnecter)
+        factory = Factory.forProtocol(SubchannelForwarder)
         factory.other_proto = self
         factory.conn_id = self._conn_id
         factory.config = self.factory.config
@@ -651,6 +677,7 @@ class Incoming(Protocol):
     """
 
     m = automat.MethodicalMachine()
+    set_trace = m._setTrace
 
     @m.state(initial=True)
     def await_message(self):
@@ -685,7 +712,7 @@ class Incoming(Protocol):
         """
 
     @m.input()
-    def too_much_data(self):
+    def too_much_data(self, reason):
         """
         We received too many bytes (for the first message).
         """
@@ -698,7 +725,7 @@ class Incoming(Protocol):
         """
 
     @m.input()
-    def subchannel_closed(self):
+    def subchannel_closed(self, reason):
         """
         This subchannel has been closed
         """
@@ -710,16 +737,17 @@ class Incoming(Protocol):
         """
 
     @m.input()
-    def connection_failed(self):
+    def connection_failed(self, reason):
         """
         Making the local connection failed
         """
 
     @m.output()
-    def close_connection(self):
+    def close_connection(self, reason):
         """
         We wish to close this subchannel
         """
+        print("CLOSE DOWN", reason)
         self.transport.loseConnection()
 
     @m.output()
@@ -728,6 +756,7 @@ class Incoming(Protocol):
         We wish to close this subchannel
         """
         if self._local_connection and self._local_connection.transport:
+            print("close local")
             self._local_connection.transport.loseConnection()
 
     @m.output()
@@ -757,10 +786,34 @@ class Incoming(Protocol):
                 # there should be no "leftover" data
                 if bsize > 2 + expected_size:
                     ##raise RuntimeError("protocol error: more than opening message sent")
-                    self.too_much_data()
+                    self.too_much_data("Too many bytes sent")
                     return
                 # warning: recursive state-machine message
                 self.got_initial_message(first_msg)
+
+    @m.output()
+    def send_negative_reply(self, reason):
+        """
+        Tell our peer why we're closing them
+        """
+        self._negative(reason)
+
+    @m.output()
+    def send_negative_reply_subchannel(self):
+        """
+        Tell our peer local policy doesn't let the connection happen.
+        """
+        pass#self._negative("XXXAgainst local policy")
+
+    def _negative(self, reason):
+        print("negative", reason)
+        msg = msgpack.packb({
+            "connected": False,
+            "reason": reason,
+        })
+        prefix = struct.pack("!H", len(msg))
+        self.transport.write(prefix + msg)
+
 
     @m.output()
     def send_positive_reply(self):
@@ -799,7 +852,10 @@ class Incoming(Protocol):
             if not self.factory.config.connect_policy.can_connect(ep):
                 # XXX error -- do we send an error message back first?
                 # (like "against local policy")
+                self._negative("ZZZAgainst local policy")
+                print(self.transport)
                 self.transport.loseConnection()
+                print(self.transport)
                 return
 
         d = ep.connect(factory)
@@ -811,7 +867,7 @@ class Incoming(Protocol):
                     # extra={"id": self._conn_id}
                 )
             )
-            reactor.callLater(0, lambda: self.connection_failed())
+            reactor.callLater(0, lambda: self.connection_failed(fail.getErrorMessage()))
             return None
 
         def assign(proto):
@@ -848,13 +904,13 @@ class Incoming(Protocol):
     local_connect.upon(
         connection_failed,
         enter=finished,
-        outputs=[close_connection]  # send-negative-reply?
+        outputs=[send_negative_reply, close_connection]
     )
     # this will happen if our policy doesn't allow this port, for example
     local_connect.upon(
         subchannel_closed,
         enter=finished,
-        outputs=[]
+        outputs=[],
     )
 
     forwarding_bytes.upon(
@@ -892,15 +948,19 @@ class Incoming(Protocol):
         # (want some kind of opt-in on this side, probably)
         self._buffer = b""
         self._local_connection = None
+        def tracer(o, i, n):
+            print("{} --[ {} ]--> {}".format(o, i, n))
+        self.set_trace(tracer)
 
     def connectionLost(self, reason):
         """
         Twisted API
         """
+        print("lost", reason)
         self.factory.message_out(
-            IncomingLost(self._conn_id)
+            IncomingLost(self._conn_id, reason)
         )
-        self.subchannel_closed()
+        self.subchannel_closed(reason)
 
     def dataReceived(self, data):
         """

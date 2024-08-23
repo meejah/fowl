@@ -128,6 +128,15 @@ class LocalConnection(FowlOutputMessage):
 
 
 @frozen
+class RemoteConnectFailed(FowlOutputMessage):
+    """
+    Our peer could not connect
+    """
+    id: int
+    reason: str
+
+
+@frozen
 class IncomingConnection(FowlOutputMessage):
     """
     The other side is requesting we open a connection
@@ -142,6 +151,7 @@ class IncomingLost(FowlOutputMessage):
     We have lost one of our connections
     """
     id: int
+    reason: str
 
 
 @frozen
