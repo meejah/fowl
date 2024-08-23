@@ -122,7 +122,11 @@ async def frontend_accept_or_invite(reactor, config):
 
     @functools.singledispatch
     def output_message(msg):
-        print(f"unhandled output: {msg}")
+        print(f"UNhandled output: {msg}")
+
+    @output_message.register(WormholeError)
+    def _(msg):
+        print(f"ERROR: {msg.message}")
 
     @output_message.register(CodeAllocated)
     def _(msg):
