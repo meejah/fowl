@@ -100,7 +100,14 @@ The `"reply-id"` MUST match a previously-received outstanding request.
 Only a single response may ever be made for a particular `"reply-id"`.
 The `"listening"` boolean indicates if the request succeeded or not.
 
-XXX: consider adding a "reason" field to indicate why a listen failed.
+For "negative" responses, a reason may be included::
+
+    {
+        "kind": "listener-response",
+        "reply-id": 9381,
+        "listening": False,
+        "reason": "Disallowed by local policy"
+    }
 
 
 Upon every connection to this local port (assuming a listener is established), we will open a "forwarding subchannel" to the other side (see next section); ``"connect-endpoint"`` is used here.

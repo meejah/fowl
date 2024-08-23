@@ -108,7 +108,7 @@ class RemoteListeningFailed(FowlOutputMessage):
     We have failed to open a listener on the remote side.
     """
     listen: str  # Twisted server-type endpoint string
-    #XXX reason?
+    reason: str
 
 
 @frozen

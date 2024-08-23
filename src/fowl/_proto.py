@@ -1057,7 +1057,6 @@ class FowlWormhole:
             await self.when_connected()
             assert self.control_proto is not None, "need control_proto"
             msg = await _remote_to_local_forward(self.control_proto, msg)
-            print(msg)
             self._daemon._message_out(msg)
             # XXX cheating? private access (_daemon._message_out)
 
@@ -1668,7 +1667,7 @@ class Commands(Protocol):
             if msg["listening"]:
                 d.callback(RemoteListeningSucceeded(original_cmd.listen))
             else:
-                d.callback(RemoteListeningFailed(original_cmd.listen))
+                d.callback(RemoteListeningFailed(original_cmd.listen, msg.get("reason", "Missing reason")))
 
         elif msg["kind"] == "remote-to-local":
             rid = int(msg["reply-id"])
@@ -1679,7 +1678,7 @@ class Commands(Protocol):
 
             if self.factory.config.listen_policy is not None:
                 if not self.factory.config.listen_policy.can_listen(listen_ep):
-                    self._reply_negative(rid)
+                    self._reply_negative(rid, "Against local policy")
                     self.transport.loseConnection()
                     return
 
@@ -1705,7 +1704,7 @@ class Commands(Protocol):
                 return port
 
             def error(f):
-                self._reply_negative(rid)
+                self._reply_negative(rid, f.getErrorMessage())
                 self.factory.message_out(
                     WormholeError(
                         'Failed to listen on "{}": {}'.format(
@@ -1730,22 +1729,25 @@ class Commands(Protocol):
         """
         return self._reply_generic(rid, listening=True)
 
-    def _reply_negative(self, rid):
+    def _reply_negative(self, rid, reason=None):
         """
         Send a negative reply to a remote request
         """
-        return self._reply_generic(rid, listening=False)
+        return self._reply_generic(rid, listening=False, reason=reason)
 
-    def _reply_generic(self, rid, listening):
+    def _reply_generic(self, rid, listening, reason=None):
         """
         Send a positive or negative reply to a remote request
         """
         if rid in self._remote_requests:
-            reply = msgpack.packb({
+            content = {
                 "kind": "listener-response",
                 "reply-id": rid,
                 "listening": bool(listening),
-            })
+            }
+            if reason is not None and not listening:
+                content["reason"] = str(reason)
+            reply = msgpack.packb(content)
             prefix = struct.pack("!H", len(reply))
             self.transport.write(prefix + reply)
             del self._remote_requests[rid]
