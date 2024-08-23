@@ -8,6 +8,7 @@ import functools
 import struct
 from typing import IO, Callable, Optional
 from functools import partial
+from itertools import count
 
 import humanize
 from attrs import frozen, field, asdict, Factory as AttrFactory
@@ -1055,13 +1056,9 @@ class FowlWormhole:
         async def _(msg):
             await self.when_connected()
             assert self.control_proto is not None, "need control_proto"
-            # XXX if we get this before we've dilated, just remember it?
-            # listens locally, conencts to other side
-
-            # XXX to get rid of the "await" part, we can just roll the
-            # "message_out" call and the "listening_ports.append" into
-            # one ...
-            await _remote_to_local_forward(self.control_proto, msg)
+            msg = await _remote_to_local_forward(self.control_proto, msg)
+            print(msg)
+            self._daemon._message_out(msg)
             # XXX cheating? private access (_daemon._message_out)
 
         ensureDeferred(cmd(command)).addErrback(self._handle_error)
@@ -1621,17 +1618,8 @@ async def _remote_to_local_forward(control_proto, cmd):
     (where our Incoming subchannel will be told what to connect
     to).
     """
-    msg = msgpack.packb({
-        "kind": "remote-to-local",
-        "listen-endpoint": cmd.listen,
-        "connect-endpoint": cmd.connect,
-    })
-    prefix = struct.pack("!H", len(msg))
-    control_proto.transport.write(prefix + msg)
-    # XXX there should be some kind of answer, both positive and negative
-    #  - there's "listening" for positive (although it's not _necessarily_ in response to this)
-    #  - nothing for "negative" yet
-    return None
+    reply = await control_proto.request_forward(cmd)
+    return reply
 
 
 class Commands(Protocol):
@@ -1643,6 +1631,24 @@ class Commands(Protocol):
         super().__init__(*args, **kw)
         self._ports = []
         self._done = When()
+        # outstanding requests, awaiting replies
+        self._remote_requests = dict()
+        self._local_requests = dict()
+        self._create_request_id = count(1)
+
+    def request_forward(self, cmd):
+        rid = next(self._create_request_id)
+        msg = msgpack.packb({
+            "kind": "remote-to-local",
+            "listen-endpoint": cmd.listen,
+            "connect-endpoint": cmd.connect,
+            "reply-id": rid,
+        })
+        d = Deferred()
+        self._local_requests[rid] = d, cmd
+        prefix = struct.pack("!H", len(msg))
+        self.transport.write(prefix + msg)
+        return d
 
     def when_done(self):
         return self._done.when_triggered()
@@ -1652,15 +1658,28 @@ class Commands(Protocol):
         bsize = len(data)
         assert bsize >= 2, "expected at least 2 bytes"
         expected_size, = struct.unpack("!H", data[:2])
-        assert bsize == expected_size + 2, "data has more than the message"
+        assert bsize == expected_size + 2, "data has more than the message: {} vs {}: {}".format(bsize, expected_size + 2, repr(data[:55]))
         msg = msgpack.unpackb(data[2:])
-        if msg["kind"] == "remote-to-local":
+        if msg["kind"] == "listener-response":
+            rid = int(msg["reply-id"])
+            d, original_cmd = self._local_requests[rid]
+            del self._local_requests[rid]
+
+            if msg["listening"]:
+                d.callback(RemoteListeningSucceeded(original_cmd.listen))
+            else:
+                d.callback(RemoteListeningFailed(original_cmd.listen))
+
+        elif msg["kind"] == "remote-to-local":
+            rid = int(msg["reply-id"])
+            assert rid >= 1 and rid < 2**53, "reply-id out of range"
+            self._remote_requests[rid] = None
+
             listen_ep = serverFromString(reactor, msg["listen-endpoint"])
 
             if self.factory.config.listen_policy is not None:
                 if not self.factory.config.listen_policy.can_listen(listen_ep):
-                    # XXX error -- do we send an error message back first?
-                    # (like "against local policy")
+                    self._reply_negative(rid)
                     self.transport.loseConnection()
                     return
 
@@ -1672,8 +1691,10 @@ class Commands(Protocol):
 
             # XXX this can fail (synchronously) if address in use (e.g.)
             d = listen_ep.listen(factory)
+            self._remote_requests[rid] = d
 
             def got_port(port):
+                self._reply_positive(rid)
                 self.factory.message_out(
                     Listening(
                         msg["listen-endpoint"],
@@ -1684,6 +1705,7 @@ class Commands(Protocol):
                 return port
 
             def error(f):
+                self._reply_negative(rid)
                 self.factory.message_out(
                     WormholeError(
                         'Failed to listen on "{}": {}'.format(
@@ -1700,6 +1722,36 @@ class Commands(Protocol):
                 WormholeError(
                     "Unknown control command: {msg[kind]}",
                 )
+            )
+
+    def _reply_positive(self, rid):
+        """
+        Send a positive reply to a remote request
+        """
+        return self._reply_generic(rid, listening=True)
+
+    def _reply_negative(self, rid):
+        """
+        Send a negative reply to a remote request
+        """
+        return self._reply_generic(rid, listening=False)
+
+    def _reply_generic(self, rid, listening):
+        """
+        Send a positive or negative reply to a remote request
+        """
+        if rid in self._remote_requests:
+            reply = msgpack.packb({
+                "kind": "listener-response",
+                "reply-id": rid,
+                "listening": bool(listening),
+            })
+            prefix = struct.pack("!H", len(reply))
+            self.transport.write(prefix + reply)
+            del self._remote_requests[rid]
+        else:
+            raise ValueError(
+                "Replied to '{}' but it is not outstanding".format(rid)
             )
 
     async def _unregister_ports(self):

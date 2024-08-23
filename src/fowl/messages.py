@@ -103,6 +103,23 @@ class Listening(FowlOutputMessage):
 
 
 @frozen
+class RemoteListeningFailed(FowlOutputMessage):
+    """
+    We have failed to open a listener on the remote side.
+    """
+    listen: str  # Twisted server-type endpoint string
+    #XXX reason?
+
+
+@frozen
+class RemoteListeningSucceeded(FowlOutputMessage):
+    """
+    The remote peer suceeded at fulfilling our listen request.
+    """
+    listen: str  # Twisted server-type endpoint string
+
+
+@frozen
 class LocalConnection(FowlOutputMessage):
     """
     Something has connected to one of our listeners
