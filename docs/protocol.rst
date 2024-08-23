@@ -106,7 +106,7 @@ For "negative" responses, a reason may be included::
         "kind": "listener-response",
         "reply-id": 9381,
         "listening": False,
-        "reason": "Disallowed by local policy"
+        "reason": "Against local policy"
     }
 
 

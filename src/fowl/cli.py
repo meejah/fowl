@@ -164,6 +164,14 @@ def fowl(ip_privacy, mailbox, debug, allow_listen, allow_connect, local, remote,
             listen = cmd
         return int(listen)
 
+    def to_local_port(arg):
+        arg = int(arg)
+        if arg < 1 or arg >= 65536:
+            raise click.UsageError(
+                "Listen ports must be an integer from 1 to 65535"
+            )
+        return arg
+
     cfg = _Config(
         relay_url=WELL_KNOWN_MAILBOXES.get(mailbox, mailbox),
         use_tor=bool(ip_privacy),
@@ -177,7 +185,10 @@ def fowl(ip_privacy, mailbox, debug, allow_listen, allow_connect, local, remote,
             to_command(RemoteListener, cmd)
             for cmd in remote
         ],
-        listen_policy = LocalhostTcpPortsListenPolicy([to_listener(cmd) for cmd in local]),
+        listen_policy = LocalhostTcpPortsListenPolicy(
+            [to_listener(cmd) for cmd in local] +
+            [to_local_port(port) for port in allow_listen]
+        ),
         connect_policy = LocalhostTcpPortsConnectPolicy([int(conn) for conn in allow_connect]),
     )
 
