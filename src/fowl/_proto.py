@@ -1910,7 +1910,7 @@ async def get_tor(
         import txtorcon
     except ImportError:
         raise click.UsageError(
-            'Cannot find txtorcon library (try "pip istall txtorcon")'
+            'Cannot find txtorcon library (try "pip install txtorcon")'
         )
 
     # Connect to an existing Tor, or create a new one. If we need to
