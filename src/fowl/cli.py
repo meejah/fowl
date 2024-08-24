@@ -164,6 +164,13 @@ def fowl(ip_privacy, mailbox, debug, allow_listen, allow_connect, local, remote,
             listen = cmd
         return int(listen)
 
+    def to_connecter(cmd):
+        if ':' in cmd:
+            _, conn = cmd.split(':')
+        else:
+            conn = cmd
+        return int(conn)
+
     def to_local_port(arg):
         arg = int(arg)
         if arg < 1 or arg >= 65536:
@@ -189,7 +196,10 @@ def fowl(ip_privacy, mailbox, debug, allow_listen, allow_connect, local, remote,
             [to_listener(cmd) for cmd in local] +
             [to_local_port(port) for port in allow_listen]
         ),
-        connect_policy = LocalhostTcpPortsConnectPolicy([int(conn) for conn in allow_connect]),
+        connect_policy = LocalhostTcpPortsConnectPolicy(
+            [int(conn) for conn in allow_connect] +
+            [to_connecter(cmd) for cmd in remote]
+        ),
     )
 
     if interactive:

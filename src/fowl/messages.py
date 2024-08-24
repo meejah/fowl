@@ -137,6 +137,22 @@ class RemoteConnectFailed(FowlOutputMessage):
     reason: str
 
 
+class OutgoingLost(FowlOutputMessage):
+    """
+    We have lost one of our connections
+    """
+    id: int
+    reason: str
+
+
+@frozen
+class OutgoingDone(FowlOutputMessage):
+    """
+    We have lost one of our connections
+    """
+    id: int
+
+
 @frozen
 class IncomingConnection(FowlOutputMessage):
     """
@@ -153,6 +169,14 @@ class IncomingLost(FowlOutputMessage):
     """
     id: int
     reason: str
+
+
+@frozen
+class IncomingDone(FowlOutputMessage):
+    """
+    An incoming connection has ended successfully
+    """
+    id: int
 
 
 @frozen

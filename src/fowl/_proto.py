@@ -165,10 +165,32 @@ async def frontend_accept_or_invite(reactor, config):
 
     @output_message.register(IncomingLost)
     def _(msg):
+        print("incominglost", msg.id, msg.reason)
         try:
             del connections[msg.id]
         except KeyError:
             print("WEIRD: got IncomingLost(id={}) but don't have that connection".format(msg.id))
+
+    @output_message.register(IncomingDone)
+    def _(msg):
+        try:
+            del connections[msg.id]
+        except KeyError:
+            print("WEIRD: got IncomingDone(id={}) but don't have that connection".format(msg.id))
+
+    @output_message.register(OutgoingLost)
+    def _(msg):
+        try:
+            del connections[msg.id]
+        except KeyError:
+            print("WEIRD: got OutgoingLost(id={}) but don't have that connection".format(msg.id))
+
+    @output_message.register(OutgoingDone)
+    def _(msg):
+        try:
+            del connections[msg.id]
+        except KeyError:
+            print("WEIRD: got OutgoingDone(id={}) but don't have that connection".format(msg.id))
 
     @output_message.register(LocalConnection)
     def _(msg):
@@ -177,6 +199,7 @@ async def frontend_accept_or_invite(reactor, config):
     @output_message.register(BytesIn)
     def _(msg):
         connections[msg.id] = Connection(
+            connections[msg.id].endpoint,
             connections[msg.id].i + msg.bytes,
             connections[msg.id].o,
         )
@@ -184,6 +207,7 @@ async def frontend_accept_or_invite(reactor, config):
     @output_message.register(BytesOut)
     def _(msg):
         connections[msg.id] = Connection(
+            connections[msg.id].endpoint,
             connections[msg.id].i,
             connections[msg.id].o + msg.bytes,
         )
@@ -409,10 +433,10 @@ class SubchannelForwarder(Protocol):
             )
             self.factory.other_proto.transport.write(d)
 
-    @m.output()
-    def emit_incoming_lost(self):
-        # do we need a like "OutgoingLost"?
-        self.factory.message_out(IncomingLost(self.factory.conn_id, "Unknown"))
+#    @m.output()
+#    def emit_incoming_lost(self):
+#        # do we need a like "OutgoingLost"?
+#        self.factory.message_out(IncomingLost(self.factory.conn_id, "Unknown"))
 
     await_confirmation.upon(
         no_confirmation,
@@ -437,7 +461,7 @@ class SubchannelForwarder(Protocol):
     await_confirmation.upon(
         subchannel_closed,
         enter=finished,
-        outputs=[emit_incoming_lost],
+        outputs=[],####emit_incoming_lost],
     )
 
     evaluating.upon(
@@ -490,6 +514,14 @@ class SubchannelForwarder(Protocol):
         self.got_bytes(data)
 
     def connectionLost(self, reason):
+        if isinstance(reason, ConnectionDone):
+            self.factory.message_out(
+                OutgoingDone(self.factory.conn_id)
+            )
+        else:
+            self.factory.message_out(
+                OutgoingLost(self.factory.conn_id, str(reason))
+            )
         self.subchannel_closed(str(reason))
         if self.factory.other_proto:
             self.factory.other_proto.transport.loseConnection()
@@ -522,7 +554,7 @@ class ConnectionForward(Protocol):
         """
 
     @m.input()
-    def stream_closed(self):
+    def stream_closed(self, reason):
         """
         The local server has closed our connection
         """
@@ -544,12 +576,23 @@ class ConnectionForward(Protocol):
             self.factory.other_proto.transport.write(d)
 
     @m.output()
-    def close_other_side(self):
+    def close_other_side(self, reason):
         try:
             if self.factory.other_proto:
                 self.factory.other_proto.transport.loseConnection()
         except Exception:
             pass
+
+    @m.output()
+    def emit_incoming_done(self, reason):
+        if isinstance(reason.value, ConnectionDone):
+            self.factory.message_out(
+                IncomingDone(self.factory.conn_id)
+            )
+        else:
+            self.factory.message_out(
+                IncomingLost(self.factory.conn_id, str(reason))
+            )
 
     forwarding_bytes.upon(
         got_bytes,
@@ -559,7 +602,7 @@ class ConnectionForward(Protocol):
     forwarding_bytes.upon(
         stream_closed,
         enter=finished,
-        outputs=[close_other_side]
+        outputs=[emit_incoming_done, close_other_side]
     )
 
     def connectionMade(self):
@@ -569,8 +612,7 @@ class ConnectionForward(Protocol):
         self.got_bytes(data)
 
     def connectionLost(self, reason):
-        print("lost to time", reason)
-        self.stream_closed()
+        self.stream_closed(reason)
 
 
 class LocalServer(Protocol):
@@ -748,7 +790,6 @@ class Incoming(Protocol):
         """
         We wish to close this subchannel
         """
-        print("CLOSE DOWN", reason)
         self.transport.loseConnection()
 
     @m.output()
@@ -757,7 +798,6 @@ class Incoming(Protocol):
         We wish to close this subchannel
         """
         if self._local_connection and self._local_connection.transport:
-            print("close local")
             self._local_connection.transport.loseConnection()
 
     @m.output()
@@ -955,9 +995,9 @@ class Incoming(Protocol):
         """
         Twisted API
         """
-        self.factory.message_out(
-            IncomingLost(self._conn_id, reason)
-        )
+#        self.factory.message_out(
+#            IncomingLost(self._conn_id, reason)
+#        )
         self.subchannel_closed(reason)
 
     def dataReceived(self, data):
