@@ -165,9 +165,9 @@ async def frontend_accept_or_invite(reactor, config):
 
     @output_message.register(IncomingLost)
     def _(msg):
-        print("incominglost", msg.id, msg.reason)
         try:
             del connections[msg.id]
+            print(f"Lost: {msg.id}: {msg.reason}")
         except KeyError:
             print("WEIRD: got IncomingLost(id={}) but don't have that connection".format(msg.id))
 
@@ -175,6 +175,7 @@ async def frontend_accept_or_invite(reactor, config):
     def _(msg):
         try:
             del connections[msg.id]
+            print(f"Done: {msg.id}")
         except KeyError:
             print("WEIRD: got IncomingDone(id={}) but don't have that connection".format(msg.id))
 
@@ -182,6 +183,7 @@ async def frontend_accept_or_invite(reactor, config):
     def _(msg):
         try:
             del connections[msg.id]
+            print(f"Lost: {msg.id}: {msg.reason}")
         except KeyError:
             print("WEIRD: got OutgoingLost(id={}) but don't have that connection".format(msg.id))
 
@@ -189,6 +191,7 @@ async def frontend_accept_or_invite(reactor, config):
     def _(msg):
         try:
             del connections[msg.id]
+            print(f"Done: {msg.id}")
         except KeyError:
             print("WEIRD: got OutgoingDone(id={}) but don't have that connection".format(msg.id))
 
