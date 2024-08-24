@@ -116,7 +116,7 @@ async def test_human(reactor, request, wormhole):
     m = await f0.protocol.have_line(".* code: (.*).*")
     code = m.group(1)
 
-    f1 = await fowl(reactor, request, code, mailbox=wormhole.url)
+    f1 = await fowl(reactor, request, "--allow-connect", "8008", code, mailbox=wormhole.url)
 
     # both should say they're connected
     await f0.protocol.have_line("Peer is connected.")
