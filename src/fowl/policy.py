@@ -70,6 +70,15 @@ class LocalhostTcpPortsListenPolicy(LocalhostAnyPortsListenPolicy):
         return False
 
 
+@implementer(IClientListenPolicy)
+class AnyListenPolicy:
+    """
+    Accepts any listener at all. DANGER.
+    """
+    def can_listen(self, endpoint) -> bool:
+        return True
+
+
 @implementer(IClientConnectPolicy)
 class LocalhostAnyPortsConnectPolicy:
     """
@@ -80,6 +89,15 @@ class LocalhostAnyPortsConnectPolicy:
         if isinstance(endpoint, (TCP6ClientEndpoint, TCP4ClientEndpoint)):
             return is_localhost(endpoint._host)
         return False
+
+
+@implementer(IClientConnectPolicy)
+class AnyConnectPolicy:
+    """
+    Accepts any connection at all. DANGER.
+    """
+    def can_connect(self, endpoint) -> bool:
+        return True
 
 
 @implementer(IClientConnectPolicy)

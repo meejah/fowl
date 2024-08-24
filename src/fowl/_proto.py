@@ -11,7 +11,7 @@ from functools import partial
 from itertools import count
 
 import humanize
-from attrs import frozen, field, asdict, Factory as AttrFactory
+from attrs import frozen, define, field, asdict, Factory as AttrFactory
 
 import msgpack
 import automat
@@ -30,7 +30,7 @@ import wormhole.errors as wormhole_errors
 
 from .observer import When
 from .messages import *
-from .policy import IClientListenPolicy, IClientConnectPolicy
+from .policy import IClientListenPolicy, IClientConnectPolicy, AnyConnectPolicy, AnyListenPolicy
 
 
 
@@ -57,7 +57,8 @@ def _sequential_id():
 allocate_connection_id = partial(next, _sequential_id())
 
 
-@frozen
+#@frozen
+@define  ## could be @frozen, but for "policy" ... hmmm
 class _Config:
     """
     Represents a set of validated configuration
@@ -69,6 +70,7 @@ class _Config:
     appid: str = APPID
     debug_state: bool = False
     stdout: IO = sys.stdout
+    stderr: IO = sys.stderr
     create_stdio: Callable = None  # returns a StandardIO work-alike, for testing
     debug_file: IO = None  # for state-machine transitions
     commands: list[FowlCommandMessage] = AttrFactory(list)
@@ -1161,6 +1163,26 @@ class FowlWormhole:
             self._daemon._message_out(msg)
             # XXX cheating? private access (_daemon._message_out)
 
+        @cmd.register(GrantPermission)
+        async def _(msg):
+            self._config.connect_policy.ports.extend(msg.connect)
+            self._config.listen_policy.ports.extend(msg.listen)
+            print(
+                "Permission granted. Listen={}, Connect={}".format(
+                    self._config.listen_policy,
+                    self._config.connect_policy,
+                )
+            )
+
+        @cmd.register(DangerDisablePermissionCheck)
+        async def _(msg):
+            try:
+                self._config.connect_policy = AnyConnectPolicy()
+                self._config.listen_policy = AnyListenPolicy()
+                print("DANGER. All connect / listen endpoints allowed.", file=self._config.stderr, flush=True)
+            except Exception as e:
+                print("BAD", type(e))
+
         ensureDeferred(cmd(command)).addErrback(self._handle_error)
 
     # called from FowlDaemon when it has interactions to do
@@ -1574,11 +1596,25 @@ def parse_fowld_command(json_str: str) -> FowlCommandMessage:
             return cls(**args)
         return parse
 
+    def is_valid_port(port):
+        if isinstance(port, int) and port >= 1 and port < 65536:
+            return port
+        raise ValueError(f"Invalid port: {port}")
+
+    def port_list(proposed):
+        if isinstance(proposed, list):
+            return [
+                is_valid_port(port) for port in proposed
+            ]
+        raise ValueError("Port-list must be a list of ints")
+
     kind_to_message = {
         "allocate-code": parser(AllocateCode, [], [("length", int)]),
         "set-code": parser(SetCode, [("code", None)], []),
         "local": parser(LocalListener, [("listen", None), ("connect", None)], []),
         "remote": parser(RemoteListener, [("listen", None), ("connect", None)], []),
+        "grant-permission": parser(GrantPermission, [("listen", port_list), ("connect", port_list)], []),
+        "danger-disable-permission-check": parser(DangerDisablePermissionCheck, [], [])
     }
     return kind_to_message[kind](cmd)
 
@@ -1597,9 +1633,15 @@ def fowld_output_to_json(msg: FowlOutputMessage) -> dict:
         CodeAllocated: "code-allocated",
         PeerConnected: "peer-connected",
         Listening: "listening",
+        RemoteListeningFailed: "remote-listening-failed",
+        RemoteListeningSucceeded: "remote-listening-succeeded",
         LocalConnection: "local-connection",
+        RemoteConnectFailed: "remote-connect-failed",
+        OutgoingLost: "outgoing-lost",
+        OutgoingDone: "outgoing-done",
         IncomingConnection: "incoming-connection",
         IncomingLost: "incoming-lost",
+        IncomingDone: "incoming-done",
         BytesIn: "bytes-in",
         BytesOut: "bytes-out",
         WormholeError: "error",

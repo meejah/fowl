@@ -41,6 +41,8 @@ class _FowlProtocol(ProcessProtocol):
         self.exited.callback(None)
 
     def childDataReceived(self, childFD, data):
+        if childFD != 1:
+            print("ERR", data)
         try:
             js = json.loads(data)
         except Exception as e:
@@ -170,16 +172,31 @@ async def test_happy_remote(reactor, request, wormhole):
         reactor, request,
         mailbox=wormhole.url
     )
+    await f1.protocol.next_message(kind="welcome")
     f1.protocol.send_message({"kind": "set-code", "code": code_msg["code"]})
+    await f1.protocol.next_message(kind="code-allocated")
+
+    await f0.protocol.next_message("peer-connected")
+    await f1.protocol.next_message("peer-connected")
+
+    # remote side will fail to listen if we don't authorize permissions
+    f0.protocol.send_message({
+        "kind": "grant-permission",
+        "listen": [1111],
+        "connect": [],
+    })
+    f1.protocol.send_message({
+        "kind": "grant-permission",
+        "listen": [],
+        "connect": [8888],
+    })
+
     # open a listener of some sort
     f1.protocol.send_message({
         "kind": "remote",
         "listen": "tcp:1111:interface=localhost",
         "connect": "tcp:localhost:8888",
     })
-
-    await f0.protocol.next_message("peer-connected")
-    await f1.protocol.next_message("peer-connected")
 
     # f1 send a remote-listen request, so f0 should receive it
     msg = await f0.protocol.next_message("listening")
@@ -214,12 +231,15 @@ async def test_happy_local(reactor, request, wormhole):
     ``kind="local"`` command.
     """
     f0 = await fowld(reactor, request, mailbox=wormhole.url)
+    f0.protocol.send_message({"kind": "danger-disable-permission-check"})
     f0.protocol.send_message({"kind": "allocate-code"})
     code_msg = await f0.protocol.next_message(kind="code-allocated")
+
 
     # normally the "code" is shared via human interaction
 
     f1 = await fowld(reactor, request, mailbox=wormhole.url)
+    f1.protocol.send_message({"kind": "danger-disable-permission-check"})
     f1.protocol.send_message({"kind": "set-code", "code": code_msg["code"]})
     # open a listener of some sort
     f1.protocol.send_message({
