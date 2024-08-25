@@ -1265,32 +1265,6 @@ class FowlWormhole:
         self._running_command = ensureDeferred(self._run_command(cmd))
         self._running_command.addErrback(self._handle_error)
 
-    # XXX _should_ be able to make this non-async function, because we
-    # hide the "real" async work behind our other machinery
-    async def ___run_command(self, cmd):
-        if isinstance(cmd, AllocateCode):
-            self.allocate_code(self._config.code_length if cmd.length is None else cmd.length)
-
-        elif isinstance(cmd, SetCode):
-            self.set_code(cmd.code)
-
-        elif isinstance(cmd, LocalListener):
-            await self.when_connected()
-            assert self.connect_ep is not None, "need connect ep"
-            await _local_to_remote_forward(self._reactor, self._config, self.connect_ep, self._listening_ports.append, self._message_out, cmd)
-
-        elif isinstance(cmd, RemoteListener):
-            await self.when_connected()
-            assert self.control_proto is not None, "Need a control proto"
-            # asks the other side to listen, connecting back to us
-            await _remote_to_local_forward(self.control_proto, self._listening_ports.append, cmd)
-
-        else:
-            raise KeyError(
-                "Unknown command '{}'".format(cmd["kind"])
-            )
-
-
 # FowlDaemon is the state-machine
 #  - ultimately, it goes some notifications from 'the wormhole' but only via the I/O thing
 #  - no "async def" / Deferred-returning methods
