@@ -1547,7 +1547,7 @@ def parse_fowld_command(json_str: str) -> FowlCommandMessage:
                 try:
                     args[k] = js[k] if process is None else process(js[k])
                 except KeyError:
-                    raise ValueError(f'"{k}" is missing')
+                    raise ValueError('"{}" is missing'.format(k))
             for k, process in optional_parsers:
                 try:
                     args[k] = js[k] if process is None else process(js[k])
