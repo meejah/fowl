@@ -197,7 +197,7 @@ async def frontend_accept_or_invite(reactor, config):
         except KeyError:
             print("WEIRD: got OutgoingDone(id={}) but don't have that connection".format(msg.id))
 
-    @output_message.register(LocalConnection)
+    @output_message.register(OutgoingConnection)
     def _(msg):
         connections[msg.id] = Connection(msg.endpoint, 0, 0)
 
@@ -643,7 +643,7 @@ class LocalServer(Protocol):
             proto.transport.write(prefix + msg)
 
             self.factory.message_out(
-                LocalConnection(self._conn_id, self.factory.endpoint_str)
+                OutgoingConnection(self._conn_id, self.factory.endpoint_str)
             )
 
             # MUST wait for reply first -- queueing all data until
@@ -1635,8 +1635,8 @@ def fowld_output_to_json(msg: FowlOutputMessage) -> dict:
         Listening: "listening",
         RemoteListeningFailed: "remote-listening-failed",
         RemoteListeningSucceeded: "remote-listening-succeeded",
-        LocalConnection: "local-connection",
         RemoteConnectFailed: "remote-connect-failed",
+        OutgoingConnection: "outgoing-connection",
         OutgoingLost: "outgoing-lost",
         OutgoingDone: "outgoing-done",
         IncomingConnection: "incoming-connection",
@@ -1674,10 +1674,21 @@ def parse_fowld_output(json_str: str) -> FowlOutputMessage:
 
     kind_to_message = {
         "welcome": parser(Welcome, [("welcome", None)]),
+        "wormhole-closed": parser(WormholeClosed, [("result", None)]),
+        "allocate-code": parser(AllocateCode, [], [("length", int)]),
+        "set-code": parser(SetCode, [("code", None)]),
         "code-allocated": parser(CodeAllocated, [("code", None)]),
         "peer-connected": parser(PeerConnected, [("verifier", binascii.unhexlify)]),
         "listening": parser(Listening, [("endpoint", None), ("connect-endpoint", None)]),
-        "local-connection": parser(LocalConnection, [("id", int)]),
+        "remote-listening-failed": parser(RemoteListeningFailed, [("endpoint", None), ("reason", None)]),
+        "remote-listening-succeeded": parser(RemoteListeningSucceeded, [("listen", None)]),
+        "remote-connect-failed": parser(RemoteConnectFailed, [("id", int), ("reason", None)]),
+        "outgoing-connection": parser(OutgoingConnection, [("id", int), ("endpoint", None)]),
+##        "outgoing-lost": parser(),
+##        "outgoing-done": parser(),
+##        "incoming-connection: parser(),
+##        "incoming-lost": parser(),
+##        "incoming-done": parser()
         "bytes-in": parser(BytesIn, [("id", int), ("bytes", int)]),
         "bytes-out": parser(BytesOut, [("id", int), ("bytes", int)]),
     }

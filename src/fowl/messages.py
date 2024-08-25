@@ -138,15 +138,6 @@ class RemoteListeningSucceeded(FowlOutputMessage):
 
 
 @frozen
-class LocalConnection(FowlOutputMessage):
-    """
-    Something has connected to one of our listeners
-    """
-    id: int
-    endpoint: str
-
-
-@frozen
 class RemoteConnectFailed(FowlOutputMessage):
     """
     Our peer could not connect
@@ -155,6 +146,18 @@ class RemoteConnectFailed(FowlOutputMessage):
     reason: str
 
 
+@frozen
+class OutgoingConnection(FowlOutputMessage):
+    """
+    Something has connected to one of our listeners (and we are making
+    an outgoing subchannel to the other peer).
+    """
+    id: int
+    endpoint: str  # connection to here on far side
+    # XXX local_listener: str ??
+
+
+@frozen
 class OutgoingLost(FowlOutputMessage):
     """
     We have lost one of our connections

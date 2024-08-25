@@ -31,7 +31,7 @@ from .messages import (
     BytesOut,
     IncomingConnection,
     IncomingLost,
-    LocalConnection,
+    OutgoingConnection,
     WormholeError,
 )
 
@@ -90,7 +90,7 @@ async def frontend_tui(reactor, config):
         del conn[msg.id]
         replace_state(attr.evolve(state[0], connections=conn))
 
-    @output_message.register(LocalConnection)
+    @output_message.register(OutgoingConnection)
     def _(msg):
         conn = state[0].connections
         conn[msg.id] = Connection(0, 0)
