@@ -1146,12 +1146,6 @@ class FowlWormhole:
         async def _(msg):
             await self.when_connected()
             assert self.connect_ep is not None, "need connect ep"
-            # XXX if we get this before we've dilated, just remember it?
-            # listens locally, conencts to other side
-
-            # XXX to get rid of the "await" part, we can just roll the
-            # "message_out" call and the "listening_ports.append" into
-            # one ...
             await _local_to_remote_forward(self._reactor, self._config, self.connect_ep, self._listening_ports.append, self._daemon._message_out, msg)
             # XXX cheating? private access (_daemon._message_out)
 
