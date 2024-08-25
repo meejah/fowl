@@ -1435,6 +1435,7 @@ class FowlDaemon:
             # XXX need to send a protocol error to the machine, end
             # the connection
             pass
+        assert core is not None, "fowl -> features -> core doesn't exist in peer app_version"
         # no particular content for this yet, empty-dict
 
     @m.output()
