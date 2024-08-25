@@ -1,14 +1,21 @@
 import os
 import sys
 import attr
+import json
+from collections import defaultdict
 from functools import partial
 from io import StringIO
 
+from attr import define
+
 import pytest_twisted
 
+from twisted.internet.interfaces import ITransport
 from twisted.internet.protocol import ProcessProtocol
 from twisted.internet.error import ProcessExitedAlready, ProcessDone
 from twisted.internet.defer import Deferred
+
+from fowl._proto import parse_fowld_output
 
 
 class _MagicTextProtocol(ProcessProtocol):
@@ -162,3 +169,92 @@ class WormholeMailboxServer:
             transport,
             url="ws://localhost:4000/v1",
         )
+
+
+@define
+class _Fowl:
+    transport: ITransport
+    protocol: ProcessProtocol
+
+
+class _FowlProtocol(ProcessProtocol):
+    """
+    This speaks to an underlying ``fowl`` sub-process.
+    """
+
+    def __init__(self):
+        # all messages we've received that _haven't_ yet been asked
+        # for via next_message()
+        self._messages = []
+        # maps str -> list[Deferred]: kind-string to awaiters
+        self._message_awaits = defaultdict(list)
+        self.exited = Deferred()
+
+    def processEnded(self, reason):
+        self.exited.callback(None)
+
+    def childDataReceived(self, childFD, data):
+        if childFD != 1:
+            print(data.decode("utf8"), end="")
+            return
+        try:
+            msg = parse_fowld_output(data)
+        except Exception as e:
+            print(f"Not JSON: {data}: {e}")
+        else:
+            self._maybe_notify(msg)
+
+    def _maybe_notify(self, msg):
+        type_ = type(msg)
+        if type_ in self._message_awaits:
+            notify, self._message_awaits[type_] = self._message_awaits[type_], list()
+            for d in notify:
+                d.callback(msg)
+        else:
+            self._messages.append(msg)
+
+    def send_message(self, js):
+        data = json.dumps(js).encode("utf8") + b"\n"
+        self.transport.write(data)
+
+    def next_message(self, klass):
+        d = Deferred()
+        for idx, msg in enumerate(self._messages):
+            if isinstance(msg, klass):
+                del self._messages[idx]
+                d.callback(msg)
+                return d
+        self._message_awaits[klass].append(d)
+        return d
+
+    def all_messages(self, klass=None):
+        # we _do_ want to make a copy of the list every time
+        # (so the caller can't "accidentally" mess with our state)
+        return [
+            msg
+            for msg in self._messages
+            if klass is None or isinstance(msg, klass)
+        ]
+
+
+async def fowld(reactor, request, *extra_args, mailbox=None):
+    """
+    Run `fowl` with a given subcommand
+    """
+
+    args = [
+        "fowl",
+    ]
+    if mailbox is not None:
+        args.extend([
+            "--mailbox", mailbox,
+        ])
+    args.extend(extra_args)
+    proto = _FowlProtocol()
+    transport = await run_service(
+        reactor,
+        request,
+        args=args,
+        protocol=proto,
+    )
+    return _Fowl(transport, proto)
