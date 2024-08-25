@@ -1090,7 +1090,7 @@ class FowlWormhole:
             verifier = results[0][1]
             versions = results[1][1]
 
-            d = self.do_dilate()
+            d = self._do_dilate()
             @d.addCallback
             def did_dilate(arg):
                 self._daemon.peer_connected(verifier, versions)
@@ -1185,32 +1185,6 @@ class FowlWormhole:
 
         ensureDeferred(cmd(command)).addErrback(self._handle_error)
 
-    # called from FowlDaemon when it has interactions to do
-
-    def ___fowl_output(self, msg: FowlOutputMessage) -> None:
-        """
-        Process messages coming out of FowlDaemon, handling both stdout
-        interaction as well as wormhole interactions.
-        """
-        # are we "crossing the streams" here, by having output messages
-        # trigger either "wormhole I/O" or "stdin/out I/O"?
-        if isinstance(msg, AllocateCode):
-            d = wormhole.allocate_code()
-            #XXX error-handling
-        elif isinstance(msg, SetCode):
-            self._set_code(msg)
-        elif isinstance(msg, Welcome):
-            self._got_welcome.trigger(self._reactor, msg.welcome)
-        else:
-            print(
-                json.dumps(fowld_output_to_json(msg)),
-                file=config.stdout,
-                flush=True,
-            )
-
-    def _set_code(self, msg: SetCode) -> None:
-        self._wormhole.set_code(msg.code)
-
     # our own callbacks / notifications
 
     async def get_welcome(self):
@@ -1229,22 +1203,13 @@ class FowlWormhole:
         """
         return self._connected.when_triggered()
 
-    def do_dilate(self):
+    def _do_dilate(self):
         self.control_ep, self.connect_ep, self.listen_ep = self._wormhole.dilate(
             transit_relay_location="tcp:magic-wormhole-transit.debian.net:4001",
         )
         d = ensureDeferred(self._post_dilation_setup())
         d.addErrback(self._handle_error)
         return d
-
-    def do_shutdown(self):
-        """
-        Perform any (possibly async) tasks related to shutting down:
-        - remove listeners
-        """
-        d = ensureDeferred(self.control_proto.when_done())
-        self.control_proto.transport.loseConnection()
-        d.addBoth(lambda _: self.shutdown_finished())
 
     def _handle_error(self, f):
         # hmm, basically any of the "wormhole callbacks" we asked for
