@@ -107,6 +107,13 @@ async def wormhole_from_config(reactor, config, wormhole_create=None):
         tor=tor,
         timing=None,  # args.timing,
         _enable_dilate=True,
+        versions={
+            "fowl": {
+                "features": {
+                    "core": {}
+                }
+            }
+        }
     )
     if config.debug_state:
         w.debug_set_trace("forward", file=config.stdout)
@@ -1063,8 +1070,7 @@ class FowlWormhole:
         # pass on the welcome message (don't "go in" to the
         # state-machine here, maybe we could / should?)
         ensureDeferred(self._wormhole.get_welcome()).addCallbacks(
-            #XXX private API, possibly bad?
-            lambda hello: self._daemon._message_out(Welcome(hello)),
+            lambda hello: self._daemon.got_welcome(hello),
             self._handle_error,
         )
 
@@ -1336,6 +1342,12 @@ class FowlDaemon:
         """
 
     @m.input()
+    def got_welcome(self, hello):
+        """
+        We have received a 'Welcome' message from the server
+        """
+
+    @m.input()
     def code_allocated(self, code):
         """
         We have a wormhole code (either because it was "set" or because we
@@ -1410,6 +1422,22 @@ class FowlDaemon:
         )
 
     @m.output()
+    def emit_welcome(self, hello):
+        self._emit_message(
+            Welcome(hello)
+        )
+
+    @m.output()
+    def verify_version(self, hello):
+        try:
+            core = hello["fowl"]["features"]["core"]
+        except KeyError:
+            # XXX need to send a protocol error to the machine, end
+            # the connection
+            pass
+        # no particular content for this yet, empty-dict
+
+    @m.output()
     def queue_message(self, plaintext):
         self._message_queue.append(plaintext)
 
@@ -1436,6 +1464,11 @@ class FowlDaemon:
         outputs=[queue_message]
     )
     waiting_code.upon(
+        got_welcome,
+        enter=waiting_code,
+        outputs=[verify_version, emit_welcome]
+    )
+    waiting_code.upon(
         shutdown,
         enter=closed,
         outputs=[emit_shutdown]
@@ -1445,6 +1478,11 @@ class FowlDaemon:
         send_message,
         enter=waiting_peer,
         outputs=[queue_message]
+    )
+    waiting_peer.upon(
+        got_welcome,
+        enter=waiting_peer,
+        outputs=[verify_version, emit_welcome]
     )
     waiting_peer.upon(
         peer_connected,
