@@ -1244,21 +1244,6 @@ class FowlWormhole:
         self._connected.trigger(self._reactor, verifier_bytes)
 
 
-    def ___handle_command(self, cmd):
-        self._command_queue.append(cmd)
-        self._maybe_run_command()
-
-    def _maybe_run_command(self):
-        if not self._command_queue:
-            return
-        if self._running_command is not None:
-            self._running_command.addBoth(lambda _: self._maybe_run_command())
-        if not self._command_queue:
-            return
-        cmd = self._command_queue.pop(0)
-        self._running_command = ensureDeferred(self._run_command(cmd))
-        self._running_command.addErrback(self._handle_error)
-
 # FowlDaemon is the state-machine
 #  - ultimately, it goes some notifications from 'the wormhole' but only via the I/O thing
 #  - no "async def" / Deferred-returning methods
@@ -1268,6 +1253,7 @@ class FowlWormhole:
 #  - can do async
 #  - can do I/O
 #  - proxies I/O and async'ly things
+
 
 class FowlDaemon:
     """
