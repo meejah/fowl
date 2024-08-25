@@ -13,6 +13,9 @@ from attrs import define
 
 from util import run_service
 
+from fowl.messages import *
+from fowl._proto import parse_fowld_output
+
 # since the src/fowl/test/test_forward tests exercise the underlying
 # "fowld" functionality (minus the entry-point), this tests the
 # "user-friendly" frontend.
@@ -43,43 +46,44 @@ class _FowlProtocol(ProcessProtocol):
     def childDataReceived(self, childFD, data):
         if childFD != 1:
             print("ERR", data)
+            return
         try:
-            js = json.loads(data)
+            msg = parse_fowld_output(data)
         except Exception as e:
-            print(f"Not JSON: {data}")
+            print(f"Not JSON: {data}: {e}")
         else:
-            self._maybe_notify(js)
+            self._maybe_notify(msg)
 
-    def _maybe_notify(self, js):
-        kind = js["kind"]
-        if kind in self._message_awaits:
-            notify, self._message_awaits[kind] = self._message_awaits[kind], list()
+    def _maybe_notify(self, msg):
+        type_ = type(msg)
+        if type_ in self._message_awaits:
+            notify, self._message_awaits[type_] = self._message_awaits[type_], list()
             for d in notify:
-                d.callback(js)
+                d.callback(msg)
         else:
-            self._messages.append(js)
+            self._messages.append(msg)
 
     def send_message(self, js):
         data = json.dumps(js).encode("utf8") + b"\n"
         self.transport.write(data)
 
-    def next_message(self, kind):
+    def next_message(self, klass):
         d = Deferred()
         for idx, msg in enumerate(self._messages):
-            if kind == msg["kind"]:
+            if isinstance(msg, klass):
                 del self._messages[idx]
                 d.callback(msg)
                 return d
-        self._message_awaits[kind].append(d)
+        self._message_awaits[klass].append(d)
         return d
 
-    def all_messages(self, kind=None):
+    def all_messages(self, klass=None):
         # we _do_ want to make a copy of the list every time
         # (so the caller can't "accidentally" mess with our state)
         return [
             msg
             for msg in self._messages
-            if kind is None or msg["kind"] == kind
+            if klass is None or isinstance(msg, klass)
         ]
 
 
@@ -162,9 +166,9 @@ async def test_happy_remote(reactor, request, wormhole):
     ``kind="remote"`` command.
     """
     f0 = await fowld(reactor, request, mailbox=wormhole.url)
-    msg = await f0.protocol.next_message(kind="welcome")
+    msg = await f0.protocol.next_message(Welcome)
     f0.protocol.send_message({"kind": "allocate-code"})
-    code_msg = await f0.protocol.next_message(kind="code-allocated")
+    code_msg = await f0.protocol.next_message(CodeAllocated)
 
     # normally the "code" is shared via human interaction
 
@@ -172,12 +176,12 @@ async def test_happy_remote(reactor, request, wormhole):
         reactor, request,
         mailbox=wormhole.url
     )
-    await f1.protocol.next_message(kind="welcome")
-    f1.protocol.send_message({"kind": "set-code", "code": code_msg["code"]})
-    await f1.protocol.next_message(kind="code-allocated")
+    await f1.protocol.next_message(Welcome)
+    f1.protocol.send_message({"kind": "set-code", "code": code_msg.code})
+    await f1.protocol.next_message(CodeAllocated)
 
-    await f0.protocol.next_message("peer-connected")
-    await f1.protocol.next_message("peer-connected")
+    await f0.protocol.next_message(PeerConnected)
+    await f1.protocol.next_message(PeerConnected)
 
     # remote side will fail to listen if we don't authorize permissions
     f0.protocol.send_message({
@@ -198,13 +202,12 @@ async def test_happy_remote(reactor, request, wormhole):
         "connect": "tcp:localhost:8888",
     })
 
-    # f1 send a remote-listen request, so f0 should receive it
-    msg = await f0.protocol.next_message("listening")
-    assert msg == {
-        'kind': 'listening',
-        'listen': 'tcp:1111:interface=localhost',
-        'connect': 'tcp:localhost:8888',
-    }
+    # f1 sent a remote-listen request, so f0 should receive it
+    msg = await f0.protocol.next_message(Listening)
+    assert msg == Listening(
+        listen="tcp:1111:interface=localhost",
+        connect="tcp:localhost:8888",
+    )
 
     ep0 = serverFromString(reactor, "tcp:8888:interface=localhost")
     ep1 = clientFromString(reactor, "tcp:localhost:1111")
@@ -220,8 +223,8 @@ async def test_happy_remote(reactor, request, wormhole):
     data0 = await client.when_done()
     assert data0 == b"some test data" * 1000
 
-    forwarded = await f1.protocol.next_message("bytes-in")
-    assert forwarded["bytes"] == len(b"some test data" * 1000)
+    forwarded = await f1.protocol.next_message(BytesIn)
+    assert forwarded.bytes == len(b"some test data" * 1000)
 
 
 @pytest_twisted.ensureDeferred
@@ -233,14 +236,14 @@ async def test_happy_local(reactor, request, wormhole):
     f0 = await fowld(reactor, request, mailbox=wormhole.url)
     f0.protocol.send_message({"kind": "danger-disable-permission-check"})
     f0.protocol.send_message({"kind": "allocate-code"})
-    code_msg = await f0.protocol.next_message(kind="code-allocated")
+    code_msg = await f0.protocol.next_message(CodeAllocated)
 
 
     # normally the "code" is shared via human interaction
 
     f1 = await fowld(reactor, request, mailbox=wormhole.url)
     f1.protocol.send_message({"kind": "danger-disable-permission-check"})
-    f1.protocol.send_message({"kind": "set-code", "code": code_msg["code"]})
+    f1.protocol.send_message({"kind": "set-code", "code": code_msg.code})
     # open a listener of some sort
     f1.protocol.send_message({
         "kind": "local",
@@ -248,12 +251,15 @@ async def test_happy_local(reactor, request, wormhole):
         "connect": "tcp:localhost:1111",
     })
 
-    await f0.protocol.next_message("peer-connected")
-    await f1.protocol.next_message("peer-connected")
+    await f0.protocol.next_message(PeerConnected)
+    await f1.protocol.next_message(PeerConnected)
 
     # f1 send a remote-listen request, so f0 should receive it
-    msg = await f1.protocol.next_message("listening")
-    assert msg == {'kind': 'listening', 'listen': 'tcp:8888:interface=localhost', 'connect': 'tcp:localhost:1111'}
+    msg = await f1.protocol.next_message(Listening)
+    assert msg == Listening(
+        listen="tcp:8888:interface=localhost",
+        connect="tcp:localhost:1111",
+    )
 
     ep0 = serverFromString(reactor, "tcp:1111:interface=localhost")
     ep1 = clientFromString(reactor, "tcp:localhost:8888")
@@ -268,5 +274,5 @@ async def test_happy_local(reactor, request, wormhole):
     data0 = await client.when_done()
     assert data0 == b"some test data" * 1000
 
-    forwarded = await f0.protocol.next_message("bytes-in")
-    assert forwarded["bytes"] == len(b"some test data" * 1000)
+    b = await f0.protocol.next_message(BytesIn)
+    assert b.bytes == len(b"some test data" * 1000)
