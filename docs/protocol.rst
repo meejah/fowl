@@ -172,4 +172,47 @@ No bytes shall be forwarded until the reply is received; once the reply is recei
 Note that there may be multiple subchannels open "at once" so an application may asynchronously open and await the completion of an arbitrary number of connections.
 
 
+.. _permissions:
+
+Permissions and Policy
+----------------------
+
+Each peer needs to have the ability to control what sorts of listeners are opened, and what sort of client-style connections are opened from its network interfaces.
+
+This comes into "permission" and "policy" for the `fowl` protocol.
+
+The wire protocol spoken between Peers has the opportunity to approve or deny every listener, and every connection.
+These are known as the "permissions" hooks in the state-machine.
+
+From the perspective of `fowld` / `fowl` we implement a "policy" API that is used to answer the individual connection / listener requests.
+(A future extension may allow users of `fowl` to plug directly into the "permission" API and allow / deny individual connections)
+
+There are two kinds of policy: "listen" policy and "connect" policy.
+These apply to the two kinds of things we may care about: a new listener (governed by the "listen" policy) or a new forwarded connection that needs to open a new client-stype connection (governed by the "connect" policy).
+
+When `fowld` starts, with no other option, no listeners and no connections will be allowed.
+
+Messages can be sent to expand what is allowed.
+These look like::
+
+    {
+        "listen": [8080],
+        "connect": [443, 4321],
+    }
+
+This adds ports that are permitted for listening (respectively connecting).
+Only "localhost" (or `::1`) connections are allowed.
+We believe this covers a ton of important use-cases while remaining simple and easy-to-use.
+
+Under the hood it's possible for much more flexibility; if the above doesn't meet your use-case requirements please get in touch by `creating a new Issue <>`_.
+
+Especially when developing or experimenting, it can be useful to simply allow everything.
+This, of course, can be dangerous; your peer may open _ANY_ listener that Twisted supports and forward it to themselves on any port.
+If you trust both ends of your session, you may however choose to enable all possible endpoints (that is, turn off any kind of checking) by sending a message::
+
+    {
+        "kind": "danger-disable-permission-check"
+    }
+
+
 .. _msgpack: https://msgpack.org

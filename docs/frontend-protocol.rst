@@ -31,6 +31,8 @@ An "input" message is one that ``fowld`` accepts on stdin.
 
 An "output" message is one that ``fowld`` may produce on stdout.
 
+To follow along in the code, see the ``fowl.messages`` package.
+
 
 Input: ``kind: allocate-code``
 ------------------------------
@@ -114,6 +116,45 @@ That is, we'll cause the far end to start listening on its TCP port ``8000`` on 
 Any connection to that will open a near-side connection to port 80 via TCP.
 
 The far-side ``fowld`` will issue a ``kind: listening`` message (on its side) when it has started listening.
+
+
+Input: ``kind: grant-permission``
+---------------------------------
+
+This asks ``fowld`` to append more ports to those allowed for listening and connecting.
+By default, no ports are allowed.
+Only "``localhost``" (or ``::1``) interfaces (or destinations) are allowed.
+
+.. code-block:: json
+
+    {
+        "kind": "grant-permission",
+        "listen": [8080],
+        "connect": [443, 4321]
+    }
+
+This will allow a listener on port 8080 (whether initiated remotely or locally), and allow connections to ``locahost:443`` and ``localhost:4321`` for any incoming forwarded connections.
+
+This is a simple, easy-to-use API but does not reveal all that is possible technically; if the above doesn't fit your use-case, please get in touch by `creating a new Issue <>_`.
+
+
+Input: ``kind: danger-disable-permission-check``
+------------------------------------------------
+
+To facilitate experimentation or other use-cases not availble via any other permission API, checking can be turned off entirely.
+
+.. DANGER::
+
+   Please understand the implications before enabling this, especially if you do not control both peer computers.
+   This allows the OTHER peer to open any listener or any connection they like on your machine -- very useful, but easily abused if either side is malicious in any way.
+
+If you understand that you want this anyway for your side of the connection, send this message
+
+.. code-block:: json
+
+    {
+        "kind": "danger-disable-permission-check",
+    }
 
 
 Output: ``kind: listening``
