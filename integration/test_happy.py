@@ -45,7 +45,7 @@ class _FowlProtocol(ProcessProtocol):
 
     def childDataReceived(self, childFD, data):
         if childFD != 1:
-            print("ERR", data)
+            print(data.decode("utf8"), end="")
             return
         try:
             msg = parse_fowld_output(data)

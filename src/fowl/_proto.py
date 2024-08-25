@@ -1171,7 +1171,9 @@ class FowlWormhole:
                 "Permission granted. Listen={}, Connect={}".format(
                     self._config.listen_policy,
                     self._config.connect_policy,
-                )
+                ),
+                file=self._config.stderr,
+                flush=True,
             )
 
         @cmd.register(DangerDisablePermissionCheck)
@@ -1645,10 +1647,10 @@ def parse_fowld_output(json_str: str) -> FowlOutputMessage:
         "remote-connect-failed": parser(RemoteConnectFailed, [("id", int), ("reason", None)]),
         "outgoing-connection": parser(OutgoingConnection, [("id", int), ("endpoint", None)]),
 ##        "outgoing-lost": parser(),
-##        "outgoing-done": parser(),
-##        "incoming-connection: parser(),
+        "outgoing-done": parser(OutgoingDone, [("id", int)]),
+        "incoming-connection": parser(IncomingConnection, [("id", int), ("endpoint", None)]),
 ##        "incoming-lost": parser(),
-##        "incoming-done": parser()
+        "incoming-done": parser(IncomingDone, [("id", int)]),
         "bytes-in": parser(BytesIn, [("id", int), ("bytes", int)]),
         "bytes-out": parser(BytesOut, [("id", int), ("bytes", int)]),
     }
