@@ -1428,15 +1428,17 @@ class FowlDaemon:
         )
 
     @m.output()
-    def verify_version(self, hello):
+    def verify_version(self, verifier, versions):
         try:
-            core = hello["fowl"]["features"]["core"]
+            core = versions["fowl"]["features"]["core"]
+
+            assert core is not None, "fowl -> features -> core doesn't exist in peer app_version"
+            # no particular content for this yet, empty-dict
         except KeyError:
             # XXX need to send a protocol error to the machine, end
             # the connection
+            print("didn't like", versions)
             pass
-        assert core is not None, "fowl -> features -> core doesn't exist in peer app_version"
-        # no particular content for this yet, empty-dict
 
     @m.output()
     def queue_message(self, plaintext):
@@ -1467,7 +1469,7 @@ class FowlDaemon:
     waiting_code.upon(
         got_welcome,
         enter=waiting_code,
-        outputs=[verify_version, emit_welcome]
+        outputs=[emit_welcome]
     )
     waiting_code.upon(
         shutdown,
@@ -1483,12 +1485,12 @@ class FowlDaemon:
     waiting_peer.upon(
         got_welcome,
         enter=waiting_peer,
-        outputs=[verify_version, emit_welcome]
+        outputs=[emit_welcome]
     )
     waiting_peer.upon(
         peer_connected,
         enter=connected,
-        outputs=[emit_peer_connected, send_queued_messages],
+        outputs=[verify_version, emit_peer_connected, send_queued_messages],
     )
     waiting_peer.upon(
         shutdown,
