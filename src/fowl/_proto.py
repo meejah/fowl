@@ -1649,7 +1649,7 @@ def parse_fowld_output(json_str: str) -> FowlOutputMessage:
 ##        "outgoing-lost": parser(),
         "outgoing-done": parser(OutgoingDone, [("id", int)]),
         "incoming-connection": parser(IncomingConnection, [("id", int), ("endpoint", None)]),
-##        "incoming-lost": parser(),
+        "incoming-lost": parser(IncomingLost, [("id", int), ("reason", None)]),
         "incoming-done": parser(IncomingDone, [("id", int)]),
         "bytes-in": parser(BytesIn, [("id", int), ("bytes", int)]),
         "bytes-out": parser(BytesOut, [("id", int), ("bytes", int)]),
