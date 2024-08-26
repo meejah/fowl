@@ -189,6 +189,7 @@ class _FowlProtocol(ProcessProtocol):
         # maps str -> list[Deferred]: kind-string to awaiters
         self._message_awaits = defaultdict(list)
         self.exited = Deferred()
+        self._data = b""
 
     def processEnded(self, reason):
         self.exited.callback(None)
@@ -197,12 +198,16 @@ class _FowlProtocol(ProcessProtocol):
         if childFD != 1:
             print(data.decode("utf8"), end="")
             return
-        try:
-            msg = parse_fowld_output(data)
-        except Exception as e:
-            print(f"Not JSON: {data}: {e}")
-        else:
-            self._maybe_notify(msg)
+
+        self._data += data
+        while b'\n' in self._data:
+            line, self._data = self._data.split(b"\n", 1)
+            try:
+                msg = parse_fowld_output(line)
+            except Exception as e:
+                print(f"Not JSON: {line}: {e}")
+            else:
+                self._maybe_notify(msg)
 
     def _maybe_notify(self, msg):
         type_ = type(msg)
