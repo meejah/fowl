@@ -4,8 +4,11 @@
 The ``fowld`` Frontend Protocol
 ================================
 
+**Target Audience**: users of ``fowld`` (integrators, GUI authors, experimentors)
 
 The ``fowld`` program speaks a line-based protocol on stdin and stdout.
+
+Our intent is to allow any language to use and experiment with Dilation via local streaming interfaces; if a feature for your use-case is missing please `open a new Issue <https://github.com/meejah/fowl/issues/new>`_.
 
 Every message is a single line, terminated with a single newline (``\n``) character.
 Every message is a complete and valid JSON message, encoded in UTF8.
