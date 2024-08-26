@@ -4,7 +4,7 @@
 The ``fowld`` Frontend Protocol
 ================================
 
-**Target Audience**: users of ``fowld`` (integrators, GUI authors, experimentors)
+**Target Audience**: users of ``fowld`` (integrators, GUI authors, experimenters)
 
 The ``fowld`` program speaks a line-based protocol on stdin and stdout.
 
@@ -35,20 +35,21 @@ An "input" message is one that ``fowld`` accepts on stdin.
 An "output" message is one that ``fowld`` may produce on stdout.
 
 To follow along in the code, see the ``fowl.messages`` package.
+Types derived from ``FowlOutputMessage`` are produced on stdout and ``FowlCommandMessage`` derived types are accepted on stdin.
 
 
 Input: ``kind: allocate-code``
 ------------------------------
 
 This message tells ``fowld`` to allocate a fresh code.
-These look like ``1-foo-bar`` (you can control how many words).
+These codes look like ``1-foo-bar`` (you can control how many words).
 Note that we interact with the server to reserve the "nameplate" (the short number) but the words are chosen locally (and randomly).
 
 Keys allowed:
 
 - ``code-length`` (optional): how many words to use
 
-At some point in the future, a ``kind: code-allocated`` message will be emitted.
+After issuing this command, at some point in the future a ``kind: code-allocated`` message will be emitted.
 
 
 Input: ``kind: set-code``
@@ -84,7 +85,7 @@ In this example, we will open a listener on our machine on TCP port ``8000`` and
 Whenever a new connection is opened on our machine, we will ask the other side to connect to port ``80`` on *their* notion of ``localhost``.
 
 Remember that these can be anything that Twisted understands, including from installed plugins.
-**Be careful**: a malicous "other end" could cause all sorts of shenanigans.
+**Be careful**: a malicious "other end" could cause all sorts of shenanigans.
 
 You are only limited to streaming endpoints (i.e. no UDP) but they do not have to be TCP.
 For example, one side could use ``unix:/tmp/socket`` to open a listener (or connection) on Unix-domain socket.
@@ -136,7 +137,7 @@ Only "``localhost``" (or ``::1``) interfaces (or destinations) are allowed.
         "connect": [443, 4321]
     }
 
-This will allow a listener on port 8080 (whether initiated remotely or locally), and allow connections to ``locahost:443`` and ``localhost:4321`` for any incoming forwarded connections.
+This will allow a listener on port 8080 (whether initiated remotely or locally), and allow connections to ``localhost:443`` and ``localhost:4321`` for any incoming forwarded connections.
 
 This is a simple, easy-to-use API but does not reveal all that is possible technically; if the above doesn't fit your use-case, please get in touch by `creating a new Issue <>_`.
 
@@ -144,7 +145,7 @@ This is a simple, easy-to-use API but does not reveal all that is possible techn
 Input: ``kind: danger-disable-permission-check``
 ------------------------------------------------
 
-To facilitate experimentation or other use-cases not availble via any other permission API, checking can be turned off entirely.
+To facilitate experimentation or other use-cases not available via any other permission API, checking can be turned off entirely.
 
 .. DANGER::
 
@@ -186,7 +187,7 @@ Output: ``kind: error``
 
 Some sort of error has happened.
 
-This message MUST have a ``message`` key containing a freeform error message.
+This message MUST have a ``message`` key containing a free-form error message.
 
 An example message:
 
@@ -272,8 +273,8 @@ Keys present:
 Guidance for UX: the user should be informed that something is interacting with our listener.
 
 
-Output: ``kind: incoming-conection``
-------------------------------------
+Output: ``kind: incoming-connection``
+-------------------------------------
 
 The other side has asked us to make a local connection.
 
