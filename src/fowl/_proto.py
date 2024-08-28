@@ -1531,6 +1531,27 @@ class FowlDaemon:
 # Would like the second; so we can interact in unit-tests (or here)
 # via parsed commands. e.g. we have an AGT union-type, and every
 # input-message is a class
+def fowld_command_to_json(msg: FowlCommandMessage) -> dict:
+    """
+    Turn the given `msg` into a corresponding JSON-friendly dict
+    (suitable for json.dumps() for example)
+    """
+
+    js = asdict(msg)
+    # XXX maybe a @singledispatch would give better feedback when we
+    # miss one...
+    @functools.singledispatch
+    def output_command(msg):
+        raise RuntimeError(f"Unhandled message: {msg}")
+
+    @output_command.register(GrantPermission)
+    def _(msg):
+        js["kind"] = "grant-permission"
+
+    output_command(msg)
+    return js
+
+
 def parse_fowld_command(json_str: str) -> FowlCommandMessage:
     """
     Parse the given JSON message assuming is a command for fowld
