@@ -1548,6 +1548,33 @@ def fowld_command_to_json(msg: FowlCommandMessage) -> dict:
     def _(msg):
         js["kind"] = "grant-permission"
 
+    @output_command.register(DangerDisablePermissionCheck)
+    def _(msg):
+        js["kind"] = "danger-disable-permission-check"
+
+    @output_command.register(LocalListener)
+    def _(msg):
+        js["kind"] = "local"
+        js["listen"] = msg.listen
+        js["connect"] = msg.connect
+
+    @output_command.register(RemoteListener)
+    def _(msg):
+        js["kind"] = "remote"
+        js["listen"] = msg.listen
+        js["connect"] = msg.connect
+
+    @output_command.register(AllocateCode)
+    def _(msg):
+        js["kind"] = "allocate-code"
+        js["length"] = getattr(msg, "length", None)
+
+    @output_command.register(SetCode)
+    def _(msg):
+        js["kind"] = "set-code"
+        js["code"] = msg.code
+
+
     output_command(msg)
     return js
 
