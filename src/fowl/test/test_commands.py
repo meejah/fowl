@@ -28,12 +28,10 @@ def config():
 
 
 def ports():
-    print("zzz")
     return integers(min_value=1, max_value=65535)
 
 
 def port_lists():
-    print("yyy")
     return lists(ports())
 
 
@@ -69,7 +67,6 @@ def commands():
 
 @given(commands())
 def test_roundtrip(og_cmd):
-    print("XXXX", og_cmd)
     parsed_cmd = parse_fowld_command(json.dumps(fowld_command_to_json(og_cmd)))
     assert parsed_cmd == og_cmd, "Command mismatch"
 
