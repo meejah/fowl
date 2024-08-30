@@ -1574,7 +1574,6 @@ def fowld_command_to_json(msg: FowlCommandMessage) -> dict:
         js["kind"] = "set-code"
         js["code"] = msg.code
 
-
     output_command(msg)
     return js
 
