@@ -106,16 +106,9 @@ def commands():
 
 @given(commands())
 def test_roundtrip(og_cmd):
+    """
+    Let Hypothesis play with a bunch of round-trip tests for command
+    serialization
+    """
     parsed_cmd = parse_fowld_command(json.dumps(fowld_command_to_json(og_cmd)))
     assert parsed_cmd == og_cmd, "Command mismatch"
-
-
-
-def ___test_command_serialize(config):
-    print(config)
-    cmd = parse_fowld_command(json.dumps({
-        "kind": "grant-permission",
-        "listen": [1234],
-        "connect": [4321],
-    }))
-    print(cmd)
