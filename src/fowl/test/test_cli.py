@@ -22,12 +22,13 @@ from twisted.internet.protocol import ProcessProtocol, Protocol, Factory
 from twisted.internet.task import deferLater
 from twisted.internet.defer import ensureDeferred, Deferred, CancelledError, DeferredList
 from twisted.internet.error import ProcessTerminated
+from twisted.internet.endpoints import serverFromString, clientFromString
 from fowl._proto import _Config
 from io import StringIO
 import sys
 import os
 import signal
-from fowl.observer import When, Framer
+from fowl.observer import When, Framer, Accumulate, Next
 
 
 @implementer(IProcessProtocol)
@@ -60,6 +61,47 @@ class CollectStreams(ProcessProtocol):
         self._done.trigger(self._reactor, reason)
 
 
+
+class Server(Protocol):
+    _message = Accumulate(b"")
+
+    def dataReceived(self, data):
+        self._message.some_results(self.factory.reactor, data)
+
+    async def next_message(self, expected_size):
+        return await self._message.next_item(self.factory.reactor, expected_size)
+
+    def send(self, data):
+        self.transport.write(data)
+
+
+class Client(Protocol):
+    _message = Accumulate(b"")
+
+    def dataReceived(self, data):
+        self._message.some_results(reactor, data)
+
+    async def next_message(self, expected_size):
+        return await self._message.next_item(self.factory.reactor, expected_size)
+
+    def send(self, data):
+        self.transport.write(data)
+
+
+class ServerFactory(Factory):
+    protocol = Server
+    noisy = True
+    _got_protocol = Next()
+
+    async def next_client(self):
+        return await self._got_protocol.next_item()
+
+    def buildProtocol(self, *args):
+        p = super().buildProtocol(*args)
+        self._got_protocol.trigger(self.reactor, p)
+        return p
+
+
 # maybe Hypothesis better, via strategies.binary() ?
 @pytest_twisted.ensureDeferred
 async def test_happy_path(reactor, request, mailbox):
@@ -84,6 +126,7 @@ async def test_happy_path(reactor, request, mailbox):
         ],
         env=os.environ,
     )
+    request.addfinalizer(lambda:invite.signalProcess(signal.SIGKILL))
 
     line = await invite_proto.next_line()
     assert line == "Connected."
@@ -106,6 +149,7 @@ async def test_happy_path(reactor, request, mailbox):
         ],
         env=os.environ,
     )
+    request.addfinalizer(lambda:accept.signalProcess(signal.SIGKILL))
 
     print("Starting accept side")
 
@@ -120,6 +164,25 @@ async def test_happy_path(reactor, request, mailbox):
             print("  one side is listening")
             break
 
-    invite.signalProcess(signal.SIGTERM)
-    accept.signalProcess(signal.SIGTERM)
+    # now that they are connected, and one side is listening -- we can
+    # ourselves listen on the "connect" port and connect on the
+    # "listen" port -- that is, listen on 1111 (where there is no
+    # listener) and connect on 2222 (where this test is listening)
+
+    listener = ServerFactory()
+    listener.reactor = reactor
+    server_port = await serverFromString(reactor, "tcp:1111").listen(listener)
+    client = clientFromString(reactor, "tcp:localhost:2222")
+    client_factory = Factory.forProtocol(Client)
+    client_factory.reactor = reactor
+    client_proto = await client.connect(client_factory)
+    server = await listener.next_client()
+
+    datasize = 1234
+    data = os.urandom(datasize)
+
+    client_proto.send(data)
+    msg = await server.next_message(len(data))
+    assert msg == data, "Incorrect data transfer"
+
     print("done")
