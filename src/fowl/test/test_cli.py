@@ -112,17 +112,18 @@ async def test_happy_path(reactor, request, mailbox):
     Improvement: let Hypothesis make up commands, order, etc (how to assert?)
     """
 
-    print("Starting invite side")
+    print("Starting invite side", os.environ.get("COVERAGE_PROCESS_STARTUP", "no startup"))
 
     invite_proto = CollectStreams(reactor)
     invite = reactor.spawnProcess(
         invite_proto,
         sys.executable,
         [
+##            "python", "-u", "-m", "coverage", "run", "-p", "-m", "fowl.cli",
             "python", "-u", "-m", "fowl.cli",
             "--mailbox", mailbox.url,
-            "--allow-connect", "1111",
-            "--remote", "2222:1111",
+            "--allow-connect", "2121",
+            "--remote", "2222:2121",
         ],
         env=os.environ,
     )
@@ -142,6 +143,7 @@ async def test_happy_path(reactor, request, mailbox):
         accept_proto,
         sys.executable,
         [
+##            "python", "-u", "-m", "coverage", "run", "-p", "-m", "fowl.cli",
             "python", "-u", "-m", "fowl.cli",
             "--mailbox", mailbox.url,
             "--allow-listen", "2222",
@@ -166,12 +168,12 @@ async def test_happy_path(reactor, request, mailbox):
 
     # now that they are connected, and one side is listening -- we can
     # ourselves listen on the "connect" port and connect on the
-    # "listen" port -- that is, listen on 1111 (where there is no
+    # "listen" port -- that is, listen on 2121 (where there is no
     # listener) and connect on 2222 (where this test is listening)
 
     listener = ServerFactory()
     listener.reactor = reactor
-    server_port = await serverFromString(reactor, "tcp:1111").listen(listener)
+    server_port = await serverFromString(reactor, "tcp:2121").listen(listener)
     client = clientFromString(reactor, "tcp:localhost:2222")
     client_factory = Factory.forProtocol(Client)
     client_factory.reactor = reactor

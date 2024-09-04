@@ -235,4 +235,9 @@ def display_readme():
 
 
 if __name__ == "__main__":
+    try:
+        import coverage
+        coverage.process_startup()
+    except ImportError:
+        pass
     fowl()

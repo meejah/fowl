@@ -80,3 +80,7 @@ exclude = [
     "*~",
     "*.egg-info*",
 ]
+
+[tool.coverage.run]
+branch = true
+parallel = true
