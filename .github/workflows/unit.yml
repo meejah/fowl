@@ -17,7 +17,7 @@ jobs:
           - "3.10"
           - "3.11"
           - "3.12"
-          - "3.13"
+#          - "3.13-dev"  # "greenlet" doesn't build? (req'd by pytest_twisted)
     runs-on: ${{ matrix.os.runs-on }}
     steps:
     - name: Check out source code
