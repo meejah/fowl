@@ -2,19 +2,6 @@ import click.testing
 
 import pytest_twisted
 
-
-class FakeStandardIO(object):
-    def __init__(self, proto, reactor, messages):
-        self.disconnecting = False  ## XXX why? this is in normal one?
-        self.proto = proto
-        self.reactor = reactor
-        self.messages = messages
-        self.proto.makeConnection(self)
-        for msg in messages:
-            assert isinstance(msg, bytes), "messages must be bytes"
-            self.proto.dataReceived(msg)
-
-
 #from twisted.internet.protocol import ProtocolBase
 from zope.interface import implementer
 from twisted.internet.interfaces import IProcessProtocol
@@ -29,6 +16,7 @@ import sys
 import os
 import signal
 from fowl.observer import When, Framer, Accumulate, Next
+from fowl.test.util import ServerFactory, Client, Server, ClientFactory
 
 
 @implementer(IProcessProtocol)
@@ -59,47 +47,6 @@ class CollectStreams(ProcessProtocol):
 
     def processEnded(self, reason):
         self._done.trigger(self._reactor, reason)
-
-
-
-class Server(Protocol):
-    _message = Accumulate(b"")
-
-    def dataReceived(self, data):
-        self._message.some_results(self.factory.reactor, data)
-
-    async def next_message(self, expected_size):
-        return await self._message.next_item(self.factory.reactor, expected_size)
-
-    def send(self, data):
-        self.transport.write(data)
-
-
-class Client(Protocol):
-    _message = Accumulate(b"")
-
-    def dataReceived(self, data):
-        self._message.some_results(reactor, data)
-
-    async def next_message(self, expected_size):
-        return await self._message.next_item(self.factory.reactor, expected_size)
-
-    def send(self, data):
-        self.transport.write(data)
-
-
-class ServerFactory(Factory):
-    protocol = Server
-    noisy = True
-    _got_protocol = Next()
-
-    async def next_client(self):
-        return await self._got_protocol.next_item()
-
-    def buildProtocol(self, *args):
-        p = super().buildProtocol(*args)
-        self._got_protocol.trigger(self.reactor, p)
-        return p
 
 
 # maybe Hypothesis better, via strategies.binary() ?
@@ -169,13 +116,11 @@ async def test_happy_path(reactor, request, mailbox):
     # "listen" port -- that is, listen on 2121 (where there is no
     # listener) and connect on 2222 (where this test is listening)
 
-    listener = ServerFactory()
-    listener.reactor = reactor
+    listener = ServerFactory(reactor)
     server_port = await serverFromString(reactor, "tcp:2121").listen(listener)
+
     client = clientFromString(reactor, "tcp:localhost:2222")
-    client_factory = Factory.forProtocol(Client)
-    client_factory.reactor = reactor
-    client_proto = await client.connect(client_factory)
+    client_proto = await client.connect(ClientFactory(reactor))
     server = await listener.next_client()
 
     datasize = 1234

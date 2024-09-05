@@ -17,16 +17,9 @@ from twisted.internet.endpoints import serverFromString, clientFromString
 
 
 from fowl.cli import fowl
-from fowl._proto import (
-    _Config,
-    wormhole_from_config,
-    forward,
-)
-from fowl.observer import (
-    When,
-    Next,
-    Accumulate,
-)
+from fowl._proto import _Config, wormhole_from_config, forward
+from fowl.observer import When, Next, Accumulate
+from fowl.test.util import ServerFactory, Server, Client, ClientFactory
 
 
 # XXX ultimately we might want a "TestingWormhole" object or something
@@ -228,21 +221,7 @@ async def test_forward(reactor, request, mailbox, datasize, who):
         def send(self, data):
             self.transport.write(data)
 
-
-    class ServerFactory(Factory):
-        protocol = Server
-        noisy = True
-        _got_protocol = Next()
-
-        async def next_client(self):
-            return await self._got_protocol.next_item()
-
-        def buildProtocol(self, *args):
-            p = super().buildProtocol(*args)
-            self._got_protocol.trigger(reactor, p)
-            return p
-
-    listener = ServerFactory()
+    listener = ServerFactory(reactor)
     server_port = await serverFromString(reactor, "tcp:1111").listen(listener)
 
     # both sides are connected -- now we can issue a "remote listen"
@@ -261,7 +240,7 @@ async def test_forward(reactor, request, mailbox, datasize, who):
     # many open files."
     # gc.collect() doesn't fix it.
     client = clientFromString(reactor, "tcp:localhost:7777") # NB: same port as in "kind=local" message!
-    client_proto = await client.connect(Factory.forProtocol(Client))
+    client_proto = await client.connect(ClientFactory(reactor))
     server = await listener.next_client()
 
     def cleanup():
@@ -343,53 +322,7 @@ async def test_drawrof(reactor, request, mailbox, datasize, who, wait_peer):
         }).encode("utf8") + b"\n"
     )
 
-    class Server(Protocol):
-        _message = Accumulate(b"")
-        _done = When()
-
-        def dataReceived(self, data):
-            self._message.some_results(reactor, data)
-
-        async def next_message(self, expected_size):
-            return await self._message.next_item(reactor, expected_size)
-
-        async def when_closed(self):
-            return await self._done.when_triggered()
-
-        def send(self, data):
-            self.transport.write(data)
-
-        def connectionLost(self, reason):
-            print("lost", self, reason)
-            self._done.trigger(reactor, None)
-
-
-    class Client(Protocol):
-        _message = Accumulate(b"")
-
-        def dataReceived(self, data):
-            self._message.some_results(reactor, data)
-
-        async def next_message(self, expected_size):
-            return await self._message.next_item(reactor, expected_size)
-
-        def send(self, data):
-            self.transport.write(data)
-
-    class ServerFactory(Factory):
-        protocol = Server
-        noisy = True
-        _got_protocol = Next()
-
-        async def next_client(self):
-            return await self._got_protocol.next_item()
-
-        def buildProtocol(self, *args):
-            p = super().buildProtocol(*args)
-            self._got_protocol.trigger(reactor, p)
-            return p
-
-    listener = ServerFactory()
+    listener = ServerFactory(reactor)
     server_port = await serverFromString(reactor, "tcp:3333").listen(listener)
 
     # whether we explicitly wait for our peer, the underlying fowl
@@ -419,7 +352,7 @@ async def test_drawrof(reactor, request, mailbox, datasize, who, wait_peer):
     # many open files."
     # gc.collect() doesn't fix it.
     client = clientFromString(reactor, "tcp:localhost:8888")  # NB: same as remote-endpoint
-    client_proto = await client.connect(Factory.forProtocol(Client))
+    client_proto = await client.connect(ClientFactory(reactor))
     server = await listener.next_client()
 
     def cleanup():

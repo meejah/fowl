@@ -28,6 +28,8 @@ from twisted.internet.error import (
 )
 import pytest_twisted
 
+from fowl.observer import Accumulate, Next, When
+
 
 class _MagicTextProtocol(ProcessProtocol):
     """
@@ -177,3 +179,66 @@ class WormholeMailboxServer:
             "ws://localhost:4000/v1",
             logs,
         )
+
+
+# some helpers for local connections
+from twisted.internet.protocol import ProcessProtocol, Protocol, Factory
+
+
+class Server(Protocol):
+
+    def __init__(self):
+        self._message = Accumulate(b"")
+        self._done = When()
+
+    async def when_closed(self):
+        return await self._done.when_triggered()
+
+    async def next_message(self, expected_size):
+        return await self._message.next_item(self.factory.reactor, expected_size)
+
+    def send(self, data):
+        self.transport.write(data)
+
+    def dataReceived(self, data):
+        self._message.some_results(self.factory.reactor, data)
+
+    def connectionLost(self, reason):
+        self._done.trigger(self.factory.reactor, None)
+
+
+class Client(Protocol):
+    _message = Accumulate(b"")
+
+    def dataReceived(self, data):
+        self._message.some_results(self.factory.reactor, data)
+
+    async def next_message(self, expected_size):
+        return await self._message.next_item(self.factory.reactor, expected_size)
+
+    def send(self, data):
+        self.transport.write(data)
+
+
+class ServerFactory(Factory):
+    protocol = Server
+    noisy = True
+
+    def __init__(self, reactor):
+        self.reactor = reactor
+        self._got_protocol = Next()
+
+    async def next_client(self):
+        return await self._got_protocol.next_item()
+
+    def buildProtocol(self, *args):
+        p = super().buildProtocol(*args)
+        self._got_protocol.trigger(self.reactor, p)
+        return p
+
+
+class ClientFactory(Factory):
+    protocol = Client
+
+    def __init__(self, reactor):
+        self.reactor = reactor
