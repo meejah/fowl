@@ -54,3 +54,11 @@ jobs:
           git diff origin/main..HEAD > p
           cuv report p
       continue-on-error: true
+
+    - name: Convert to LCOV
+      shell: bash
+      run: |
+          coverage lcov
+
+    - name: Coveralls.io
+      uses: actions/setup-python@v2
