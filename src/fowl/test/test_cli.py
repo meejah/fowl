@@ -119,15 +119,14 @@ async def test_happy_path(reactor, request, mailbox):
         invite_proto,
         sys.executable,
         [
-##            "python", "-u", "-m", "coverage", "run", "-p", "-m", "fowl.cli",
             "python", "-u", "-m", "fowl.cli",
             "--mailbox", mailbox.url,
-            "--allow-connect", "2121",
+            # redundant "--allow-connect", "2121",
             "--remote", "2222:2121",
         ],
         env=os.environ,
     )
-    request.addfinalizer(lambda:invite.signalProcess(signal.SIGKILL))
+    request.addfinalizer(lambda:invite.signalProcess(signal.SIGTERM))
 
     line = await invite_proto.next_line()
     assert line == "Connected."
@@ -143,7 +142,6 @@ async def test_happy_path(reactor, request, mailbox):
         accept_proto,
         sys.executable,
         [
-##            "python", "-u", "-m", "coverage", "run", "-p", "-m", "fowl.cli",
             "python", "-u", "-m", "fowl.cli",
             "--mailbox", mailbox.url,
             "--allow-listen", "2222",
@@ -151,7 +149,7 @@ async def test_happy_path(reactor, request, mailbox):
         ],
         env=os.environ,
     )
-    request.addfinalizer(lambda:accept.signalProcess(signal.SIGKILL))
+    request.addfinalizer(lambda:accept.signalProcess(signal.SIGTERM))
 
     print("Starting accept side")
 
