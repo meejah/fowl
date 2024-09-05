@@ -85,3 +85,8 @@ exclude = [
 branch = true
 parallel = true
 source_pkgs = ["fowl"]
+
+## so my weird coverage problem .. was a "coverage combine" when
+## there's a "leftover" .coverage.* file
+##
+## ..i guess "coverage combine" just combines .coverage.* (and NOT including .coverage ??)
