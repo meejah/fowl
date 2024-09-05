@@ -84,4 +84,4 @@ exclude = [
 [tool.coverage.run]
 branch = true
 parallel = true
-source_pkgs = "fowl"
+source_pkgs = ["fowl"]
