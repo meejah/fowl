@@ -1956,7 +1956,6 @@ class LocalCommandDispatch(LineReceiver):
             self.fowl.command(cmd)
         except Exception as e:
             print(f"{line.strip()}: failed: {e}")
-            raise
 
 
 async def get_tor(

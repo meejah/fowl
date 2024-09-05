@@ -1,8 +1,8 @@
 Forward over Wormhole, Locally (fowl)
 =====================================
 
-.. image:: docs/_static/logo.svg
-    :scale: 50%
+.. image:: _static/logo.svg
+    :width: 42%
     :align: right
     :alt: Fowl Logo: a chicken head with two blue ethernet cables
 
@@ -11,16 +11,16 @@ Get TCP streams from one computer to another, safely.
 (The base protocol below `Magic Wormhole <https://github.com/magic-wormhole/magic-wormhole>`_ provides a powerful account-less, peer-to-peer networking solution -- ``fowl`` helps you use this power immediately with existing programs)
 
 
-🤔 Why?
--------
+🤔 Motivation
+-------------
 
 We sometimes pair-program but don't like the idea of sending keystrokes over a third-party server.
 We also like avoiding the extra work of "set up a server on a public IP address".
 
 For more context, see my blog posts: `Forwarding Streams over Magic Wormhole <https://meejah.ca/blog/fow-wormhole-forward>`_ and `Wizard Gardens vision <https://meejah.ca/blog/wizard-gardens-vision>`_.
 
-To generalize this a little: there are many client/server programs the _can_ be self-hosted -- ``fowl`` lets us use these sorts of programs in a peer-to-peer fashion.
-This means only depending on one general-purpose, public-IP-having server (the Magic Wormhole "mailbox server" used to set up connections).
+To generalize this a little: there are many FOSS client/server programs that _can_ be self-hosted -- ``fowl`` lets us use these sorts of programs in a peer-to-peer fashion, behind NATs.
+This means only depending on one general-purpose, public-IP-having server (the Magic Wormhole "mailbox server" used to set up connections) instead of "one per application" (or more).
 
 
 🦃 What?
@@ -55,7 +55,7 @@ All this with *no action required at the application level*, it is just a normal
 
 When pair-programming using `tty-share <https://tty-share.com/>`_ one handy option is to use the default, public server.
 However, *I don't like the idea of sending keystrokes over a third-party server* that I don't run.
-(Please note: I have **no** reason to believe this particular person is doing anything nefarious!)
+(Please note: I have **no** reason to believe this nice person is doing anything nefarious!)
 
 I could fire up such a server myself and use it with my friends...
 
@@ -110,9 +110,9 @@ We handle and expect two main use-cases of this program: integrators and end-use
 
 Human CLI users can use ``fowl`` itself to set up and use connections, for any purpose.
 
-For developers doing integration, ``fowld`` provides a simple protocol-based way for any runtime to use.
+For developers doing integration, ``fowld`` provides a simple stdin/out protocol for any runtime to use.
 That is, some "glue" code running ``fowld`` as a sub-process.
-This program will also co-ordinate the running of client-type or server-type networking applications that accomplish some goal useful to users. For example, "pair-programming" (for my case).
+This co-ordinatoin program will also handle running necessary client-type or server-type networking applications that accomplish some goal useful to users. For example, "pair-programming" (for my case).
 
 Some other ideas to get you started:
 
