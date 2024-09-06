@@ -12,21 +12,6 @@ from twisted.internet.endpoints import TCP4ServerEndpoint, TCP6ServerEndpoint
 from fowl._proto import parse_fowld_command, _Config, fowld_command_to_json
 
 
-
-@pytest.fixture()
-def config():
-    def create_stdin(proto, reactor=None):
-        cfg._fake_stdin = FakeStandardIO(proto, reactor, messages=[])
-        return cfg._fake_stdin
-    cfg = _Config(
-        relay_url="invalid",
-        use_tor=False,
-        create_stdio=create_stdin,
-        stdout=StringIO(),
-    )
-    return cfg
-
-
 def command_messages():
     from fowl import messages
     return [
