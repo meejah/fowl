@@ -2,6 +2,11 @@
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.pytest.ini_options]
+filterwarnings = [
+    "ignore"
+]
+
 [project]
 name = "fowl"
 dynamic = ["version"]
@@ -52,6 +57,7 @@ dev = [
     "pip-tools",
     "hatch",
     "readme-renderer",
+    "cuvner",
 ]
 
 [project.scripts]
@@ -74,3 +80,13 @@ exclude = [
     "*~",
     "*.egg-info*",
 ]
+
+[tool.coverage.run]
+branch = true
+parallel = true
+source_pkgs = ["fowl"]
+
+## so my weird coverage problem .. was a "coverage combine" when
+## there's a "leftover" .coverage.* file
+##
+## ..i guess "coverage combine" just combines .coverage.* (and NOT including .coverage ??)

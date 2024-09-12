@@ -12,7 +12,7 @@ from twisted.internet.defer import ensureDeferred, DeferredList, race, Deferred
 from twisted.internet.stdio import StandardIO
 from twisted.protocols.basic import LineReceiver
 
-from wormhole.errors import WormholeError, LonelyError
+from wormhole.errors import LonelyError
 
 import attr
 
@@ -31,7 +31,8 @@ from .messages import (
     BytesOut,
     IncomingConnection,
     IncomingLost,
-    LocalConnection,
+    OutgoingConnection,
+    WormholeError,
 )
 
 
@@ -68,6 +69,10 @@ async def frontend_tui(reactor, config):
     def output_message(msg):
         print(f"unhandled output: {msg}")
 
+    @output_message.register(WormholeError)
+    def _(msg):
+        print(f"ERROR: {msg.message}")
+
     @output_message.register(Listening)
     def _(msg):
         print(f"Listening: {msg.listen}")
@@ -85,7 +90,7 @@ async def frontend_tui(reactor, config):
         del conn[msg.id]
         replace_state(attr.evolve(state[0], connections=conn))
 
-    @output_message.register(LocalConnection)
+    @output_message.register(OutgoingConnection)
     def _(msg):
         conn = state[0].connections
         conn[msg.id] = Connection(0, 0)

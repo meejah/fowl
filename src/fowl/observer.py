@@ -5,6 +5,56 @@ from twisted.internet.defer import Deferred, succeed
 _UNSET = object()
 
 
+class Framer:
+    """
+    Takes a stream of bytes and produces 'messages' from them,
+    triggering an underlying Next()-style observable.
+
+    Only produces a single message per reactor 'tick'. If there is
+    'already' a subsequent message availble, we use a callLater(0,
+    ...) to produce it and check further.
+
+    (This is necessary so that something doing an async iteration has
+    a chance to "do other work" .. e.g. call .next_message() again
+    ... before any more messages are delivered XXX demo of this problem?)
+    """
+
+    def __init__(self, reactor): ## just does LineReceiver for now, find_a_frame):
+        self._reactor = reactor
+        self._data = b""
+        self._next = Next()
+
+    def next_message(self):
+        """
+        :return Awaitable: a new Deferred that fires when a complete,
+        as-yet undelivered message has arrived.
+        """
+        return self._next.next_item()
+
+    def data_received(self, data):
+        self._data += data
+        self._maybe_deliver_messages()
+
+    def _find_frame(self, data):
+        """
+        hard-coded to LineReceiver, could make more general
+
+        :returns: 2-tuple of the message and remaining data. if
+            "message" is None, there was no complete message yet and
+            all data is returned
+        """
+        if b"\n" in data:
+            return data.split(b"\n", 1)
+        return (None, data)
+
+    def _maybe_deliver_messages(self):
+        msg, self._data = self._find_frame(self._data)
+        if msg is not None:
+            self._next.trigger(self._reactor, msg.decode("utf8"))
+            if self._find_frame(self._data)[0] is not None:
+                self._reactor.callLater(0, self._maybe_deliver_messages)
+
+
 @define
 class Next:
     """

@@ -71,6 +71,24 @@ class PeerConnected(FowlOutputMessage):
 
 
 @frozen
+class GrantPermission(FowlCommandMessage):
+    """
+    Grant additional listen or connection privileges. Both are lists
+    of valid ports between 1 and 65535 inclusive.
+    """
+    listen: list[int]
+    connect: list[int]
+
+
+@frozen
+class DangerDisablePermissionCheck(FowlCommandMessage):
+    """
+    DANGER: allow listening or connecting to anything. Can be
+    dangerous, you must know the implications.
+    """
+
+
+@frozen
 class LocalListener(FowlCommandMessage):
     """
     We wish to open a local listener.
@@ -103,9 +121,55 @@ class Listening(FowlOutputMessage):
 
 
 @frozen
-class LocalConnection(FowlOutputMessage):
+class RemoteListeningFailed(FowlOutputMessage):
     """
-    Something has connected to one of our listeners
+    We have failed to open a listener on the remote side.
+    """
+    listen: str  # Twisted server-type endpoint string
+    reason: str
+
+
+@frozen
+class RemoteListeningSucceeded(FowlOutputMessage):
+    """
+    The remote peer suceeded at fulfilling our listen request.
+    """
+    listen: str  # Twisted server-type endpoint string
+
+
+@frozen
+class RemoteConnectFailed(FowlOutputMessage):
+    """
+    Our peer could not connect
+    """
+    id: int
+    reason: str
+
+
+@frozen
+class OutgoingConnection(FowlOutputMessage):
+    """
+    Something has connected to one of our listeners (and we are making
+    an outgoing subchannel to the other peer).
+    """
+    id: int
+    endpoint: str  # connection to here on far side
+    # XXX local_listener: str ??
+
+
+@frozen
+class OutgoingLost(FowlOutputMessage):
+    """
+    We have lost one of our connections
+    """
+    id: int
+    reason: str
+
+
+@frozen
+class OutgoingDone(FowlOutputMessage):
+    """
+    We have lost one of our connections
     """
     id: int
 
@@ -123,6 +187,15 @@ class IncomingConnection(FowlOutputMessage):
 class IncomingLost(FowlOutputMessage):
     """
     We have lost one of our connections
+    """
+    id: int
+    reason: str
+
+
+@frozen
+class IncomingDone(FowlOutputMessage):
+    """
+    An incoming connection has ended successfully
     """
     id: int
 

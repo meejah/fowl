@@ -5,11 +5,15 @@ pin:
 	git add -u
 	git commit -m "upgrade pins"
 
+utest:
+	python -m pytest --cov= --cov-report= -sv -x src/fowl/test
+	cuv graph
+
 test:
 	coverage erase
 	coverage run --parallel -m pytest --disable-warnings -sv src/fowl
 	coverage run --parallel -m pytest -v integration/
-	coverage combine
+	coverage combine --append
 	cuv graph
 
 #release: pin

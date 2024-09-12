@@ -8,9 +8,10 @@ import functools
 import struct
 from typing import IO, Callable, Optional
 from functools import partial
+from itertools import count
 
 import humanize
-from attrs import frozen, field, asdict, Factory as AttrFactory
+from attrs import frozen, define, field, asdict, Factory as AttrFactory
 
 import msgpack
 import automat
@@ -29,6 +30,7 @@ import wormhole.errors as wormhole_errors
 
 from .observer import When
 from .messages import *
+from .policy import IClientListenPolicy, IClientConnectPolicy, AnyConnectPolicy, AnyListenPolicy
 
 
 
@@ -55,7 +57,8 @@ def _sequential_id():
 allocate_connection_id = partial(next, _sequential_id())
 
 
-@frozen
+#@frozen
+@define  ## could be @frozen, but for "policy" ... hmmm
 class _Config:
     """
     Represents a set of validated configuration
@@ -67,9 +70,12 @@ class _Config:
     appid: str = APPID
     debug_state: bool = False
     stdout: IO = sys.stdout
+    stderr: IO = sys.stderr
     create_stdio: Callable = None  # returns a StandardIO work-alike, for testing
     debug_file: IO = None  # for state-machine transitions
     commands: list[FowlCommandMessage] = AttrFactory(list)
+    connect_policy: IClientConnectPolicy = None
+    listen_policy: IClientListenPolicy = None
 
 
 async def wormhole_from_config(reactor, config, wormhole_create=None):
@@ -101,6 +107,13 @@ async def wormhole_from_config(reactor, config, wormhole_create=None):
         tor=tor,
         timing=None,  # args.timing,
         _enable_dilate=True,
+        versions={
+            "fowl": {
+                "features": {
+                    "core": {}
+                }
+            }
+        }
     )
     if config.debug_state:
         w.debug_set_trace("forward", file=config.stdout)
@@ -109,6 +122,7 @@ async def wormhole_from_config(reactor, config, wormhole_create=None):
 
 @frozen
 class Connection:
+    endpoint: str
     i: int = 0
     o: int = 0
 
@@ -119,7 +133,11 @@ async def frontend_accept_or_invite(reactor, config):
 
     @functools.singledispatch
     def output_message(msg):
-        print(f"unhandled output: {msg}")
+        print(f"UNhandled output: {msg}")
+
+    @output_message.register(WormholeError)
+    def _(msg):
+        print(f"ERROR: {msg.message}")
 
     @output_message.register(CodeAllocated)
     def _(msg):
@@ -137,17 +155,63 @@ async def frontend_accept_or_invite(reactor, config):
     def _(msg):
         print(f"Listening: {msg.listen}")
 
+    @output_message.register(RemoteListeningSucceeded)
+    def _(msg):
+        print(f"Peer is listening: {msg.listen}")
+
+    @output_message.register(RemoteListeningFailed)
+    def _(msg):
+        print(f"Peer failed to listen: {msg.listen}: {msg.reason}")
+
     @output_message.register(IncomingConnection)
     def _(msg):
-        connections[msg.id] = Connection(0, 0)
+        connections[msg.id] = Connection(msg.endpoint, 0, 0)
 
-    @output_message.register(LocalConnection)
+    @output_message.register(RemoteConnectFailed)
     def _(msg):
-        connections[msg.id] = Connection(0, 0)
+        print("Forwarding to {} failed: {}".format(connections[msg.id].endpoint, msg.reason))
+        del connections[msg.id]
+
+    @output_message.register(IncomingLost)
+    def _(msg):
+        try:
+            del connections[msg.id]
+            print(f"Lost: {msg.id}: {msg.reason}")
+        except KeyError:
+            print("WEIRD: got IncomingLost(id={}) but don't have that connection".format(msg.id))
+
+    @output_message.register(IncomingDone)
+    def _(msg):
+        try:
+            del connections[msg.id]
+            print(f"{msg.id}: closed")
+        except KeyError:
+            print("WEIRD: got IncomingDone(id={}) but don't have that connection".format(msg.id))
+
+    @output_message.register(OutgoingLost)
+    def _(msg):
+        try:
+            del connections[msg.id]
+            print(f"Lost: {msg.id}: {msg.reason}")
+        except KeyError:
+            print("WEIRD: got OutgoingLost(id={}) but don't have that connection".format(msg.id))
+
+    @output_message.register(OutgoingDone)
+    def _(msg):
+        try:
+            del connections[msg.id]
+            print(f"{msg.id}: closed")
+        except KeyError:
+            print("WEIRD: got OutgoingDone(id={}) but don't have that connection".format(msg.id))
+
+    @output_message.register(OutgoingConnection)
+    def _(msg):
+        connections[msg.id] = Connection(msg.endpoint, 0, 0)
 
     @output_message.register(BytesIn)
     def _(msg):
         connections[msg.id] = Connection(
+            connections[msg.id].endpoint,
             connections[msg.id].i + msg.bytes,
             connections[msg.id].o,
         )
@@ -155,6 +219,7 @@ async def frontend_accept_or_invite(reactor, config):
     @output_message.register(BytesOut)
     def _(msg):
         connections[msg.id] = Connection(
+            connections[msg.id].endpoint,
             connections[msg.id].i,
             connections[msg.id].o + msg.bytes,
         )
@@ -225,7 +290,7 @@ async def forward(reactor, config):
         raise
 
 
-class ForwardConnecter(Protocol):
+class SubchannelForwarder(Protocol):
     """
     This is the side of the protocol that was listening .. so it has
     opened a subchannel and sent the initial message. So the
@@ -286,13 +351,13 @@ class ForwardConnecter(Protocol):
         """
 
     @m.input()
-    def remote_not_connected(self):
+    def remote_not_connected(self, reason):
         """
         The reply message was negative
         """
 
     @m.input()
-    def too_much_data(self):
+    def too_much_data(self, reason):
         """
         Too many bytes sent in the reply.
         """
@@ -300,7 +365,7 @@ class ForwardConnecter(Protocol):
         # on the other side...
 
     @m.input()
-    def subchannel_closed(self):
+    def subchannel_closed(self, reason):
         """
         Our subchannel has closed
         """
@@ -336,7 +401,7 @@ class ForwardConnecter(Protocol):
         if msg.get("connected", False):
             self.remote_connected()
         else:
-            self.remote_not_connected()
+            self.remote_not_connected(msg.get("reason", "Unknown"))
 
     @m.output()
     def send_queued_data(self):
@@ -345,6 +410,12 @@ class ForwardConnecter(Protocol):
         """
         self.factory.other_proto.transport.resumeProducing()
         self.factory.other_proto._maybe_drain_queue()
+
+    @m.output()
+    def emit_remote_failed(self, reason):
+        self.factory.message_out(
+            RemoteConnectFailed(self.factory.conn_id, reason)
+        )
 
     @m.output()
     def close_connection(self):
@@ -374,6 +445,11 @@ class ForwardConnecter(Protocol):
             )
             self.factory.other_proto.transport.write(d)
 
+#    @m.output()
+#    def emit_incoming_lost(self):
+#        # do we need a like "OutgoingLost"?
+#        self.factory.message_out(IncomingLost(self.factory.conn_id, "Unknown"))
+
     await_confirmation.upon(
         no_confirmation,
         enter=forwarding_bytes,
@@ -397,7 +473,7 @@ class ForwardConnecter(Protocol):
     await_confirmation.upon(
         subchannel_closed,
         enter=finished,
-        outputs=[],
+        outputs=[],####emit_incoming_lost],
     )
 
     evaluating.upon(
@@ -408,7 +484,12 @@ class ForwardConnecter(Protocol):
     evaluating.upon(
         remote_not_connected,
         enter=finished,
-        outputs=[close_connection]
+        outputs=[emit_remote_failed, close_connection]
+    )
+    evaluating.upon(
+        subchannel_closed,
+        enter=finished,
+        outputs=[]
     )
     forwarding_bytes.upon(
         got_bytes,
@@ -439,13 +520,21 @@ class ForwardConnecter(Protocol):
 
     def connectionMade(self):
         self._buffer = b""
-        ##self.do_trace(lambda o, i, n: print("{} --[ {} ]--> {}".format(o, i, n)))
+        # self.do_trace(lambda o, i, n: print("{} --[ {} ]--> {}".format(o, i, n)))
 
     def dataReceived(self, data):
         self.got_bytes(data)
 
     def connectionLost(self, reason):
-        self.subchannel_closed()
+        if isinstance(reason, ConnectionDone):
+            self.factory.message_out(
+                OutgoingDone(self.factory.conn_id)
+            )
+        else:
+            self.factory.message_out(
+                OutgoingLost(self.factory.conn_id, str(reason))
+            )
+        self.subchannel_closed(str(reason))
         if self.factory.other_proto:
             self.factory.other_proto.transport.loseConnection()
 
@@ -477,7 +566,7 @@ class ConnectionForward(Protocol):
         """
 
     @m.input()
-    def stream_closed(self):
+    def stream_closed(self, reason):
         """
         The local server has closed our connection
         """
@@ -499,12 +588,23 @@ class ConnectionForward(Protocol):
             self.factory.other_proto.transport.write(d)
 
     @m.output()
-    def close_other_side(self):
+    def close_other_side(self, reason):
         try:
             if self.factory.other_proto:
                 self.factory.other_proto.transport.loseConnection()
         except Exception:
             pass
+
+    @m.output()
+    def emit_incoming_done(self, reason):
+        if isinstance(reason.value, ConnectionDone):
+            self.factory.message_out(
+                IncomingDone(self.factory.conn_id)
+            )
+        else:
+            self.factory.message_out(
+                IncomingLost(self.factory.conn_id, str(reason))
+            )
 
     forwarding_bytes.upon(
         got_bytes,
@@ -514,7 +614,7 @@ class ConnectionForward(Protocol):
     forwarding_bytes.upon(
         stream_closed,
         enter=finished,
-        outputs=[close_other_side]
+        outputs=[emit_incoming_done, close_other_side]
     )
 
     def connectionMade(self):
@@ -524,7 +624,7 @@ class ConnectionForward(Protocol):
         self.got_bytes(data)
 
     def connectionLost(self, reason):
-        self.stream_closed()
+        self.stream_closed(reason)
 
 
 class LocalServer(Protocol):
@@ -539,6 +639,7 @@ class LocalServer(Protocol):
         self.remote = None
         self._conn_id = allocate_connection_id()
 
+        # XXX refactor into SubchannelForwarder.onOpen or whatever, since that exists anyway?
         def got_proto(proto):
             proto.local = self
             self.remote = proto
@@ -549,7 +650,7 @@ class LocalServer(Protocol):
             proto.transport.write(prefix + msg)
 
             self.factory.message_out(
-                LocalConnection(self._conn_id)
+                OutgoingConnection(self._conn_id, self.factory.endpoint_str)
             )
 
             # MUST wait for reply first -- queueing all data until
@@ -558,7 +659,7 @@ class LocalServer(Protocol):
             return proto
 
         # XXX do we need registerProducer somewhere here?
-        factory = Factory.forProtocol(ForwardConnecter)
+        factory = Factory.forProtocol(SubchannelForwarder)
         factory.other_proto = self
         factory.conn_id = self._conn_id
         factory.config = self.factory.config
@@ -631,6 +732,7 @@ class Incoming(Protocol):
     """
 
     m = automat.MethodicalMachine()
+    set_trace = m._setTrace
 
     @m.state(initial=True)
     def await_message(self):
@@ -665,7 +767,7 @@ class Incoming(Protocol):
         """
 
     @m.input()
-    def too_much_data(self):
+    def too_much_data(self, reason):
         """
         We received too many bytes (for the first message).
         """
@@ -678,7 +780,7 @@ class Incoming(Protocol):
         """
 
     @m.input()
-    def subchannel_closed(self):
+    def subchannel_closed(self, reason):
         """
         This subchannel has been closed
         """
@@ -690,13 +792,13 @@ class Incoming(Protocol):
         """
 
     @m.input()
-    def connection_failed(self):
+    def connection_failed(self, reason):
         """
         Making the local connection failed
         """
 
     @m.output()
-    def close_connection(self):
+    def close_connection(self, reason):
         """
         We wish to close this subchannel
         """
@@ -737,10 +839,34 @@ class Incoming(Protocol):
                 # there should be no "leftover" data
                 if bsize > 2 + expected_size:
                     ##raise RuntimeError("protocol error: more than opening message sent")
-                    self.too_much_data()
+                    self.too_much_data("Too many bytes sent")
                     return
                 # warning: recursive state-machine message
                 self.got_initial_message(first_msg)
+
+    @m.output()
+    def send_negative_reply(self, reason):
+        """
+        Tell our peer why we're closing them
+        """
+        self._negative(reason)
+
+    @m.output()
+    def send_negative_reply_subchannel(self):
+        """
+        Tell our peer local policy doesn't let the connection happen.
+        """
+        pass#self._negative("XXXAgainst local policy")
+
+    def _negative(self, reason):
+        print("negative", reason)
+        msg = msgpack.packb({
+            "connected": False,
+            "reason": reason,
+        })
+        prefix = struct.pack("!H", len(msg))
+        self.transport.write(prefix + msg)
+
 
     @m.output()
     def send_positive_reply(self):
@@ -761,6 +887,7 @@ class Incoming(Protocol):
         """
         data = msgpack.unpackb(msg)
         ep = clientFromString(reactor, data["local-destination"])
+
         factory = Factory.forProtocol(ConnectionForward)
         factory.other_proto = self
         factory.config = self.factory.config
@@ -771,6 +898,17 @@ class Incoming(Protocol):
             IncomingConnection(self._conn_id, data["local-destination"])
         )
 
+        # note: do this policy check after the IncomingConnection
+        # message is emitted (otherwise there will be cases where we
+        # emit _just_ a IncomingLost which is confusing)
+        if self.factory.config.connect_policy is not None:
+            if not self.factory.config.connect_policy.can_connect(ep):
+                # XXX error -- do we send an error message back first?
+                # (like "against local policy")
+                self._negative("Against local policy")
+                self.transport.loseConnection()
+                return
+
         d = ep.connect(factory)
 
         def bad(fail):
@@ -780,7 +918,7 @@ class Incoming(Protocol):
                     # extra={"id": self._conn_id}
                 )
             )
-            reactor.callLater(0, lambda: self.connection_failed())
+            reactor.callLater(0, lambda: self.connection_failed(fail.getErrorMessage()))
             return None
 
         def assign(proto):
@@ -817,13 +955,14 @@ class Incoming(Protocol):
     local_connect.upon(
         connection_failed,
         enter=finished,
-        outputs=[close_connection]  # send-negative-reply?
+        outputs=[send_negative_reply, close_connection]
     )
-#FIXME enable    local_connect.upon(
-#        subchannel_closed,
-#        enter=finished,
-#        outputs=[cancel_connect]
-#    )
+    # this will happen if our policy doesn't allow this port, for example
+    local_connect.upon(
+        subchannel_closed,
+        enter=finished,
+        outputs=[],
+    )
 
     forwarding_bytes.upon(
         got_bytes,
@@ -860,15 +999,18 @@ class Incoming(Protocol):
         # (want some kind of opt-in on this side, probably)
         self._buffer = b""
         self._local_connection = None
+        # def tracer(o, i, n):
+        #     print("{} --[ {} ]--> {}".format(o, i, n))
+        # self.set_trace(tracer)
 
     def connectionLost(self, reason):
         """
         Twisted API
         """
-        self.factory.message_out(
-            IncomingLost(self._conn_id)
-        )
-        self.subchannel_closed()
+#        self.factory.message_out(
+#            IncomingLost(self._conn_id, reason)
+#        )
+        self.subchannel_closed(reason)
 
     def dataReceived(self, data):
         """
@@ -928,8 +1070,7 @@ class FowlWormhole:
         # pass on the welcome message (don't "go in" to the
         # state-machine here, maybe we could / should?)
         ensureDeferred(self._wormhole.get_welcome()).addCallbacks(
-            #XXX private API, possibly bad?
-            lambda hello: self._daemon._message_out(Welcome(hello)),
+            lambda hello: self._daemon.got_welcome(hello),
             self._handle_error,
         )
 
@@ -955,7 +1096,7 @@ class FowlWormhole:
             verifier = results[0][1]
             versions = results[1][1]
 
-            d = self.do_dilate()
+            d = self._do_dilate()
             @d.addCallback
             def did_dilate(arg):
                 self._daemon.peer_connected(verifier, versions)
@@ -1011,12 +1152,6 @@ class FowlWormhole:
         async def _(msg):
             await self.when_connected()
             assert self.connect_ep is not None, "need connect ep"
-            # XXX if we get this before we've dilated, just remember it?
-            # listens locally, conencts to other side
-
-            # XXX to get rid of the "await" part, we can just roll the
-            # "message_out" call and the "listening_ports.append" into
-            # one ...
             await _local_to_remote_forward(self._reactor, self._config, self.connect_ep, self._listening_ports.append, self._daemon._message_out, msg)
             # XXX cheating? private access (_daemon._message_out)
 
@@ -1024,42 +1159,33 @@ class FowlWormhole:
         async def _(msg):
             await self.when_connected()
             assert self.control_proto is not None, "need control_proto"
-            # XXX if we get this before we've dilated, just remember it?
-            # listens locally, conencts to other side
-
-            # XXX to get rid of the "await" part, we can just roll the
-            # "message_out" call and the "listening_ports.append" into
-            # one ...
-            await _remote_to_local_forward(self.control_proto, msg)
+            msg = await _remote_to_local_forward(self.control_proto, msg)
+            self._daemon._message_out(msg)
             # XXX cheating? private access (_daemon._message_out)
 
-        ensureDeferred(cmd(command)).addErrback(self._handle_error)
-
-    # called from FowlDaemon when it has interactions to do
-
-    def ___fowl_output(self, msg: FowlOutputMessage) -> None:
-        """
-        Process messages coming out of FowlDaemon, handling both stdout
-        interaction as well as wormhole interactions.
-        """
-        # are we "crossing the streams" here, by having output messages
-        # trigger either "wormhole I/O" or "stdin/out I/O"?
-        if isinstance(msg, AllocateCode):
-            d = wormhole.allocate_code()
-            #XXX error-handling
-        elif isinstance(msg, SetCode):
-            self._set_code(msg)
-        elif isinstance(msg, Welcome):
-            self._got_welcome.trigger(self._reactor, msg.welcome)
-        else:
+        @cmd.register(GrantPermission)
+        async def _(msg):
+            self._config.connect_policy.ports.extend(msg.connect)
+            self._config.listen_policy.ports.extend(msg.listen)
             print(
-                json.dumps(fowld_output_to_json(msg)),
-                file=config.stdout,
+                "Permission granted. Listen={}, Connect={}".format(
+                    self._config.listen_policy,
+                    self._config.connect_policy,
+                ),
+                file=self._config.stderr,
                 flush=True,
             )
 
-    def _set_code(self, msg: SetCode) -> None:
-        self._wormhole.set_code(msg.code)
+        @cmd.register(DangerDisablePermissionCheck)
+        async def _(msg):
+            try:
+                self._config.connect_policy = AnyConnectPolicy()
+                self._config.listen_policy = AnyListenPolicy()
+                print("DANGER. All connect / listen endpoints allowed.", file=self._config.stderr, flush=True)
+            except Exception as e:
+                print("BAD", type(e))
+
+        ensureDeferred(cmd(command)).addErrback(self._handle_error)
 
     # our own callbacks / notifications
 
@@ -1079,22 +1205,13 @@ class FowlWormhole:
         """
         return self._connected.when_triggered()
 
-    def do_dilate(self):
+    def _do_dilate(self):
         self.control_ep, self.connect_ep, self.listen_ep = self._wormhole.dilate(
             transit_relay_location="tcp:magic-wormhole-transit.debian.net:4001",
         )
         d = ensureDeferred(self._post_dilation_setup())
         d.addErrback(self._handle_error)
         return d
-
-    def do_shutdown(self):
-        """
-        Perform any (possibly async) tasks related to shutting down:
-        - remove listeners
-        """
-        d = ensureDeferred(self.control_proto.when_done())
-        self.control_proto.transport.loseConnection()
-        d.addBoth(lambda _: self.shutdown_finished())
 
     def _handle_error(self, f):
         # hmm, basically any of the "wormhole callbacks" we asked for
@@ -1135,47 +1252,6 @@ class FowlWormhole:
         self._connected.trigger(self._reactor, verifier_bytes)
 
 
-    def ___handle_command(self, cmd):
-        self._command_queue.append(cmd)
-        self._maybe_run_command()
-
-    def _maybe_run_command(self):
-        if not self._command_queue:
-            return
-        if self._running_command is not None:
-            self._running_command.addBoth(lambda _: self._maybe_run_command())
-        if not self._command_queue:
-            return
-        cmd = self._command_queue.pop(0)
-        self._running_command = ensureDeferred(self._run_command(cmd))
-        self._running_command.addErrback(self._handle_error)
-
-    # XXX _should_ be able to make this non-async function, because we
-    # hide the "real" async work behind our other machinery
-    async def ___run_command(self, cmd):
-        if isinstance(cmd, AllocateCode):
-            self.allocate_code(self._config.code_length if cmd.length is None else cmd.length)
-
-        elif isinstance(cmd, SetCode):
-            self.set_code(cmd.code)
-
-        elif isinstance(cmd, LocalListener):
-            await self.when_connected()
-            assert self.connect_ep is not None, "need connect ep"
-            await _local_to_remote_forward(self._reactor, self._config, self.connect_ep, self._listening_ports.append, self._message_out, cmd)
-
-        elif isinstance(cmd, RemoteListener):
-            await self.when_connected()
-            assert self.control_proto is not None, "Need a control proto"
-            # asks the other side to listen, connecting back to us
-            await _remote_to_local_forward(self.control_proto, self._listening_ports.append, cmd)
-
-        else:
-            raise KeyError(
-                "Unknown command '{}'".format(cmd["kind"])
-            )
-
-
 # FowlDaemon is the state-machine
 #  - ultimately, it goes some notifications from 'the wormhole' but only via the I/O thing
 #  - no "async def" / Deferred-returning methods
@@ -1185,6 +1261,7 @@ class FowlWormhole:
 #  - can do async
 #  - can do I/O
 #  - proxies I/O and async'ly things
+
 
 class FowlDaemon:
     """
@@ -1267,6 +1344,12 @@ class FowlDaemon:
         """
 
     @m.input()
+    def got_welcome(self, hello):
+        """
+        We have received a 'Welcome' message from the server
+        """
+
+    @m.input()
     def code_allocated(self, code):
         """
         We have a wormhole code (either because it was "set" or because we
@@ -1341,6 +1424,25 @@ class FowlDaemon:
         )
 
     @m.output()
+    def emit_welcome(self, hello):
+        self._emit_message(
+            Welcome(hello)
+        )
+
+    @m.output()
+    def verify_version(self, verifier, versions):
+        try:
+            core = versions["fowl"]["features"]["core"]
+
+            assert core is not None, "fowl -> features -> core doesn't exist in peer app_version"
+            # no particular content for this yet, empty-dict
+        except KeyError:
+            # XXX need to send a protocol error to the machine, end
+            # the connection
+            print("didn't like", versions)
+            pass
+
+    @m.output()
     def queue_message(self, plaintext):
         self._message_queue.append(plaintext)
 
@@ -1367,6 +1469,11 @@ class FowlDaemon:
         outputs=[queue_message]
     )
     waiting_code.upon(
+        got_welcome,
+        enter=waiting_code,
+        outputs=[emit_welcome]
+    )
+    waiting_code.upon(
         shutdown,
         enter=closed,
         outputs=[emit_shutdown]
@@ -1378,9 +1485,14 @@ class FowlDaemon:
         outputs=[queue_message]
     )
     waiting_peer.upon(
+        got_welcome,
+        enter=waiting_peer,
+        outputs=[emit_welcome]
+    )
+    waiting_peer.upon(
         peer_connected,
         enter=connected,
-        outputs=[emit_peer_connected, send_queued_messages],
+        outputs=[verify_version, emit_peer_connected, send_queued_messages],
     )
     waiting_peer.upon(
         shutdown,
@@ -1419,6 +1531,53 @@ class FowlDaemon:
 # Would like the second; so we can interact in unit-tests (or here)
 # via parsed commands. e.g. we have an AGT union-type, and every
 # input-message is a class
+def fowld_command_to_json(msg: FowlCommandMessage) -> dict:
+    """
+    Turn the given `msg` into a corresponding JSON-friendly dict
+    (suitable for json.dumps() for example)
+    """
+
+    js = asdict(msg)
+    # XXX maybe a @singledispatch would give better feedback when we
+    # miss one...
+    @functools.singledispatch
+    def output_command(msg):
+        raise RuntimeError(f"Unhandled message: {msg}")
+
+    @output_command.register(GrantPermission)
+    def _(msg):
+        js["kind"] = "grant-permission"
+
+    @output_command.register(DangerDisablePermissionCheck)
+    def _(msg):
+        js["kind"] = "danger-disable-permission-check"
+
+    @output_command.register(LocalListener)
+    def _(msg):
+        js["kind"] = "local"
+        js["listen"] = msg.listen
+        js["connect"] = msg.connect
+
+    @output_command.register(RemoteListener)
+    def _(msg):
+        js["kind"] = "remote"
+        js["listen"] = msg.listen
+        js["connect"] = msg.connect
+
+    @output_command.register(AllocateCode)
+    def _(msg):
+        js["kind"] = "allocate-code"
+        js["length"] = getattr(msg, "length", None)
+
+    @output_command.register(SetCode)
+    def _(msg):
+        js["kind"] = "set-code"
+        js["code"] = msg.code
+
+    output_command(msg)
+    return js
+
+
 def parse_fowld_command(json_str: str) -> FowlCommandMessage:
     """
     Parse the given JSON message assuming is a command for fowld
@@ -1437,7 +1596,7 @@ def parse_fowld_command(json_str: str) -> FowlCommandMessage:
                 try:
                     args[k] = js[k] if process is None else process(js[k])
                 except KeyError:
-                    raise ValueError(f'"{k}" is missing')
+                    raise ValueError('"{}" is missing'.format(k))
             for k, process in optional_parsers:
                 try:
                     args[k] = js[k] if process is None else process(js[k])
@@ -1446,11 +1605,25 @@ def parse_fowld_command(json_str: str) -> FowlCommandMessage:
             return cls(**args)
         return parse
 
+    def is_valid_port(port):
+        if isinstance(port, int) and port >= 1 and port < 65536:
+            return port
+        raise ValueError(f"Invalid port: {port}")
+
+    def port_list(proposed):
+        if isinstance(proposed, list):
+            return [
+                is_valid_port(port) for port in proposed
+            ]
+        raise ValueError("Port-list must be a list of ints")
+
     kind_to_message = {
         "allocate-code": parser(AllocateCode, [], [("length", int)]),
         "set-code": parser(SetCode, [("code", None)], []),
         "local": parser(LocalListener, [("listen", None), ("connect", None)], []),
         "remote": parser(RemoteListener, [("listen", None), ("connect", None)], []),
+        "grant-permission": parser(GrantPermission, [("listen", port_list), ("connect", port_list)], []),
+        "danger-disable-permission-check": parser(DangerDisablePermissionCheck, [], [])
     }
     return kind_to_message[kind](cmd)
 
@@ -1469,9 +1642,15 @@ def fowld_output_to_json(msg: FowlOutputMessage) -> dict:
         CodeAllocated: "code-allocated",
         PeerConnected: "peer-connected",
         Listening: "listening",
-        LocalConnection: "local-connection",
+        RemoteListeningFailed: "remote-listening-failed",
+        RemoteListeningSucceeded: "remote-listening-succeeded",
+        RemoteConnectFailed: "remote-connect-failed",
+        OutgoingConnection: "outgoing-connection",
+        OutgoingLost: "outgoing-lost",
+        OutgoingDone: "outgoing-done",
         IncomingConnection: "incoming-connection",
         IncomingLost: "incoming-lost",
+        IncomingDone: "incoming-done",
         BytesIn: "bytes-in",
         BytesOut: "bytes-out",
         WormholeError: "error",
@@ -1504,10 +1683,21 @@ def parse_fowld_output(json_str: str) -> FowlOutputMessage:
 
     kind_to_message = {
         "welcome": parser(Welcome, [("welcome", None)]),
+        "wormhole-closed": parser(WormholeClosed, [("result", None)]),
+        "allocate-code": parser(AllocateCode, [("length", int)]),
+        "set-code": parser(SetCode, [("code", None)]),
         "code-allocated": parser(CodeAllocated, [("code", None)]),
-        "peer-connected": parser(PeerConnected, [("verifier", binascii.unhexlify)]),
-        "listening": parser(Listening, [("endpoint", None), ("connect-endpoint", None)]),
-        "local-connection": parser(LocalConnection, [("id", int)]),
+        "peer-connected": parser(PeerConnected, [("verifier", binascii.unhexlify), ("versions", None)]),
+        "listening": parser(Listening, [("listen", None), ("connect", None)]),
+        "remote-listening-failed": parser(RemoteListeningFailed, [("endpoint", None), ("reason", None)]),
+        "remote-listening-succeeded": parser(RemoteListeningSucceeded, [("listen", None)]),
+        "remote-connect-failed": parser(RemoteConnectFailed, [("id", int), ("reason", None)]),
+        "outgoing-connection": parser(OutgoingConnection, [("id", int), ("endpoint", None)]),
+##        "outgoing-lost": parser(),
+        "outgoing-done": parser(OutgoingDone, [("id", int)]),
+        "incoming-connection": parser(IncomingConnection, [("id", int), ("endpoint", None)]),
+        "incoming-lost": parser(IncomingLost, [("id", int), ("reason", None)]),
+        "incoming-done": parser(IncomingDone, [("id", int)]),
         "bytes-in": parser(BytesIn, [("id", int), ("bytes", int)]),
         "bytes-out": parser(BytesOut, [("id", int), ("bytes", int)]),
     }
@@ -1569,6 +1759,11 @@ async def _local_to_remote_forward(reactor, config, connect_ep, on_listen, on_me
     # XXX these lines are "uncovered" but we clearly run them ... so
     # something wrong with subprocess coverage?? again???
     ep = serverFromString(reactor, cmd.listen)
+
+    if config.listen_policy is not None:
+        if not config.listen_policy.can_listen(ep):
+            raise ValueError('Policy doesn\'t allow listening on "{}"'.format(ep._port))
+
     factory = Factory.forProtocol(LocalServer)
     factory.config = config
     factory.endpoint_str = cmd.connect
@@ -1585,14 +1780,8 @@ async def _remote_to_local_forward(control_proto, cmd):
     (where our Incoming subchannel will be told what to connect
     to).
     """
-    msg = msgpack.packb({
-        "kind": "remote-to-local",
-        "listen-endpoint": cmd.listen,
-        "connect-endpoint": cmd.connect,
-    })
-    prefix = struct.pack("!H", len(msg))
-    control_proto.transport.write(prefix + msg)
-    return None
+    reply = await control_proto.request_forward(cmd)
+    return reply
 
 
 class Commands(Protocol):
@@ -1604,6 +1793,24 @@ class Commands(Protocol):
         super().__init__(*args, **kw)
         self._ports = []
         self._done = When()
+        # outstanding requests, awaiting replies
+        self._remote_requests = dict()
+        self._local_requests = dict()
+        self._create_request_id = count(1)
+
+    def request_forward(self, cmd):
+        rid = next(self._create_request_id)
+        msg = msgpack.packb({
+            "kind": "remote-to-local",
+            "listen-endpoint": cmd.listen,
+            "connect-endpoint": cmd.connect,
+            "reply-id": rid,
+        })
+        d = Deferred()
+        self._local_requests[rid] = d, cmd
+        prefix = struct.pack("!H", len(msg))
+        self.transport.write(prefix + msg)
+        return d
 
     def when_done(self):
         return self._done.when_triggered()
@@ -1613,11 +1820,31 @@ class Commands(Protocol):
         bsize = len(data)
         assert bsize >= 2, "expected at least 2 bytes"
         expected_size, = struct.unpack("!H", data[:2])
-        assert bsize == expected_size + 2, "data has more than the message"
+        assert bsize == expected_size + 2, "data has more than the message: {} vs {}: {}".format(bsize, expected_size + 2, repr(data[:55]))
         msg = msgpack.unpackb(data[2:])
-        if msg["kind"] == "remote-to-local":
-            # XXX ask for permission
+        if msg["kind"] == "listener-response":
+            rid = int(msg["reply-id"])
+            d, original_cmd = self._local_requests[rid]
+            del self._local_requests[rid]
+
+            if msg["listening"]:
+                d.callback(RemoteListeningSucceeded(original_cmd.listen))
+            else:
+                d.callback(RemoteListeningFailed(original_cmd.listen, msg.get("reason", "Missing reason")))
+
+        elif msg["kind"] == "remote-to-local":
+            rid = int(msg["reply-id"])
+            assert rid >= 1 and rid < 2**53, "reply-id out of range"
+            self._remote_requests[rid] = None
+
             listen_ep = serverFromString(reactor, msg["listen-endpoint"])
+
+            if self.factory.config.listen_policy is not None:
+                if not self.factory.config.listen_policy.can_listen(listen_ep):
+                    self._reply_negative(rid, "Against local policy")
+                    self.transport.loseConnection()
+                    return
+
             factory = Factory.forProtocol(LocalServer)
             factory.config = self.factory.config
             factory.message_out = self.factory.message_out
@@ -1626,8 +1853,10 @@ class Commands(Protocol):
 
             # XXX this can fail (synchronously) if address in use (e.g.)
             d = listen_ep.listen(factory)
+            self._remote_requests[rid] = d
 
             def got_port(port):
+                self._reply_positive(rid)
                 self.factory.message_out(
                     Listening(
                         msg["listen-endpoint"],
@@ -1638,6 +1867,7 @@ class Commands(Protocol):
                 return port
 
             def error(f):
+                self._reply_negative(rid, f.getErrorMessage())
                 self.factory.message_out(
                     WormholeError(
                         'Failed to listen on "{}": {}'.format(
@@ -1654,6 +1884,39 @@ class Commands(Protocol):
                 WormholeError(
                     "Unknown control command: {msg[kind]}",
                 )
+            )
+
+    def _reply_positive(self, rid):
+        """
+        Send a positive reply to a remote request
+        """
+        return self._reply_generic(rid, listening=True)
+
+    def _reply_negative(self, rid, reason=None):
+        """
+        Send a negative reply to a remote request
+        """
+        return self._reply_generic(rid, listening=False, reason=reason)
+
+    def _reply_generic(self, rid, listening, reason=None):
+        """
+        Send a positive or negative reply to a remote request
+        """
+        if rid in self._remote_requests:
+            content = {
+                "kind": "listener-response",
+                "reply-id": rid,
+                "listening": bool(listening),
+            }
+            if reason is not None and not listening:
+                content["reason"] = str(reason)
+            reply = msgpack.packb(content)
+            prefix = struct.pack("!H", len(reply))
+            self.transport.write(prefix + reply)
+            del self._remote_requests[rid]
+        else:
+            raise ValueError(
+                "Replied to '{}' but it is not outstanding".format(rid)
             )
 
     async def _unregister_ports(self):
@@ -1693,7 +1956,6 @@ class LocalCommandDispatch(LineReceiver):
             self.fowl.command(cmd)
         except Exception as e:
             print(f"{line.strip()}: failed: {e}")
-            raise
 
 
 async def get_tor(
@@ -1712,7 +1974,7 @@ async def get_tor(
         import txtorcon
     except ImportError:
         raise click.UsageError(
-            'Cannot find txtorcon library (try "pip istall txtorcon")'
+            'Cannot find txtorcon library (try "pip install txtorcon")'
         )
 
     # Connect to an existing Tor, or create a new one. If we need to
