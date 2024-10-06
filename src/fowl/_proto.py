@@ -1369,7 +1369,7 @@ def parse_fowld_command(json_str: str) -> FowlCommandMessage:
         raise ValueError("Port-list must be a list of ints")
 
     kind_to_message = {
-        "allocate-code": parser(AllocateCode, [], [("length", int)]),
+        "allocate-code": parser(AllocateCode, [], [("length", maybe_int)]),
         "set-code": parser(SetCode, [("code", None)], []),
         "local": parser(LocalListener, [("listen", None), ("connect", None)], []),
         "remote": parser(RemoteListener, [("listen", None), ("connect", None)], []),
@@ -1433,9 +1433,9 @@ def parse_fowld_output(json_str: str) -> FowlOutputMessage:
         return parse
 
     kind_to_message = {
-        "welcome": parser(Welcome, [("welcome", None)]),
+        "welcome": parser(Welcome, [("url", None), ("welcome", None)]),
         "wormhole-closed": parser(WormholeClosed, [("result", None)]),
-        "allocate-code": parser(AllocateCode, [("length", int)]),
+        "allocate-code": parser(AllocateCode, [("length", maybe_int)]),
         "set-code": parser(SetCode, [("code", None)]),
         "code-allocated": parser(CodeAllocated, [("code", None)]),
         "peer-connected": parser(PeerConnected, [("verifier", binascii.unhexlify), ("versions", None)]),
