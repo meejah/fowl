@@ -216,3 +216,14 @@ class BytesOut(FowlOutputMessage):
 @frozen
 class WormholeError(FowlOutputMessage):
     message: str
+
+
+#XXX these aren't really used; why state-machine has them?
+@frozen
+class SendMessageToPeer(FowlOutputMessage):
+    message: str
+
+
+@frozen
+class GotMessageFromPeer(FowlOutputMessage):
+    message: str

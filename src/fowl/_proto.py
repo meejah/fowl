@@ -522,6 +522,22 @@ class SubchannelForwarder(Protocol):
         self._buffer = b""
         # self.do_trace(lambda o, i, n: print("{} --[ {} ]--> {}".format(o, i, n)))
 
+        self.local = self.factory.other_proto
+        self.factory.other_proto.remote = self
+        msg = msgpack.packb({
+            "local-destination": self.factory.endpoint_str,
+        })
+        prefix = struct.pack("!H", len(msg))
+        proto.transport.write(prefix + msg)
+
+        self.factory.message_out(
+            OutgoingConnection(self._conn_id, self.factory.endpoint_str)
+        )
+
+        # MUST wait for reply first -- queueing all data until
+        # then
+        self.factory.other_proto.transport.pauseProducing()
+
     def dataReceived(self, data):
         self.got_bytes(data)
 
@@ -641,27 +657,13 @@ class LocalServer(Protocol):
 
         # XXX refactor into SubchannelForwarder.onOpen or whatever, since that exists anyway?
         def got_proto(proto):
-            proto.local = self
-            self.remote = proto
-            msg = msgpack.packb({
-                "local-destination": self.factory.endpoint_str,
-            })
-            prefix = struct.pack("!H", len(msg))
-            proto.transport.write(prefix + msg)
-
-            self.factory.message_out(
-                OutgoingConnection(self._conn_id, self.factory.endpoint_str)
-            )
-
-            # MUST wait for reply first -- queueing all data until
-            # then
-            self.transport.pauseProducing()
             return proto
 
         # XXX do we need registerProducer somewhere here?
         factory = Factory.forProtocol(SubchannelForwarder)
         factory.other_proto = self
         factory.conn_id = self._conn_id
+        factory.endpoint_str = self.factory.endpoint_str
         factory.config = self.factory.config
         factory.message_out = self.factory.message_out
         # Note: connect_ep here is the Wormhole provided
@@ -1043,13 +1045,9 @@ class FowlWormhole:
         self._done = When() # we have shut down completely
         self._connected = When()  # our Peer has connected
         self._got_welcome = When()  # we received the Welcome from the server
-
-        # XXX shouldn't need a queue here; rely on FowlDaemon / statemachine
-        self._command_queue = []
-        self._running_command = None  # Deferred if we're running a command now
         self.connect_ep = self.control_proto = None
 
-    # XXX want to be an IService?
+    # XXX wants to be an IService?
     async def stop(self):
         for port in self._listening_ports:
             # note to self port.stopListening and port.loseConnection are THE SAME
@@ -1058,7 +1056,7 @@ class FowlWormhole:
             self.control_proto.transport.loseConnection()
             await self.control_proto.when_done()
 
-    # XXX want to be an IService?
+    # XXX wants to be an IService?
     def start(self):
 
         # tie "we got a code" into the state-machine
@@ -1428,7 +1426,7 @@ def parse_fowld_output(json_str: str) -> FowlOutputMessage:
                 try:
                     args[k] = js[k] if process is None else process(js[k])
                 except KeyError:
-                    raise ValueError('"{k}" is missing')
+                    raise ValueError(f'"{k}" is missing')
             return cls(**args)
         return parse
 
@@ -1440,7 +1438,7 @@ def parse_fowld_output(json_str: str) -> FowlOutputMessage:
         "code-allocated": parser(CodeAllocated, [("code", None)]),
         "peer-connected": parser(PeerConnected, [("verifier", binascii.unhexlify), ("versions", None)]),
         "listening": parser(Listening, [("listen", None), ("connect", None)]),
-        "remote-listening-failed": parser(RemoteListeningFailed, [("endpoint", None), ("reason", None)]),
+        "remote-listening-failed": parser(RemoteListeningFailed, [("listen", None), ("reason", None)]),
         "remote-listening-succeeded": parser(RemoteListeningSucceeded, [("listen", None)]),
         "remote-connect-failed": parser(RemoteConnectFailed, [("id", int), ("reason", None)]),
         "outgoing-connection": parser(OutgoingConnection, [("id", int), ("endpoint", None)]),
