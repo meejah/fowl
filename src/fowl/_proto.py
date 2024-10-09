@@ -949,6 +949,11 @@ class Incoming(Protocol):
         enter=local_connect,
         outputs=[establish_local_connection]
     )
+    await_message.upon(
+        subchannel_closed,
+        enter=finished,
+        outputs=[],
+    )
     local_connect.upon(
         connection_made,
         enter=forwarding_bytes,
