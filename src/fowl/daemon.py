@@ -69,6 +69,7 @@ class FowlDaemon:
             self._message_out(msg)
         except Exception as e:
             print(f"Error in user code sending a message: {e}")
+            print(type(e), e)
 
     @m.state(initial=True)
     def waiting_code(self):
@@ -238,6 +239,11 @@ class FowlDaemon:
         got_welcome,
         enter=waiting_peer,
         outputs=[emit_welcome]
+    )
+    waiting_peer.upon(
+        got_message,
+        enter=waiting_peer,
+        outputs=[emit_got_message]
     )
     waiting_peer.upon(
         peer_connected,

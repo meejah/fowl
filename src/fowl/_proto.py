@@ -130,6 +130,8 @@ class Connection:
 async def frontend_accept_or_invite(reactor, config):
 
     connections = dict()
+    when_explicitly_closed_d = Deferred()
+    we_closed_d = Deferred()
 
     @functools.singledispatch
     def output_message(msg):
@@ -138,6 +140,7 @@ async def frontend_accept_or_invite(reactor, config):
     @output_message.register(WormholeError)
     def _(msg):
         print(f"ERROR: {msg.message}")
+        print(msg)
 
     @output_message.register(CodeAllocated)
     def _(msg):
@@ -210,6 +213,7 @@ async def frontend_accept_or_invite(reactor, config):
 
     @output_message.register(BytesIn)
     def _(msg):
+        print(msg)
         connections[msg.id] = Connection(
             connections[msg.id].endpoint,
             connections[msg.id].i + msg.bytes,
@@ -227,6 +231,8 @@ async def frontend_accept_or_invite(reactor, config):
     @output_message.register(WormholeClosed)
     def _(msg):
         print(f"Closed: {msg.result}")
+        print("doing callback", we_closed_d)
+        we_closed_d.callback(None)
 
     @output_message.register(Welcome)
     def _(msg):
@@ -234,10 +240,36 @@ async def frontend_accept_or_invite(reactor, config):
         if "motd" in msg.welcome:
             print(textwrap.fill(msg.welcome["motd"].strip(), 80, initial_indent="    ", subsequent_indent="    "))
 
+    @output_message.register(GotMessageFromPeer)
+    def _(msg):
+        print(f"Message from peer: {msg}")
+        if json.loads(msg.message) == {"closing": True}:
+            print("  -> closing!")
+            w.send_message(json.dumps({"closed": True}).encode("utf8"))
+            ##w.close()  # --> actually want to tell mainloop to exit
+            when_explicitly_closed_d.callback(None)
+            w.close()
+        if json.loads(msg.message) == {"closed": True}:
+            print("  -> closed!")
+            w.send_message(json.dumps({"closed": True}).encode("utf8"))
+            when_explicitly_closed_d.callback(None)
+
     daemon = FowlDaemon(reactor, config, output_message)
     w = await wormhole_from_config(reactor, config)
     wh = FowlWormhole(reactor, w, daemon, config)
     wh.start()
+    print("OHAI")
+
+    async def disconnect_session():
+        print("disconnecting nicely, sending closing=True")
+        w.send_message(json.dumps({"closing": True}).encode("utf8"))
+        # XXX we want to wait for "the other side's" phase=closing message {"closed": True}
+        # (what would {"closed": False} even mean, though?)
+        print("waiting for explicitly_closed_d")
+        await when_explicitly_closed_d
+        print("explicitly closed!")
+        await w.close()
+    reactor.addSystemEventTrigger("before", "shutdown", lambda: ensureDeferred(disconnect_session()))
 
     kind = "invite" if config.code is None else "accept"
     if config.debug_file:
@@ -256,7 +288,7 @@ async def frontend_accept_or_invite(reactor, config):
         wh.command(command)
 
     last_displayed = None
-    while True:
+    while not we_closed_d.called:
         await deferLater(reactor, 1, lambda: None)
         if connections and last_displayed != set(connections.values()):
             for ident in sorted(connections.keys()):
