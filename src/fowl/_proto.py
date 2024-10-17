@@ -541,14 +541,6 @@ class SubchannelForwarder(Protocol):
         enter=finished,
         outputs=[]
     )
-    # kind-of feel this one is truely extraneous, but maybe not? (does
-    # happen in integration tests, but maybe points at different
-    # problem?)
-    finished.upon(
-        subchannel_closed,
-        enter=finished,
-        outputs=[]
-    )
 
     do_trace = m._setTrace
 
