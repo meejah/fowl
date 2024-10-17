@@ -39,6 +39,8 @@ class IClientConnectPolicy(Interface):
 # XXX if i'm offline, "localhost" doesn't work (with ip_address()) -- when _does_ it work, and why?
 # XXX with radios off entirely, i'm seeing "" (empty string) as the addr here
 def is_localhost(addr: str) -> bool:
+    if addr.strip() == "":
+        return False
     if addr == "localhost":
         return True
     ip = ipaddress.ip_address(addr)
