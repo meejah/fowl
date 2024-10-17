@@ -16,7 +16,7 @@ from attrs import frozen, define, field, asdict, Factory as AttrFactory
 import msgpack
 import automat
 from twisted.internet import reactor
-from twisted.internet.defer import returnValue, Deferred, succeed, ensureDeferred, maybeDeferred, CancelledError, DeferredList
+from twisted.internet.defer import returnValue, Deferred, succeed, ensureDeferred, maybeDeferred, CancelledError, DeferredList, race
 from twisted.internet.task import deferLater
 from twisted.internet.endpoints import serverFromString, clientFromString
 from twisted.internet.protocol import Factory, Protocol
@@ -173,7 +173,9 @@ async def frontend_accept_or_invite(reactor, config):
     @output_message.register(RemoteConnectFailed)
     def _(msg):
         print("Forwarding to {} failed: {}".format(connections[msg.id].endpoint, msg.reason))
-        del connections[msg.id]
+        # we will get an OutgoingDone(msg.id) for this one too, so do not delete here!
+        # (XXX should maybe mark it as "failed" somehow?)
+        ##del connections[msg.id]
 
     @output_message.register(IncomingLost)
     def _(msg):
@@ -515,7 +517,7 @@ class SubchannelForwarder(Protocol):
     )
     evaluating.upon(
         remote_not_connected,
-        enter=finished,
+        enter=evaluating,
         outputs=[emit_remote_failed, close_connection]
     )
     evaluating.upon(
@@ -560,10 +562,10 @@ class SubchannelForwarder(Protocol):
             "local-destination": self.factory.endpoint_str,
         })
         prefix = struct.pack("!H", len(msg))
-        proto.transport.write(prefix + msg)
+        self.transport.write(prefix + msg)
 
         self.factory.message_out(
-            OutgoingConnection(self._conn_id, self.factory.endpoint_str)
+            OutgoingConnection(self.factory.conn_id, self.factory.endpoint_str)
         )
 
         # MUST wait for reply first -- queueing all data until
