@@ -262,15 +262,27 @@ async def frontend_accept_or_invite(reactor, config):
     wh.start()
     print("OHAI")
 
+    @daemon.set_trace
+    def _(o, i, n):
+        print("{} --[ {} ]--> {}".format(o, i, n))
+
     async def disconnect_session():
         print("disconnecting nicely, sending closing=True")
         w.send_message(json.dumps({"closing": True}).encode("utf8"))
         # XXX we want to wait for "the other side's" phase=closing message {"closed": True}
         # (what would {"closed": False} even mean, though?)
-        print("waiting for explicitly_closed_d")
-        await when_explicitly_closed_d
+        print("waiting for explicitly_closed_d")  # ...but with brief timeout?
+        await race([
+            when_explicitly_closed_d,
+            deferLater(reactor, 0.77, lambda: None),
+        ])
         print("explicitly closed!")
-        await w.close()
+        try:
+            await w.close()
+        except wormhole_errors.LonelyError:
+            # maybe just say nothing? why does the user care about
+            # this? (they probably hit ctrl-c anyway, how else can you get here?)
+            print("Wormhole closed without peer")
     reactor.addSystemEventTrigger("before", "shutdown", lambda: ensureDeferred(disconnect_session()))
 
     kind = "invite" if config.code is None else "accept"
