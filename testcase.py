@@ -76,7 +76,7 @@ async def main(reactor):
     reactor.spawnProcess(
         host_proto,
         sys.executable,
-        [sys.executable, "-m", "fowl", "--mailbox", "ws://localhost:4000/v1"],
+        [sys.executable, "-m", "fowl", "--mailbox", "ws://127.0.0.1:4000/v1"],
         env={"PYTHONUNBUFFERED": "1"},
     )
     host_proto.send_message({"kind": "allocate-code"})
@@ -86,7 +86,7 @@ async def main(reactor):
     reactor.spawnProcess(
         guest_proto,
         sys.executable,
-        [sys.executable, "-m", "fowl", "--mailbox", "ws://localhost:4000/v1"],
+        [sys.executable, "-m", "fowl", "--mailbox", "ws://127.0.0.1:4000/v1"],
         env={"PYTHONUNBUFFERED": "1"},
     )
     guest_proto.send_message({"kind": "set-code", "code": msg["code"]})
@@ -99,19 +99,34 @@ async def main(reactor):
     print("two peers")
 
     if 'remote' in sys.argv:
+        guest_proto.send_message({
+            "kind": "grant-permission",
+            "connect": [1111],
+            "listen": [],  ## this is annoying, fix in fowld
+        })
         host_proto.send_message({
             "kind": "local",
-            "listen": "tcp:8888",
-            "connect": "tcp:localhost:1111"
+            "listen": "tcp:8888:interface=127.0.0.1",
+            "connect": "tcp:127.0.0.1:1111",
         })
 
         m = await host_proto.next_message("listening")
     else:
         print("local forward")
+        guest_proto.send_message({
+            "kind": "grant-permission",
+            "connect": [],  # FIXME annoying
+            "listen": [8888],
+        })
+        host_proto.send_message({
+            "kind": "grant-permission",
+            "connect": [1111],
+            "listen": [],  ## this is annoying, fix in fowld
+        })
         host_proto.send_message({
             "kind": "remote",
-            "listen": "tcp:8888",
-            "connect": "tcp:localhost:1111"
+            "listen": "tcp:8888:interface=127.0.0.1",
+            "connect": "tcp:127.0.0.1:1111"
         })
         m = await guest_proto.next_message("listening")
     print("got it", m)
@@ -157,7 +172,7 @@ async def main(reactor):
             return p
 
     listener = ServerFactory()
-    server_port = await serverFromString(reactor, "tcp:1111").listen(listener)
+    server_port = await serverFromString(reactor, "tcp:1111:interface=127.0.0.1").listen(listener)
 
     # if we do 'too many' test-cases debian complains about
     # "twisted.internet.error.ConnectBindError: Couldn't bind: 24: Too
@@ -166,7 +181,7 @@ async def main(reactor):
     who = True
     for size in range(2**6, 2**18, 2**10):
         print("TEST", size, who)
-        client = clientFromString(reactor, "tcp:localhost:8888")
+        client = clientFromString(reactor, "tcp:127.0.0.1:8888")
         client_proto = await client.connect(Factory.forProtocol(Client))
         server = await listener.next_client()
 
