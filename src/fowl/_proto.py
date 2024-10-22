@@ -272,9 +272,10 @@ async def frontend_accept_or_invite(reactor, config):
         # XXX we want to wait for "the other side's" phase=closing message {"closed": True}
         # (what would {"closed": False} even mean, though?)
         print("waiting for explicitly_closed_d")  # ...but with brief timeout?
+        # XXX (what's a good timeout here? "until user gets bored?")
         await race([
             when_explicitly_closed_d,
-            deferLater(reactor, 0.77, lambda: None),
+            deferLater(reactor, 5.1, lambda: None),
         ])
         print("explicitly closed!")
         try:
