@@ -324,6 +324,42 @@ async def _cmd_listen_remote(reactor, wh, state, *args):
     )
 
 
+async def _cmd_allow(reactor, wh, state, *args):
+    """
+    Allow an incoming connection on a particular port
+    """
+    try:
+        local_port = int(args[0])
+    except (ValueError, IndexError):
+        print("Requires a TCP port, as an integer.")
+        print("If the other side tries to connect via this port, we will allow it")
+        return
+    wh.command(
+        GrantPermission(
+            listen=[],
+            connect=[local_port],
+        )
+    )
+
+
+async def _cmd_allow_listen(reactor, wh, state, *args):
+    """
+    Allow remote side to listen on a given TCP port.
+    """
+    try:
+        local_port = int(args[0])
+    except (ValueError, IndexError):
+        print("Requires a TCP port, as an integer.")
+        print("We will allow the other side to listen on this TCP port")
+        return
+    wh.command(
+        GrantPermission(
+            listen=[local_port],
+            connect=[],
+        )
+    )
+
+
 class CommandReader(LineReceiver):
     """
     Wait for incoming commands from the user
@@ -445,6 +481,9 @@ commands = {
 
     "local": _cmd_listen_local,
     "remote": _cmd_listen_remote,
+
+    "allow": _cmd_allow,
+    "allow-listen": _cmd_allow_listen,
 
     "help": _cmd_help,
     "h":_cmd_help,
