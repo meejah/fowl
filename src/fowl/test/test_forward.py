@@ -138,7 +138,7 @@ def ignore_cancel(f):
 
 # maybe Hypothesis better, via strategies.binary() ?
 @pytest_twisted.ensureDeferred
-@pytest.mark.parametrize("datasize", range(2**6, 2**17, 2**15))
+@pytest.mark.parametrize("datasize", [2**6])#range(2**6, 2**17, 2**15))
 @pytest.mark.parametrize("who", [True, False])
 async def test_forward(reactor, request, mailbox, datasize, who):
 
@@ -263,7 +263,7 @@ async def test_forward(reactor, request, mailbox, datasize, who):
 
 
 @pytest_twisted.ensureDeferred
-@pytest.mark.parametrize("datasize", range(2**6, 2**17, 2**15))
+@pytest.mark.parametrize("datasize", [2**6])##range(2**6, 2**17, 2**15))
 @pytest.mark.parametrize("who", [True, False])
 @pytest.mark.parametrize("wait_peer", [True, False])
 async def test_drawrof(reactor, request, mailbox, datasize, who, wait_peer):

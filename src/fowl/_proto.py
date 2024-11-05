@@ -260,24 +260,23 @@ async def frontend_accept_or_invite(reactor, config):
     w = await wormhole_from_config(reactor, config)
     wh = FowlWormhole(reactor, w, daemon, config)
     wh.start()
-    print("OHAI")
 
-    @daemon.set_trace
+    ##@daemon.set_trace
     def _(o, i, n):
         print("{} --[ {} ]--> {}".format(o, i, n))
 
     async def disconnect_session():
-        print("disconnecting nicely, sending closing=True")
+        ##print("disconnecting nicely, sending closing=True")
         w.send_message(json.dumps({"closing": True}).encode("utf8"))
         # XXX we want to wait for "the other side's" phase=closing message {"closed": True}
         # (what would {"closed": False} even mean, though?)
-        print("waiting for explicitly_closed_d")  # ...but with brief timeout?
+        ##print("waiting for explicitly_closed_d")  # ...but with brief timeout?
         # XXX (what's a good timeout here? "until user gets bored?")
         await race([
             when_explicitly_closed_d,
             deferLater(reactor, 5.1, lambda: None),
         ])
-        print("explicitly closed!")
+        ##print("explicitly closed!")
         try:
             await w.close()
         except wormhole_errors.LonelyError:
