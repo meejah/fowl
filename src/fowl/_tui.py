@@ -26,6 +26,7 @@ from .messages import (
     AllocateCode,
     SetCode,
     LocalListener,
+    RemoteListener,
     Listening,
     BytesIn,
     BytesOut,
@@ -33,6 +34,7 @@ from .messages import (
     IncomingLost,
     OutgoingConnection,
     WormholeError,
+    GrantPermission,
 )
 
 
@@ -58,8 +60,6 @@ class State:
             self.verifier[a:a+4]
             for a in range(0, len(self.verifier), 4)
         )
-
-
 
 
 async def frontend_tui(reactor, config):
@@ -274,6 +274,12 @@ async def _cmd_listen_local(reactor, wh, state, *args):
         remote_port = port
 
     wh.command(
+        GrantPermission(
+            listen=[port],
+            connect=[],
+        )
+    )
+    wh.command(
         LocalListener(
             listen=f"tcp:{port}:interface=localhost",
             connect=f"tcp:localhost:{remote_port}",
@@ -304,6 +310,12 @@ async def _cmd_listen_remote(reactor, wh, state, *args):
     else:
         local_port = remote_port
 
+    wh.command(
+        GrantPermission(
+            listen=[],
+            connect=[local_port],
+        )
+    )
     wh.command(
         RemoteListener(
             listen=f"tcp:{remote_port}:interface=localhost",

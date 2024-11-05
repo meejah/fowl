@@ -11,8 +11,8 @@ utest:
 
 test:
 	coverage erase
-	coverage run --source fowl --parallel -m pytest -x --disable-warnings -sv src/fowl
-	coverage run --source fowl --parallel -m pytest -x -v integration/
+	coverage run --source src/fowl --parallel -m pytest -x --disable-warnings -sv src/fowl
+	coverage run --source src/fowl --parallel -m pytest -x -v integration/
 	coverage combine --append
 	cuv graph
 

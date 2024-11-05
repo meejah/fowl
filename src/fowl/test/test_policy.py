@@ -16,9 +16,9 @@ def ip_address_to_listener(reactor, port, ipaddr):
     TCP4ServerEndpoint (or TCP6ServerEndpoint)
     """
     if isinstance(ipaddr, ipaddress.IPv4Address):
-        return TCP4ServerEndpoint(reactor, port, interface=ipaddr)
+        return TCP4ServerEndpoint(reactor, port, interface=str(ipaddr))
     elif isinstance(ipaddr, ipaddress.IPv6Address):
-        return TCP6ServerEndpoint(reactor, port, interface=ipaddr)
+        return TCP6ServerEndpoint(reactor, port, interface=str(ipaddr))
     raise ValueError(f"Unknown ipaddress: {ipaddr}")
 
 
