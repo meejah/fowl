@@ -1,22 +1,17 @@
-import click.testing
 
 import pytest_twisted
 
 #from twisted.internet.protocol import ProtocolBase
 from zope.interface import implementer
 from twisted.internet.interfaces import IProcessProtocol
-from twisted.internet.protocol import ProcessProtocol, Protocol, Factory
-from twisted.internet.task import deferLater
-from twisted.internet.defer import ensureDeferred, Deferred, CancelledError, DeferredList
-from twisted.internet.error import ProcessTerminated
+from twisted.internet.protocol import ProcessProtocol
+from twisted.internet.defer import DeferredList
 from twisted.internet.endpoints import serverFromString, clientFromString
-from fowl._proto import _Config
-from io import StringIO
 import sys
 import os
 import signal
-from fowl.observer import When, Framer, Accumulate, Next
-from fowl.test.util import ServerFactory, Client, Server, ClientFactory
+from fowl.observer import When, Framer
+from fowl.test.util import ServerFactory, ClientFactory
 
 
 @implementer(IProcessProtocol)
@@ -117,7 +112,7 @@ async def test_happy_path(reactor, request, mailbox):
     # listener) and connect on 2222 (where this test is listening)
 
     listener = ServerFactory(reactor)
-    server_port = await serverFromString(reactor, "tcp:2121").listen(listener)
+    await serverFromString(reactor, "tcp:2121").listen(listener)  # returns server_port
 
     client = clientFromString(reactor, "tcp:localhost:2222")
     client_proto = await client.connect(ClientFactory(reactor))

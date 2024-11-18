@@ -1,30 +1,18 @@
 import sys
-import time
-import json
 import os
 from io import (
-    BytesIO,
     StringIO,
 )
-from os.path import exists, join
 from functools import partial
 
 import attr
 
+from twisted.internet.protocol import ProcessProtocol, Protocol, Factory
 from twisted.internet.defer import (
-    returnValue,
     Deferred,
-    maybeDeferred,
-)
-from twisted.internet.task import (
-    deferLater,
-)
-from twisted.internet.protocol import (
-    ProcessProtocol,
 )
 from twisted.internet.error import (
     ProcessExitedAlready,
-    ProcessDone,
 )
 import pytest_twisted
 
@@ -182,7 +170,6 @@ class WormholeMailboxServer:
 
 
 # some helpers for local connections
-from twisted.internet.protocol import ProcessProtocol, Protocol, Factory
 
 
 class Server(Protocol):
