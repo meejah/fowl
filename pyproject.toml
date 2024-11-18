@@ -55,6 +55,7 @@ test = [
     "magic-wormhole-mailbox-server",
     "cuvner",
     "hypothesis",
+    "ruff",
 ]
 dev = [
     "twine",
@@ -65,8 +66,7 @@ dev = [
     "hatch",
     "readme-renderer",
     "cuvner",
-    "ruff",
-]
+ ]
 
 [project.scripts]
 fowl = "fowl.cli:fowl"
