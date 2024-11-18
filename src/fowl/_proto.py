@@ -29,7 +29,36 @@ from wormhole.cli.public_relay import RENDEZVOUS_RELAY as PUBLIC_MAILBOX_URL
 import wormhole.errors as wormhole_errors
 
 from .observer import When
-from .messages import WormholeError
+from .messages import (
+    SetCode,
+    AllocateCode,
+    GrantPermission,
+    DangerDisablePermissionCheck,
+    RemoteListener,
+    LocalListener,
+
+    Welcome,
+    Listening,
+    RemoteListeningSucceeded,
+    RemoteListeningFailed,
+    RemoteConnectFailed,
+    PeerConnected,
+    CodeAllocated,
+    BytesOut,
+    BytesIn,
+    IncomingConnection,
+    IncomingDone,
+    IncomingLost,
+    OutgoingConnection,
+    OutgoingDone,
+    OutgoingLost,
+    WormholeClosed,
+    WormholeError,
+    GotMessageFromPeer,
+
+    FowlOutputMessage,
+    FowlCommandMessage,
+)
 from .policy import IClientListenPolicy, IClientConnectPolicy, AnyConnectPolicy, AnyListenPolicy
 
 
@@ -1285,7 +1314,7 @@ class FowlWormhole:
         in_factory.connect_ep = self.connect_ep
         in_factory.message_out = self._daemon._message_out
         listen_port = await self.listen_ep.listen(in_factory)
-###        self._ports.append(listen_port)
+        self._listening_ports.append(listen_port)
 
         await self._wormhole.get_unverified_key()
         verifier_bytes = await self._wormhole.get_verifier()  # might WrongPasswordError
@@ -1303,8 +1332,7 @@ class FowlWormhole:
 #  - can do I/O
 #  - proxies I/O and async'ly things
 
-
-from .daemon import FowlDaemon
+from .daemon import FowlDaemon  # noqa: E402
 
 
 def maybe_int(i):
