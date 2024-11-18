@@ -1123,7 +1123,7 @@ class FowlWormhole:
     async def stop(self):
         for port in self._listening_ports:
             # note to self port.stopListening and port.loseConnection are THE SAME
-            await port.stopListening()
+            port.stopListening()
         if self.control_proto is not None:
             self.control_proto.transport.loseConnection()
             await self.control_proto.when_done()
