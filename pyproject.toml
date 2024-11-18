@@ -65,6 +65,7 @@ dev = [
     "hatch",
     "readme-renderer",
     "cuvner",
+    "ruff",
 ]
 
 [project.scripts]
