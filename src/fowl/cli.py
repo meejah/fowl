@@ -1,7 +1,6 @@
 
 import click
 import pkg_resources
-from attr import evolve
 
 from twisted.internet.task import react
 from twisted.internet.defer import ensureDeferred
@@ -12,7 +11,6 @@ from wormhole.cli.public_relay import (
 
 from ._proto import (
     _Config,
-    wormhole_from_config,
     forward,
     frontend_accept_or_invite,
     WELL_KNOWN_MAILBOXES,

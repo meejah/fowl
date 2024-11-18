@@ -1,9 +1,8 @@
 
 
-import pytest
 import ipaddress
 from hypothesis.strategies import ip_addresses, one_of, integers, lists
-from hypothesis import given, assume, reproduce_failure
+from hypothesis import given, assume
 
 from twisted.internet.endpoints import TCP4ServerEndpoint, TCP6ServerEndpoint
 

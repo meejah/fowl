@@ -3,7 +3,6 @@ import ipaddress
 
 from attr import frozen
 from zope.interface import Interface, implementer
-from twisted.internet.interfaces import IStreamServerEndpoint
 from twisted.internet.endpoints import (
     TCP4ServerEndpoint,
     TCP6ServerEndpoint,

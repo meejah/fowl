@@ -6,24 +6,23 @@ import binascii
 import textwrap
 import functools
 import struct
-from typing import IO, Callable, Optional
+from typing import IO, Callable
 from functools import partial
 from itertools import count
 
 import humanize
-from attrs import frozen, define, field, asdict, Factory as AttrFactory
+from attrs import frozen, define, asdict, Factory as AttrFactory
 
 import msgpack
 import automat
 from twisted.internet import reactor
-from twisted.internet.defer import returnValue, Deferred, succeed, ensureDeferred, maybeDeferred, CancelledError, DeferredList, race
+from twisted.internet.defer import Deferred, ensureDeferred, DeferredList, race
 from twisted.internet.task import deferLater
 from twisted.internet.endpoints import serverFromString, clientFromString
 from twisted.internet.protocol import Factory, Protocol
 from twisted.internet.error import ConnectionDone
 from twisted.internet.stdio import StandardIO
 from twisted.protocols.basic import LineReceiver
-from twisted.python.failure import Failure
 from zope.interface import directlyProvides
 from wormhole.cli.public_relay import RENDEZVOUS_RELAY as PUBLIC_MAILBOX_URL
 import wormhole.errors as wormhole_errors
@@ -238,7 +237,7 @@ async def frontend_accept_or_invite(reactor, config):
 
     @output_message.register(Welcome)
     def _(msg):
-        print(f"Connected.")
+        print("Connected.")
         if "motd" in msg.welcome:
             print(textwrap.fill(msg.welcome["motd"].strip(), 80, initial_indent="    ", subsequent_indent="    "))
 
@@ -324,7 +323,7 @@ async def forward(reactor, config):
         await _forward_loop(reactor, config, w)
         await w.close()  # waits for ack
 
-    except Exception as e:
+    except Exception:
         # if we catch an error, we should close and then return the original
         # error (the close might give us an error, but it isn't as important
         # as the original one)
@@ -1535,7 +1534,7 @@ async def _forward_loop(reactor, config, w):
 
     try:
         await fowl.when_done()
-    except Exception as e:
+    except Exception:
         # XXXX okay, this fixes it .. but how to hook in cleanup etc "properly"
         # (probably via state-machine etc)
         await fowl.stop()
