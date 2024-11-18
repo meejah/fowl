@@ -10,6 +10,7 @@ from typing import IO, Callable
 from functools import partial
 from itertools import count
 
+import click
 import humanize
 from attrs import frozen, define, asdict, Factory as AttrFactory
 
@@ -28,7 +29,7 @@ from wormhole.cli.public_relay import RENDEZVOUS_RELAY as PUBLIC_MAILBOX_URL
 import wormhole.errors as wormhole_errors
 
 from .observer import When
-from .messages import *
+from .messages import WormholeError
 from .policy import IClientListenPolicy, IClientConnectPolicy, AnyConnectPolicy, AnyListenPolicy
 
 

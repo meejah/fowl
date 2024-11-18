@@ -7,11 +7,9 @@ from functools import partial
 
 import attr
 
+from twisted.internet.protocol import ProcessProtocol, Protocol, Factory
 from twisted.internet.defer import (
     Deferred,
-)
-from twisted.internet.protocol import (
-    ProcessProtocol,
 )
 from twisted.internet.error import (
     ProcessExitedAlready,
@@ -172,7 +170,6 @@ class WormholeMailboxServer:
 
 
 # some helpers for local connections
-from twisted.internet.protocol import ProcessProtocol, Protocol, Factory
 
 
 class Server(Protocol):
