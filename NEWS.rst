@@ -15,6 +15,7 @@ Unreleased
 * Fix up some fallout from refactoring
 * Enable "remote" command in --interactive
 * Proper error-message rendering
+* Allow whitelisting only specific connect/listen endpoints.
 
 
 24.3.1: March 1, 2024
