@@ -98,6 +98,18 @@ def fowld(ctx, ip_privacy, mailbox, debug):
     metavar="listen-port[:connect-port]",
 )
 @click.option(
+    "--local-interface",
+    multiple=True,
+    help="Listen on a particular address+port pair on this computer, connect remotely on specific address + port (accepted multiple times)",
+    metavar="listen-interface:listen-port:connect-address-connect-port",
+)
+@click.option(
+    "--remote-interface",
+    multiple=True,
+    help="Listen remotely on a particular address+port pair, and connect back on this computer with a particular address and port (accepted multiple times)",
+    metavar="listen-interface:listen-port:connect-address:connect-port",
+)
+@click.option(
     "--allow-listen",
     multiple=True,
     help="Accept a connection to this local port. Accepted multiple times. Note that local listeners added via --local are already allowed and do not need this option.",
@@ -108,6 +120,18 @@ def fowld(ctx, ip_privacy, mailbox, debug):
     multiple=True,
     help="Accept a connection to this local port. Accepted multiple times",
     metavar="connect-port",
+)
+@click.option(
+    "--allow-listen-interface",
+    multiple=True,
+    help="Accept a connection to this port and interface. Accepted multiple times. Note that local listeners added via --local-interface are already allowed and do not need this option.",
+    metavar="listen-interface",
+)
+@click.option(
+    "--allow-connect-address",
+    multiple=True,
+    help="Accept a connection to this address/port pair. Accepted multiple times",
+    metavar="connect-address",
 )
 @click.option(
     "--code-length",
@@ -126,7 +150,7 @@ def fowld(ctx, ip_privacy, mailbox, debug):
 )
 @click.argument("code", required=False)
 @click.command()
-def fowl(ip_privacy, mailbox, debug, allow_listen, allow_connect, local, remote, code_length, code, readme, interactive):
+def fowl(ip_privacy, mailbox, debug, allow_listen, allow_connect, allow_listen_interface, allow_connect_address, local, remote, code_length, code, readme, interactive, local_interface, remote_interface):
     """
     Forward Over Wormhole, Locally
 
