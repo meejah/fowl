@@ -20,7 +20,13 @@ from .messages import (
     LocalListener,
     RemoteListener,
 )
-from .policy import LocalhostTcpPortsListenPolicy, LocalhostTcpPortsConnectPolicy
+from .policy import (
+    LocalhostTcpPortsListenPolicy,
+    LocalhostTcpPortsConnectPolicy,
+    ArbitraryAddressTcpConnectPolicy,
+    ArbitraryInterfaceTcpPortsListenPolicy,
+    is_localhost,
+)
 
 
 @click.option(
@@ -186,6 +192,52 @@ def fowl(ip_privacy, mailbox, debug, allow_listen, allow_connect, local, remote,
     def to_connect_policy(local_interface, local_port, remote_address, remote_port):
         return remote_port
 
+    def to_iface_port(allowed):
+        if ':' in allowed:
+            iface, port = allowed.split(':', 1)
+            return iface, _to_port(port)
+        return "localhost", _to_port(allowed)
+
+    def to_local_port(allowed):
+        if ':' in allowed:
+            iface, port = allowed.split(':', 1)
+            if iface != "localhost":
+                raise ValueError(f"Non-local interface: {iface}")
+            return _to_port(port)
+        return _to_port(allowed)
+
+    def is_local(local_interface, local_port, remote_address, remote_port):
+        return is_localhost(local_interface)
+
+    def is_local_connect(local_interface, local_port, remote_address, remote_port):
+        return is_localhost(remote_address)
+
+    if any(not is_local(*cmd) for cmd in local_commands) or \
+       any(not is_localhost(to_iface_port(allowed)[0]) for allowed in allow_listen):
+        listen_policy = ArbitraryInterfaceTcpPortsListenPolicy(
+            [(iface, port) for iface, port, _, _ in local_commands] + \
+            [to_iface_port(allowed) for allowed in allow_listen]
+        )
+    else:
+        listen_policy = LocalhostTcpPortsListenPolicy(
+            [to_listen_policy(*cmd) for cmd in local_commands] +
+            [to_local_port(port) for port in allow_listen]
+        )
+
+    if any(not is_local_connect(*cmd) for cmd in remote_commands) or \
+       any(not is_localhost(to_iface_port(allowed)[0]) for allowed in allow_connect):
+        # yes, this says "to_iface_port()" below but they both look
+        # the same currently: "192.168.1.2:4321" for example
+        connect_policy = ArbitraryAddressTcpConnectPolicy(
+            [(addr, port) for _, _, addr, port in remote_commands] + \
+            [to_iface_port(allowed) for allowed in allow_connect]
+        )
+    else:
+        connect_policy = LocalhostTcpPortsConnectPolicy(
+            [to_connect_policy(*cmd) for cmd in local_commands] +
+            [to_local_port(port) for port in allow_connect]
+        )
+
     cfg = _Config(
         relay_url=WELL_KNOWN_MAILBOXES.get(mailbox, mailbox),
         use_tor=bool(ip_privacy),
@@ -199,14 +251,8 @@ def fowl(ip_privacy, mailbox, debug, allow_listen, allow_connect, local, remote,
             to_remote(*t)
             for t in remote_commands
         ],
-        listen_policy = LocalhostTcpPortsListenPolicy(
-            [to_listen_policy(*cmd) for cmd in local_commands] +
-            [to_local_port(port) for port in allow_listen]
-        ),
-        connect_policy = LocalhostTcpPortsConnectPolicy(
-            [_to_port(conn) for conn in allow_connect] +
-            [to_connect_policy(*cmd) for cmd in remote]
-        ),
+        listen_policy=listen_policy,
+        connect_policy=connect_policy,
     )
 
     if interactive:
@@ -226,6 +272,7 @@ def _to_port(arg):
     return arg
 
 
+# XXX FIXME use an @frozen attr, not tuple for returns
 def _specifier_to_tuples(cmd):
     """
     Parse a local or remote listen/connect specifiers.
