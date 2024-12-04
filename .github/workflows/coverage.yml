@@ -56,3 +56,10 @@ jobs:
           git diff origin/main..HEAD > p
           cuv report p
       continue-on-error: true
+
+    - name: Coverage summary
+      shell: bash
+      run: |
+          git diff origin/main..HEAD > p
+          cuv report p >> $GITHUB_STEP_SUMMARY
+      continue-on-error: true
