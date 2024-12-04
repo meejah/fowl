@@ -61,5 +61,7 @@ jobs:
       shell: bash
       run: |
           git diff origin/main..HEAD > p
+          echo "Coverage" > $GITHUB_STEP_SUMMARY
+          echo "--------" >> $GITHUB_STEP_SUMMARY
           cuv report p >> $GITHUB_STEP_SUMMARY
       continue-on-error: true
