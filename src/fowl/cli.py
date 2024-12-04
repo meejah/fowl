@@ -234,7 +234,7 @@ def fowl(ip_privacy, mailbox, debug, allow_listen, allow_connect, local, remote,
         )
     else:
         connect_policy = LocalhostTcpPortsConnectPolicy(
-            [to_connect_policy(*cmd) for cmd in local_commands] +
+            [to_connect_policy(*cmd) for cmd in remote_commands] +
             [to_local_port(port) for port in allow_connect]
         )
 
