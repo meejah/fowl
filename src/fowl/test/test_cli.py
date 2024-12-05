@@ -112,7 +112,7 @@ async def test_happy_path(reactor, request, mailbox):
     # listener) and connect on 2222 (where this test is listening)
 
     listener = ServerFactory(reactor)
-    await serverFromString(reactor, "tcp:2121").listen(listener)  # returns server_port
+    await serverFromString(reactor, "tcp:2121:interface=localhost").listen(listener)  # returns server_port
 
     client = clientFromString(reactor, "tcp:localhost:2222")
     client_proto = await client.connect(ClientFactory(reactor))
