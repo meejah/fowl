@@ -7,11 +7,15 @@ from twisted.internet.interfaces import IProcessProtocol
 from twisted.internet.protocol import ProcessProtocol
 from twisted.internet.defer import DeferredList
 from twisted.internet.endpoints import serverFromString, clientFromString
+from hypothesis.strategies import integers, one_of
+from hypothesis import given
+import click
 import sys
 import os
 import signal
 from fowl.observer import When, Framer
 from fowl.test.util import ServerFactory, ClientFactory
+from fowl.cli import _to_port
 
 
 @implementer(IProcessProtocol)
@@ -126,3 +130,18 @@ async def test_happy_path(reactor, request, mailbox):
     assert msg == data, "Incorrect data transfer"
 
     print("done")
+
+
+@given(integers(min_value=1, max_value=65535))
+def test_helper_to_port(port):
+    assert(_to_port(port) == port)
+    assert(_to_port(str(port)) == port)
+
+
+@given(one_of(integers(max_value=0), integers(min_value=65536)))
+def test_helper_to_port_invalid(port):
+    try:
+        _to_port(port)
+        assert False, "Should raise exception"
+    except click.UsageError:
+        pass
