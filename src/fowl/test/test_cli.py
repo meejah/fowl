@@ -173,3 +173,14 @@ def test_specifiers_two_ports_one_ip(port0, port1, ip):
     else:
         cmd = f"[{ip}]:{port0}:{port1}"
     assert _specifier_to_tuples(cmd) == (str(ip), port0, "localhost", port1)
+
+
+@given(
+    integers(min_value=1, max_value=65535),
+    integers(min_value=1, max_value=65535),
+    ip_addresses(v=4),  # do not support IPv6 yet
+    ip_addresses(v=4),  # do not support IPv6 yet
+)
+def test_specifiers_two_ports_two_ips(port0, port1, ip0, ip1):
+    cmd = f"{ip0}:{port0}:{ip1}:{port1}"
+    assert _specifier_to_tuples(cmd) == (str(ip0), port0, str(ip1), port1)
