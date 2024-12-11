@@ -7,7 +7,7 @@ on:
     branches: [ main ]
 
 jobs:
-  integration-tests:
+  coverage-unit-integration:
     strategy:
       matrix:
         os:
@@ -50,9 +50,23 @@ jobs:
       run: cuv graph
       continue-on-error: true
 
+    - name: PR Coverage Graph
+      shell: bash
+      run: git diff origin/main..HEAD | cuv diff -
+      continue-on-error: true
+
     - name: Coverage report
       shell: bash
       run: |
           git diff origin/main..HEAD > p
           cuv report p
+      continue-on-error: true
+
+    - name: Coverage summary
+      shell: bash
+      run: |
+          git diff origin/main..HEAD > p
+          echo "Coverage" > $GITHUB_STEP_SUMMARY
+          echo "--------" >> $GITHUB_STEP_SUMMARY
+          cuv report p >> $GITHUB_STEP_SUMMARY
       continue-on-error: true

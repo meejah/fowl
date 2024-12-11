@@ -12,6 +12,10 @@ Unreleased
 ----------
 
 * (Put new changelog items here)
+* Allow for non-local addresses: for both listening interfaces and
+  connect endpoints, non-local addresses may be specified in a manner
+  similar to "ssh -L" or "ssh -R" arguments. See #37:
+  https://github.com/meejah/fowl/issues/37
 * Fix up some fallout from refactoring
 * Enable "remote" command in --interactive
 * Proper error-message rendering
