@@ -7,7 +7,7 @@ on:
     branches: [ main ]
 
 jobs:
-  integration-tests:
+  coverage-unit-integration:
     strategy:
       matrix:
         os:
@@ -48,6 +48,11 @@ jobs:
     - name: Coverage graph
       shell: bash
       run: cuv graph
+      continue-on-error: true
+
+    - name: PR Coverage Graph
+      shell: bash
+      run: git diff main | cuv diff -
       continue-on-error: true
 
     - name: Coverage report
