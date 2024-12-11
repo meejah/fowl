@@ -52,7 +52,7 @@ jobs:
 
     - name: PR Coverage Graph
       shell: bash
-      run: git diff main | cuv diff -
+      run: git diff origin/main..HEAD | cuv diff -
       continue-on-error: true
 
     - name: Coverage report
