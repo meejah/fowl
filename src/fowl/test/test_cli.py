@@ -7,7 +7,7 @@ from twisted.internet.interfaces import IProcessProtocol
 from twisted.internet.protocol import ProcessProtocol
 from twisted.internet.defer import DeferredList
 from twisted.internet.endpoints import serverFromString, clientFromString
-from hypothesis.strategies import integers, one_of
+from hypothesis.strategies import integers, one_of, ip_addresses
 from hypothesis import given
 import click
 import sys
@@ -15,7 +15,7 @@ import os
 import signal
 from fowl.observer import When, Framer
 from fowl.test.util import ServerFactory, ClientFactory
-from fowl.cli import _to_port
+from fowl.cli import _to_port, _specifier_to_tuples
 
 
 @implementer(IProcessProtocol)
@@ -145,3 +145,31 @@ def test_helper_to_port_invalid(port):
         assert False, "Should raise exception"
     except click.UsageError:
         pass
+
+
+@given(integers(min_value=1, max_value=65535))
+def test_specifiers_one_port(port):
+    cmd = f"{port}"
+    assert _specifier_to_tuples(cmd) == ("localhost", port, "localhost", port)
+
+
+@given(
+    integers(min_value=1, max_value=65535),
+    integers(min_value=1, max_value=65535),
+)
+def test_specifiers_two_ports(port0, port1):
+    cmd = f"{port0}:{port1}"
+    assert _specifier_to_tuples(cmd) == ("localhost", port0, "localhost", port1)
+
+
+@given(
+    integers(min_value=1, max_value=65535),
+    integers(min_value=1, max_value=65535),
+    ip_addresses(v=4),  # do not support IPv6 yet
+)
+def test_specifiers_two_ports_one_ip(port0, port1, ip):
+    if ip.version == 4:
+        cmd = f"{ip}:{port0}:{port1}"
+    else:
+        cmd = f"[{ip}]:{port0}:{port1}"
+    assert _specifier_to_tuples(cmd) == (str(ip), port0, "localhost", port1)
