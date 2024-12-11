@@ -184,3 +184,19 @@ def test_specifiers_two_ports_one_ip(port0, port1, ip):
 def test_specifiers_two_ports_two_ips(port0, port1, ip0, ip1):
     cmd = f"{ip0}:{port0}:{ip1}:{port1}"
     assert _specifier_to_tuples(cmd) == (str(ip0), port0, str(ip1), port1)
+
+
+@given(
+    integers(min_value=1, max_value=65535),
+    integers(min_value=1, max_value=65535),
+    ip_addresses(v=6),
+    ip_addresses(v=6),
+)
+def test_specifiers_unsupported_v6(port0, port1, ip0, ip1):
+    cmd = f"{ip0}:{port0}:{ip1}:{port1}"
+    try:
+        assert _specifier_to_tuples(cmd) == (str(ip0), port0, str(ip1), port1)
+    except RuntimeError:
+        pass
+    except ValueError:
+        pass
