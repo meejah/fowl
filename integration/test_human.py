@@ -1,6 +1,7 @@
 import re
 import sys
 import json
+import socket
 from collections import defaultdict
 
 import pytest_twisted
@@ -138,6 +139,64 @@ async def test_human(reactor, request, wormhole):
 
     ep1 = clientFromString(reactor, "tcp:localhost:8000")
     print("  connecting to 8000")
+    proto = await ep1.connect(Factory.forProtocol(Hello))
+    print("  sending data, awaiting reply")
+
+    for _ in range(5):
+        await deferLater(reactor, 0.2, lambda: None)
+        if proto._data == b"Hello, world!":
+            break
+    print(f"  got {len(proto._data)} bytes reply")
+    assert proto._data == b"Hello, world!", "Did not see expected echo reply across wormhole"
+
+
+def _get_our_ip():
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.settimeout(0)
+    try:
+        # doesn't even have to be reachable
+        s.connect(('10.254.254.254', 1))
+        IP = s.getsockname()[0]
+    except Exception:
+        IP = '127.0.0.1'
+    finally:
+        s.close()
+    return IP
+
+
+@pytest_twisted.ensureDeferred
+async def test_non_localhost(reactor, request, wormhole):
+    """
+    """
+    # attempt to discover "our" IP address -- so we can attempt to
+    # connect to it, but not via localhost
+    ours = _get_our_ip()
+    f0 = await fowl(reactor, request, "--local", f"127.0.0.1:8111:{ours}:8222", mailbox=wormhole.url)
+    await f0.protocol.have_line("Connected.")
+    m = await f0.protocol.have_line(".* code: (.*).*")
+    code = m.group(1)
+
+    f1 = await fowl(reactor, request, "--allow-connect", f"{ours}:8222", code, mailbox=wormhole.url)
+
+    # both should say they're connected
+    await f0.protocol.have_line("Peer is connected.")
+    await f1.protocol.have_line("Peer is connected.")
+
+    # verifiers match
+    m = await f0.protocol.have_line("Verifier: (.*)")
+    f0_verify = m.group(1)
+
+    m = await f1.protocol.have_line("Verifier: (.*)")
+    f1_verify = m.group(1)
+    assert f1_verify == f0_verify, "Verifiers don't match"
+
+    port = serverFromString(reactor, f"tcp:8222:interface={ours}").listen(
+        Factory.forProtocol(Echo)
+    )
+    print(f"  listening on 8222:interface={ours}")
+
+    ep1 = clientFromString(reactor, "tcp:localhost:8111")
+    print("  connecting to 8111")
     proto = await ep1.connect(Factory.forProtocol(Hello))
     print("  sending data, awaiting reply")
 
