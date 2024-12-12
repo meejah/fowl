@@ -83,6 +83,9 @@ class ArbitraryInterfaceTcpPortsListenPolicy:
             iface = endpoint._interface
             port = endpoint._port
             for allowed_iface, allowed_port in self.listeners:
+                if is_localhost(allowed_iface) and is_localhost(endpoint._interface):
+                    if port == allowed_port:
+                        return True
                 if iface == allowed_iface:
                     if port == allowed_port:
                         return True

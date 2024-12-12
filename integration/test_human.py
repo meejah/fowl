@@ -112,12 +112,12 @@ class Hello(Protocol):
 async def test_human(reactor, request, wormhole):
     """
     """
-    f0 = await fowl(reactor, request, "--local", "8000:8008", mailbox=wormhole.url)
+    f0 = await fowl(reactor, request, "--local", "8000:8008", "--remote", "7000:7007", mailbox=wormhole.url)
     await f0.protocol.have_line("Connected.")
     m = await f0.protocol.have_line(".* code: (.*).*")
     code = m.group(1)
 
-    f1 = await fowl(reactor, request, "--allow-connect", "8008", code, mailbox=wormhole.url)
+    f1 = await fowl(reactor, request, "--allow-connect", "localhost:8008", "--allow-listen", "7000", code, mailbox=wormhole.url)
 
     # both should say they're connected
     await f0.protocol.have_line("Peer is connected.")
@@ -216,12 +216,12 @@ async def test_non_localhost_backwards(reactor, request, wormhole):
     Same as above test but the 'other way' around
     """
     ours = _get_our_ip()
-    f0 = await fowl(reactor, request, "--remote", f"127.0.0.1:8333:{ours}:8444", mailbox=wormhole.url)
+    f0 = await fowl(reactor, request, "--remote", f"127.0.0.1:8333:{ours}:8444", "--remote", f"{ours}:8555:8666", mailbox=wormhole.url)
     await f0.protocol.have_line("Connected.")
     m = await f0.protocol.have_line(".* code: (.*).*")
     code = m.group(1)
 
-    f1 = await fowl(reactor, request, "--allow-listen", f"8333", code, mailbox=wormhole.url)
+    f1 = await fowl(reactor, request, "--allow-listen", f"8333", "--allow-listen", f"{ours}:8555", code, mailbox=wormhole.url)
 
     # both should say they're connected
     await f0.protocol.have_line("Peer is connected.")

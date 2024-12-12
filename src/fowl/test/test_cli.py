@@ -7,7 +7,7 @@ from twisted.internet.interfaces import IProcessProtocol
 from twisted.internet.protocol import ProcessProtocol
 from twisted.internet.defer import DeferredList
 from twisted.internet.endpoints import serverFromString, clientFromString
-from hypothesis.strategies import integers, one_of, ip_addresses
+from hypothesis.strategies import integers, sampled_from, one_of, ip_addresses
 from hypothesis import given
 import click
 import sys
@@ -191,9 +191,13 @@ def test_specifiers_two_ports_two_ips(port0, port1, ip0, ip1):
     integers(min_value=1, max_value=65535),
     ip_addresses(v=6),
     ip_addresses(v=6),
+    sampled_from([True, False]),
 )
-def test_specifiers_unsupported_v6(port0, port1, ip0, ip1):
-    cmd = f"{ip0}:{port0}:{ip1}:{port1}"
+def test_specifiers_unsupported_v6(port0, port1, ip0, ip1, wrap):
+    if wrap:
+        cmd = f"[{ip0}]:{port0}:[{ip1}]:{port1}"
+    else:
+        cmd = f"{ip0}:{port0}:{ip1}:{port1}"
     try:
         assert _specifier_to_tuples(cmd) == (str(ip0), port0, str(ip1), port1)
     except RuntimeError:
