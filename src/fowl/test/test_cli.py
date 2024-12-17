@@ -7,11 +7,15 @@ from twisted.internet.interfaces import IProcessProtocol
 from twisted.internet.protocol import ProcessProtocol
 from twisted.internet.defer import DeferredList
 from twisted.internet.endpoints import serverFromString, clientFromString
+from hypothesis.strategies import integers, sampled_from, one_of, ip_addresses
+from hypothesis import given
+import click
 import sys
 import os
 import signal
 from fowl.observer import When, Framer
 from fowl.test.util import ServerFactory, ClientFactory
+from fowl.cli import _to_port, _specifier_to_tuples
 
 
 @implementer(IProcessProtocol)
@@ -112,7 +116,7 @@ async def test_happy_path(reactor, request, mailbox):
     # listener) and connect on 2222 (where this test is listening)
 
     listener = ServerFactory(reactor)
-    await serverFromString(reactor, "tcp:2121").listen(listener)  # returns server_port
+    await serverFromString(reactor, "tcp:2121:interface=localhost").listen(listener)  # returns server_port
 
     client = clientFromString(reactor, "tcp:localhost:2222")
     client_proto = await client.connect(ClientFactory(reactor))
@@ -126,3 +130,77 @@ async def test_happy_path(reactor, request, mailbox):
     assert msg == data, "Incorrect data transfer"
 
     print("done")
+
+
+@given(integers(min_value=1, max_value=65535))
+def test_helper_to_port(port):
+    assert(_to_port(port) == port)
+    assert(_to_port(str(port)) == port)
+
+
+@given(one_of(integers(max_value=0), integers(min_value=65536)))
+def test_helper_to_port_invalid(port):
+    try:
+        _to_port(port)
+        assert False, "Should raise exception"
+    except click.UsageError:
+        pass
+
+
+@given(integers(min_value=1, max_value=65535))
+def test_specifiers_one_port(port):
+    cmd = f"{port}"
+    assert _specifier_to_tuples(cmd) == ("localhost", port, "localhost", port)
+
+
+@given(
+    integers(min_value=1, max_value=65535),
+    integers(min_value=1, max_value=65535),
+)
+def test_specifiers_two_ports(port0, port1):
+    cmd = f"{port0}:{port1}"
+    assert _specifier_to_tuples(cmd) == ("localhost", port0, "localhost", port1)
+
+
+@given(
+    integers(min_value=1, max_value=65535),
+    integers(min_value=1, max_value=65535),
+    ip_addresses(v=4),  # do not support IPv6 yet
+)
+def test_specifiers_two_ports_one_ip(port0, port1, ip):
+    if ip.version == 4:
+        cmd = f"{ip}:{port0}:{port1}"
+    else:
+        cmd = f"[{ip}]:{port0}:{port1}"
+    assert _specifier_to_tuples(cmd) == (str(ip), port0, "localhost", port1)
+
+
+@given(
+    integers(min_value=1, max_value=65535),
+    integers(min_value=1, max_value=65535),
+    ip_addresses(v=4),  # do not support IPv6 yet
+    ip_addresses(v=4),  # do not support IPv6 yet
+)
+def test_specifiers_two_ports_two_ips(port0, port1, ip0, ip1):
+    cmd = f"{ip0}:{port0}:{ip1}:{port1}"
+    assert _specifier_to_tuples(cmd) == (str(ip0), port0, str(ip1), port1)
+
+
+@given(
+    integers(min_value=1, max_value=65535),
+    integers(min_value=1, max_value=65535),
+    ip_addresses(v=6),
+    ip_addresses(v=6),
+    sampled_from([True, False]),
+)
+def test_specifiers_unsupported_v6(port0, port1, ip0, ip1, wrap):
+    if wrap:
+        cmd = f"[{ip0}]:{port0}:[{ip1}]:{port1}"
+    else:
+        cmd = f"{ip0}:{port0}:{ip1}:{port1}"
+    try:
+        assert _specifier_to_tuples(cmd) == (str(ip0), port0, str(ip1), port1)
+    except RuntimeError:
+        pass
+    except ValueError:
+        pass
