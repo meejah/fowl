@@ -6,6 +6,7 @@ import binascii
 import textwrap
 import functools
 import struct
+from base64 import b16encode
 from typing import IO, Callable
 from functools import partial
 from itertools import count
@@ -55,6 +56,9 @@ from .messages import (
     WormholeClosed,
     WormholeError,
     GotMessageFromPeer,
+
+    Ping,
+    Pong,
 
     FowlOutputMessage,
     FowlCommandMessage,
@@ -170,6 +174,10 @@ async def frontend_accept_or_invite(reactor, config):
     def _(msg):
         print(f"ERROR: {msg.message}")
         print(msg)
+
+    @output_message.register(Pong)
+    def _(msg):
+        print(f"Pong: {b16encode(msg.ping_id)}: {msg.time_of_flight}s")
 
     @output_message.register(CodeAllocated)
     def _(msg):
@@ -1254,6 +1262,21 @@ class FowlWormhole:
             except Exception as e:
                 print("BAD", type(e))
 
+        @cmd.register(Ping)
+        async def _(msg):
+            if hasattr(self._wormhole, "_boss"):
+                if hasattr(self._wormhole._boss, "_D"):
+                    if self._wormhole._boss._D._manager is not None:
+                        def got_pong(round_trip):
+                            self._daemon._message_out(Pong(msg.ping_id, round_trip))
+                        self._wormhole._boss._D._manager.send_ping(msg.ping_id, got_pong)
+                    else:
+                        raise Exception("Cannot send ping: not in Dilation")
+                else:
+                    raise Exception("Cannot send ping: no Dilation manager")
+            else:
+                raise Exception("Cannot send ping: no boss")
+
         ensureDeferred(cmd(command)).addErrback(self._handle_error)
 
     # our own callbacks / notifications
@@ -1394,6 +1417,11 @@ def fowld_command_to_json(msg: FowlCommandMessage) -> dict:
         js["kind"] = "set-code"
         js["code"] = msg.code
 
+    @output_command.register(Ping)
+    def _(msg):
+        js["kind"] = "ping"
+        js["ping_id"] = msg.ping_id
+
     output_command(msg)
     return js
 
@@ -1443,7 +1471,8 @@ def parse_fowld_command(json_str: str) -> FowlCommandMessage:
         "local": parser(LocalListener, [("listen", None), ("connect", None)], []),
         "remote": parser(RemoteListener, [("listen", None), ("connect", None)], []),
         "grant-permission": parser(GrantPermission, [("listen", port_list), ("connect", port_list)], []),
-        "danger-disable-permission-check": parser(DangerDisablePermissionCheck, [], [])
+        "danger-disable-permission-check": parser(DangerDisablePermissionCheck, [], []),
+        "ping": parser(Ping, [("ping_id", None)], []),
     }
     return kind_to_message[kind](cmd)
 
@@ -1474,6 +1503,7 @@ def fowld_output_to_json(msg: FowlOutputMessage) -> dict:
         BytesIn: "bytes-in",
         BytesOut: "bytes-out",
         WormholeError: "error",
+        Pong: "pong",
     }[type(msg)]
     return js
 
@@ -1520,6 +1550,7 @@ def parse_fowld_output(json_str: str) -> FowlOutputMessage:
         "incoming-done": parser(IncomingDone, [("id", int)]),
         "bytes-in": parser(BytesIn, [("id", int), ("bytes", int)]),
         "bytes-out": parser(BytesOut, [("id", int), ("bytes", int)]),
+        "pong": parser(Pong, [("ping_id", bytes)], [("time_of_flight", float)]),
     }
     return kind_to_message[kind](cmd)
 

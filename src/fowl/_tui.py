@@ -3,6 +3,8 @@ import curses
 import textwrap
 import functools
 from typing import Optional
+from base64 import b16encode  # for ping/pong
+from os import urandom
 
 import humanize
 
@@ -34,8 +36,9 @@ from .messages import (
     OutgoingConnection,
     WormholeError,
     GrantPermission,
+    Ping,
+    Pong,
 )
-
 
 
 @attr.frozen
@@ -67,6 +70,10 @@ async def frontend_tui(reactor, config):
     @functools.singledispatch
     def output_message(msg):
         print(f"unhandled output: {msg}")
+
+    @output_message.register(Pong)
+    def _(msg):
+        print(f"\b\b\b  <- Pong({b16encode(msg.ping_id).decode('utf8')}): {msg.time_of_flight}s\n>>> ", end="")
 
     @output_message.register(WormholeError)
     def _(msg):
@@ -359,6 +366,18 @@ async def _cmd_allow_listen(reactor, wh, state, *args):
     )
 
 
+async def _cmd_ping(reactor, wh, state, *args):
+    """
+    Send a ping (through the Mailbox Server)
+    """
+    ping_id = None
+    if len(args) != 0:
+        raise Exception("No argument accepted to ping")
+    ping_id = urandom(4)
+    print(f"  -> Ping({b16encode(ping_id).decode('utf8')})\n>>> ", end="")
+    wh.command(Ping(ping_id))
+
+
 class CommandReader(LineReceiver):
     """
     Wait for incoming commands from the user
@@ -483,6 +502,9 @@ commands = {
 
     "allow": _cmd_allow,
     "allow-listen": _cmd_allow_listen,
+
+    "ping": _cmd_ping,
+    "p": _cmd_ping,
 
     "help": _cmd_help,
     "h":_cmd_help,

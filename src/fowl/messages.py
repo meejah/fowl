@@ -108,6 +108,11 @@ class RemoteListener(FowlCommandMessage):
 
 
 @frozen
+class Ping(FowlCommandMessage):
+    ping_id: int
+
+
+@frozen
 class Listening(FowlOutputMessage):
     """
     We have opened a local listener.
@@ -216,6 +221,12 @@ class BytesOut(FowlOutputMessage):
 @frozen
 class WormholeError(FowlOutputMessage):
     message: str
+
+
+@frozen
+class Pong(FowlOutputMessage):
+    ping_id: int
+    time_of_flight: float
 
 
 #XXX these aren't really used; why state-machine has them?
