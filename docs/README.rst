@@ -1,7 +1,7 @@
 Forward over Wormhole, Locally (fowl)
 =====================================
 
-.. image:: _static/logo.svg
+.. image:: logo.svg
     :width: 42%
     :align: right
     :alt: Fowl Logo: a chicken head with two blue ethernet cables
