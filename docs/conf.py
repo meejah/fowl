@@ -27,15 +27,8 @@ html_theme = 'furo'
 html_logo = 'logo.svg'
 html_static_path = ['.']
 html_theme_options = {
-    'logo': 'logo.svg',
-    'github_button': 'false',
-    'github_user': 'meejah',
-    'github_repo': 'fowl',
-    'travis_button': 'false',
-    'coveralls_button': 'false',
-    'logo_name': 'true',
-    'description': 'Forward any stream over peer-to-peer Wormhole connection',
-    'logo_text_align': 'center',
-    'note_bg': '#ccddcc',
-    'note_border': '#839496',
+    "top_of_page_buttons": ["view", "edit"],
+    "source_repository": "https://github.com/meejah/fowl/",
+    "source_branch": "main",
+    "source_directory": "docs/",
 }
