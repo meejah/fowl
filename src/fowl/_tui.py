@@ -82,7 +82,7 @@ async def frontend_tui(reactor, config):
     @output_message.register(Listening)
     def _(msg):
         print(f"Listening: {msg.listen}")
-        replace_state(attr.evolve(state[0], listeners=state[0].listeners + [msg.listen]))
+        replace_state(attr.evolve(state[0], listeners=state[0].listeners + [msg]))
 
     @output_message.register(IncomingConnection)
     def _(msg):
@@ -378,6 +378,25 @@ async def _cmd_ping(reactor, wh, state, *args):
     wh.command(Ping(ping_id))
 
 
+async def _cmd_status(reactor, wh, state, *args):
+    print(f"status")
+    peer = "disconnected"
+    if state.connected: peer = "yes"
+    if state.verifier:
+        peer += f" verifier={state.verifier}"
+    print(f"  peer: {peer}")
+    print(f"  code: {state.code}")
+    if state.listeners:
+        print(f"  listeners:")
+        for listener in state.listeners:
+            print(f"    {listener.listen} -> {listener.connect}")
+    if state.connections:
+        print(f"  connections:")
+        for conn_id, conn in state.connections.items():
+            print(f"    {conn_id}: {conn.i} bytes in / {conn.o} bytes out")
+    print(f">>> ", end="", flush=True)
+
+
 class CommandReader(LineReceiver):
     """
     Wait for incoming commands from the user
@@ -505,6 +524,10 @@ commands = {
 
     "ping": _cmd_ping,
     "p": _cmd_ping,
+
+    "status": _cmd_status,
+    "st": _cmd_status,
+    "s": _cmd_status,
 
     "help": _cmd_help,
     "h":_cmd_help,
