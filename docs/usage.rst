@@ -1,17 +1,17 @@
 ``fowld`` versus ``fowl``
-====================
+=========================
 
 This project actually ships two CLI tools: ``fowld`` and ``fowl``.
 
 One is intended for automated, programmatic use (``fowld``) and the other is intended for human use (``fowl``).
 
-Most users will only ever use ``fowl``.
+Most users should use ``fowl``.
 
-Programs that integrate with (or otherwise want stable, machine-parsable output) will use ``fowld``.
+Programs that integrate with (or otherwise want stable, machine-parsable output) should use ``fowld``.
 Under the hood, ``fowl`` commands actually use ``fowld`` (via a Python API).
-All functionality should be available to users of either program.
+All functionality is available to users of either program.
 
-If you want very similar operation to ``fowld``, but without having to remember JSON syntax, use ``fowl tui``.
+If you want very similar operation to ``fowld`` but do not like typing JSON, use ``fowl tui``.
 
 
 High-Level Overview
@@ -20,7 +20,9 @@ High-Level Overview
 What we aim to accomplish here is to easily set up the forwarding of TCP or Unix streams over a secure, identity-less and durable connection.
 
 These streams may be anything at all -- but the core use-case is aimed at eliminating the need to run public-IP services.
-Our canonical "hello world" example is a simple chat system: running ``nc`` (aka "netcat") on one side, and ``telnet`` on the other (see :ref:`hello-world-chat` for a fully-worked example).
+Our canonical "hello world" example is a simple chat system:
+- running ``nc`` (aka "netcat") on one side;
+- and ``telnet`` on the other (see :ref:`hello-world-chat` for a fully-worked example).
 
 Although ``nc`` and ``telnet`` provide no security, using them here we get an end-to-end-encrypted chat session.
 We also get "durability" (if one side loses conenction or changes to a different network, we will eventually resume uninterrupted).
