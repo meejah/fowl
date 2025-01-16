@@ -15,7 +15,7 @@ Get TCP streams from one computer to another, safely.
 -------------
 
 We sometimes pair-program but don't like the idea of sending keystrokes over a third-party server.
-We also like avoiding the extra work of "set up a server on a public IP address".
+That could be solved by self-hosting, but we also like avoiding the extra work of "set up a server on a public IP address".
 
 For more context, see my blog posts: `Forwarding Streams over Magic Wormhole <https://meejah.ca/blog/fow-wormhole-forward>`_ and `Wizard Gardens vision <https://meejah.ca/blog/wizard-gardens-vision>`_.
 
