@@ -22,6 +22,8 @@ test:
 #release: pin
 release:
 	python update-version.py
+	bash -c 'temp="$(cat snap/snapcraft.yaml  | grep -v version | sed "3iversion: \"$(git tag --sort -v:refname | head -1)\"")" ; echo "$temp" > snap/snapcraft.yaml'
+	hatch version `git tag --sort -v:refname | head -1`
 	hatch version `git tag --sort -v:refname | head -1`
 	git add -u
 	git commit -m "update version"
