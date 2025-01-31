@@ -37,7 +37,6 @@ dependencies = [
     "humanize",
     "twisted",
     "magic-wormhole[dilate]",
-    "ipaddress",
 ]
 
 [project.optional-dependencies]
