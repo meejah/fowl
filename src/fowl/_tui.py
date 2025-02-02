@@ -1,14 +1,13 @@
 
 import curses
 import textwrap
-import binascii
 import functools
-from typing import IO, Callable, Optional
+from typing import Optional
 
 import humanize
 
 from twisted.internet.task import deferLater
-from twisted.internet.defer import ensureDeferred, DeferredList, race, Deferred
+from twisted.internet.defer import ensureDeferred, race
 from twisted.internet.stdio import StandardIO
 from twisted.protocols.basic import LineReceiver
 
@@ -121,7 +120,7 @@ async def frontend_tui(reactor, config):
     @output_message.register(Welcome)
     def _(msg):
         print("\b\b\b\b", end="")
-        print(f"Connected.")
+        print("Connected.")
         if "motd" in msg.welcome:
             print(textwrap.fill(msg.welcome["motd"].strip(), 80, initial_indent="    ", subsequent_indent="    "))
         print(">>> ", end="", flush=True)
@@ -180,7 +179,7 @@ async def frontend_tui(reactor, config):
                 cmd_name = cmd[0]
                 try:
                     cmd_fn = commands[cmd_name]
-                except KeyError as e:
+                except KeyError:
                     if cmd_name.strip().lower() == "quit" or cmd_name.strip().lower() == "q":
                         break
                     print(f'No such command "{cmd_name}"')
@@ -198,7 +197,7 @@ async def frontend_tui(reactor, config):
     print("\nClosing mailbox...", end="", flush=True)
     try:
         await w.close()
-    except LonelyError as e:
+    except LonelyError:
         pass
     print("done.")
 

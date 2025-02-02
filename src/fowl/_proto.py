@@ -6,30 +6,59 @@ import binascii
 import textwrap
 import functools
 import struct
-from typing import IO, Callable, Optional
+from typing import IO, Callable
 from functools import partial
 from itertools import count
 
+import click
 import humanize
-from attrs import frozen, define, field, asdict, Factory as AttrFactory
+from attrs import frozen, define, asdict, Factory as AttrFactory
 
 import msgpack
 import automat
 from twisted.internet import reactor
-from twisted.internet.defer import returnValue, Deferred, succeed, ensureDeferred, maybeDeferred, CancelledError, DeferredList, race
+from twisted.internet.defer import Deferred, ensureDeferred, DeferredList, race
 from twisted.internet.task import deferLater
 from twisted.internet.endpoints import serverFromString, clientFromString
 from twisted.internet.protocol import Factory, Protocol
 from twisted.internet.error import ConnectionDone
 from twisted.internet.stdio import StandardIO
 from twisted.protocols.basic import LineReceiver
-from twisted.python.failure import Failure
 from zope.interface import directlyProvides
 from wormhole.cli.public_relay import RENDEZVOUS_RELAY as PUBLIC_MAILBOX_URL
 import wormhole.errors as wormhole_errors
 
 from .observer import When
-from .messages import *
+from .messages import (
+    SetCode,
+    AllocateCode,
+    GrantPermission,
+    DangerDisablePermissionCheck,
+    RemoteListener,
+    LocalListener,
+
+    Welcome,
+    Listening,
+    RemoteListeningSucceeded,
+    RemoteListeningFailed,
+    RemoteConnectFailed,
+    PeerConnected,
+    CodeAllocated,
+    BytesOut,
+    BytesIn,
+    IncomingConnection,
+    IncomingDone,
+    IncomingLost,
+    OutgoingConnection,
+    OutgoingDone,
+    OutgoingLost,
+    WormholeClosed,
+    WormholeError,
+    GotMessageFromPeer,
+
+    FowlOutputMessage,
+    FowlCommandMessage,
+)
 from .policy import IClientListenPolicy, IClientConnectPolicy, AnyConnectPolicy, AnyListenPolicy
 
 
@@ -238,7 +267,7 @@ async def frontend_accept_or_invite(reactor, config):
 
     @output_message.register(Welcome)
     def _(msg):
-        print(f"Connected.")
+        print("Connected.")
         if "motd" in msg.welcome:
             print(textwrap.fill(msg.welcome["motd"].strip(), 80, initial_indent="    ", subsequent_indent="    "))
 
@@ -324,7 +353,7 @@ async def forward(reactor, config):
         await _forward_loop(reactor, config, w)
         await w.close()  # waits for ack
 
-    except Exception as e:
+    except Exception:
         # if we catch an error, we should close and then return the original
         # error (the close might give us an error, but it isn't as important
         # as the original one)
@@ -1094,7 +1123,7 @@ class FowlWormhole:
     async def stop(self):
         for port in self._listening_ports:
             # note to self port.stopListening and port.loseConnection are THE SAME
-            await port.stopListening()
+            port.stopListening()
         if self.control_proto is not None:
             self.control_proto.transport.loseConnection()
             await self.control_proto.when_done()
@@ -1285,7 +1314,7 @@ class FowlWormhole:
         in_factory.connect_ep = self.connect_ep
         in_factory.message_out = self._daemon._message_out
         listen_port = await self.listen_ep.listen(in_factory)
-###        self._ports.append(listen_port)
+        self._listening_ports.append(listen_port)
 
         await self._wormhole.get_unverified_key()
         verifier_bytes = await self._wormhole.get_verifier()  # might WrongPasswordError
@@ -1303,8 +1332,7 @@ class FowlWormhole:
 #  - can do I/O
 #  - proxies I/O and async'ly things
 
-
-from .daemon import FowlDaemon
+from .daemon import FowlDaemon  # noqa: E402
 
 
 def maybe_int(i):
@@ -1535,7 +1563,7 @@ async def _forward_loop(reactor, config, w):
 
     try:
         await fowl.when_done()
-    except Exception as e:
+    except Exception:
         # XXXX okay, this fixes it .. but how to hook in cleanup etc "properly"
         # (probably via state-machine etc)
         await fowl.stop()

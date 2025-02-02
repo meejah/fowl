@@ -7,6 +7,13 @@ filterwarnings = [
     "ignore"
 ]
 
+[tool.ruff]
+line-length = 100
+[tool.ruff.lint]
+ignore = [
+    "E712"  # at least in policy tests, I want to ensure API returns booleans
+]
+
 [project]
 name = "fowl"
 dynamic = ["version"]
@@ -47,6 +54,7 @@ test = [
     "magic-wormhole-mailbox-server",
     "cuvner",
     "hypothesis",
+    "ruff",
 ]
 dev = [
     "twine",
@@ -57,7 +65,7 @@ dev = [
     "hatch",
     "readme-renderer",
     "cuvner",
-]
+ ]
 
 [project.scripts]
 fowl = "fowl.cli:fowl"

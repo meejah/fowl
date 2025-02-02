@@ -3,7 +3,6 @@ import ipaddress
 
 from attr import frozen
 from zope.interface import Interface, implementer
-from twisted.internet.interfaces import IStreamServerEndpoint
 from twisted.internet.endpoints import (
     TCP4ServerEndpoint,
     TCP6ServerEndpoint,
@@ -74,6 +73,26 @@ class LocalhostTcpPortsListenPolicy(LocalhostAnyPortsListenPolicy):
 
 
 @implementer(IClientListenPolicy)
+@frozen
+class ArbitraryInterfaceTcpPortsListenPolicy:
+    # interface, port pairs we accept
+    listeners: list[tuple]
+
+    def can_listen(self, endpoint) -> bool:
+        if isinstance(endpoint, (TCP6ServerEndpoint, TCP4ServerEndpoint)):
+            iface = endpoint._interface
+            port = endpoint._port
+            for allowed_iface, allowed_port in self.listeners:
+                if is_localhost(allowed_iface) and is_localhost(endpoint._interface):
+                    if port == allowed_port:
+                        return True
+                if iface == allowed_iface:
+                    if port == allowed_port:
+                        return True
+        return False
+
+
+@implementer(IClientListenPolicy)
 class AnyListenPolicy:
     """
     Accepts any listener at all. DANGER.
@@ -91,6 +110,22 @@ class LocalhostAnyPortsConnectPolicy:
     def can_connect(self, endpoint) -> bool:
         if isinstance(endpoint, (TCP6ClientEndpoint, TCP4ClientEndpoint)):
             return is_localhost(endpoint._host)
+        return False
+
+
+@implementer(IClientListenPolicy)
+@frozen
+class ArbitraryAddressTcpConnectPolicy:
+    # interface, port pairs we accept
+    connecters: list[tuple]
+
+    def can_connect(self, endpoint) -> bool:
+        if isinstance(endpoint, (TCP6ClientEndpoint, TCP4ClientEndpoint)):
+            addr, port = endpoint._host, endpoint._port
+            for allowed_addr, allowed_port in self.connecters:
+                if addr == allowed_addr:
+                    if port == allowed_port:
+                        return True
         return False
 
 

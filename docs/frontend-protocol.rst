@@ -125,9 +125,18 @@ The far-side ``fowld`` will issue a ``kind: listening`` message (on its side) wh
 Input: ``kind: grant-permission``
 ---------------------------------
 
-This asks ``fowld`` to append more ports to those allowed for listening and connecting.
-By default, no ports are allowed.
+Each peer needs to have the ability to control what sorts of listeners are opened, and what sort of client-style connections are opened from its network interfaces.
+
+The wire protocol spoken between Peers has the opportunity to approve or deny every listener, and every connection.
+These are known as the "permissions" hooks in the state-machine.
+
+When `fowld` starts, with no other option, no listeners and no connections will be allowed.
+
+Messages can be sent to expand what is allowed.
 Only "``localhost``" (or ``::1``) interfaces (or destinations) are allowed.
+
+There are two kinds of policy: "listen" policy and "connect" policy.
+These apply to the two kinds of things we may care about: a new listener (governed by the "listen" policy) or a new forwarded connection that needs to open a new client-stype connection (governed by the "connect" policy).
 
 .. code-block:: json
 

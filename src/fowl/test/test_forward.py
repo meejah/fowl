@@ -4,22 +4,20 @@ import string
 import json
 from io import StringIO
 
-from click.testing import CliRunner
 from attr import define
 
 import pytest
 import pytest_twisted
 
 from twisted.internet.task import deferLater
-from twisted.internet.defer import ensureDeferred, Deferred, CancelledError
-from twisted.internet.protocol import ProcessProtocol, Protocol, Factory
+from twisted.internet.defer import ensureDeferred, CancelledError
+from twisted.internet.protocol import Protocol
 from twisted.internet.endpoints import serverFromString, clientFromString
 
 
-from fowl.cli import fowl
-from fowl._proto import _Config, wormhole_from_config, forward
-from fowl.observer import When, Next, Accumulate
-from fowl.test.util import ServerFactory, Server, Client, ClientFactory
+from fowl._proto import _Config, forward
+from fowl.observer import Accumulate
+from fowl.test.util import ServerFactory, ClientFactory
 
 
 # XXX ultimately we might want a "TestingWormhole" object or something

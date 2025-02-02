@@ -1,15 +1,10 @@
-import pytest
-import ipaddress
 import json
-from io import StringIO
 
-import attrs
-from hypothesis.strategies import ip_addresses, one_of, integers, lists, sampled_from, just, builds, text
-from hypothesis import given, assume, reproduce_failure, settings
+from hypothesis.strategies import one_of, integers, lists, sampled_from, builds, text
+from hypothesis import given
 
-from twisted.internet.endpoints import TCP4ServerEndpoint, TCP6ServerEndpoint
 
-from fowl._proto import parse_fowld_command, _Config, fowld_command_to_json
+from fowl._proto import parse_fowld_command, fowld_command_to_json
 
 
 def command_messages():
