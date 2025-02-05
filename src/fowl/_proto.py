@@ -1,5 +1,6 @@
 from __future__ import print_function
 
+import os
 import sys
 import json
 import binascii
@@ -197,7 +198,7 @@ async def frontend_accept_or_invite(reactor, config):
 
     @output_message.register(RemoteListeningSucceeded)
     def _(msg):
-        print(f"Peer is listening: {msg.listen}")
+        print(f"Peer is listening: {msg.listen} (-> {msg.connect})")
 
     @output_message.register(RemoteListeningFailed)
     def _(msg):
@@ -205,7 +206,7 @@ async def frontend_accept_or_invite(reactor, config):
 
     @output_message.register(IncomingConnection)
     def _(msg):
-        connections[msg.id] = Connection(msg.endpoint, 0, 0)
+        connections[msg.id] = Connection(msg.endpoint, 0, 0, msg.listener_id)
 
     @output_message.register(RemoteConnectFailed)
     def _(msg):
@@ -601,12 +602,13 @@ class SubchannelForwarder(Protocol):
         self.factory.other_proto.remote = self
         msg = msgpack.packb({
             "local-destination": self.factory.endpoint_str,
+            "listener-id": self.factory.listener_id,
         })
         prefix = struct.pack("!H", len(msg))
         self.transport.write(prefix + msg)
 
         self.factory.message_out(
-            OutgoingConnection(self.factory.conn_id, self.factory.endpoint_str)
+            OutgoingConnection(self.factory.conn_id, self.factory.endpoint_str, self.factory.listener_id)
         )
 
         # MUST wait for reply first -- queueing all data until
@@ -738,6 +740,7 @@ class LocalServer(Protocol):
         factory = Factory.forProtocol(SubchannelForwarder)
         factory.other_proto = self
         factory.conn_id = self._conn_id
+        factory.listener_id = self.factory.listener_id
         factory.endpoint_str = self.factory.endpoint_str
         factory.config = self.factory.config
         factory.message_out = self.factory.message_out
@@ -972,7 +975,7 @@ class Incoming(Protocol):
         factory.message_out = self.factory.message_out
 
         self.factory.message_out(
-            IncomingConnection(self._conn_id, data["local-destination"])
+            IncomingConnection(self._conn_id, data["local-destination"], data.get("listener-id", None))
         )
 
         # note: do this policy check after the IncomingConnection
@@ -1540,12 +1543,12 @@ def parse_fowld_output(json_str: str) -> FowlOutputMessage:
         "peer-connected": parser(PeerConnected, [("verifier", binascii.unhexlify), ("versions", None)]),
         "listening": parser(Listening, [("listen", None), ("connect", None)]),
         "remote-listening-failed": parser(RemoteListeningFailed, [("listen", None), ("reason", None)]),
-        "remote-listening-succeeded": parser(RemoteListeningSucceeded, [("listen", None)]),
+        "remote-listening-succeeded": parser(RemoteListeningSucceeded, [("listen", None), ("connect", None), ("listener-id", None)]),
         "remote-connect-failed": parser(RemoteConnectFailed, [("id", int), ("reason", None)]),
         "outgoing-connection": parser(OutgoingConnection, [("id", int), ("endpoint", None)]),
 ##        "outgoing-lost": parser(),
         "outgoing-done": parser(OutgoingDone, [("id", int)]),
-        "incoming-connection": parser(IncomingConnection, [("id", int), ("endpoint", None)]),
+        "incoming-connection": parser(IncomingConnection, [("id", int), ("endpoint", None), ("listener-id", None)]),
         "incoming-lost": parser(IncomingLost, [("id", int), ("reason", None)]),
         "incoming-done": parser(IncomingDone, [("id", int)]),
         "bytes-in": parser(BytesIn, [("id", int), ("bytes", int)]),
@@ -1615,14 +1618,16 @@ async def _local_to_remote_forward(reactor, config, connect_ep, on_listen, on_me
         if not config.listen_policy.can_listen(ep):
             raise ValueError('Policy doesn\'t allow listening on "{}"'.format(ep._port))
 
+    listener_id = b16encode(os.urandom(3)).decode("ascii")
     factory = Factory.forProtocol(LocalServer)
     factory.config = config
+    factory.listener_id = listener_id
     factory.endpoint_str = cmd.connect
     factory.connect_ep = connect_ep
     factory.message_out = on_message
     port = await ep.listen(factory)
     on_listen(port)
-    on_message(Listening(cmd.listen, cmd.connect))
+    on_message(Listening(listener_id, cmd.listen, cmd.connect))
 
 
 async def _remote_to_local_forward(control_proto, cmd):
@@ -1679,7 +1684,7 @@ class Commands(Protocol):
             del self._local_requests[rid]
 
             if msg["listening"]:
-                d.callback(RemoteListeningSucceeded(original_cmd.listen))
+                d.callback(RemoteListeningSucceeded(msg.get("listener-id"), original_cmd.listen, original_cmd.connect))
             else:
                 d.callback(RemoteListeningFailed(original_cmd.listen, msg.get("reason", "Missing reason")))
 
@@ -1696,20 +1701,24 @@ class Commands(Protocol):
                     self.transport.loseConnection()
                     return
 
+            #XXX FIXME why did i have to add 'listener_id' code in two places??
+            listener_id = b16encode(os.urandom(3)).decode("ascii")
             factory = Factory.forProtocol(LocalServer)
             factory.config = self.factory.config
             factory.message_out = self.factory.message_out
             factory.connect_ep = self.factory.connect_ep
             factory.endpoint_str = msg["connect-endpoint"]
+            factory.listener_id = listener_id
 
             # XXX this can fail (synchronously) if address in use (e.g.)
             d = listen_ep.listen(factory)
             self._remote_requests[rid] = d
 
             def got_port(port):
-                self._reply_positive(rid)
+                self._reply_positive(rid, listener_id)
                 self.factory.message_out(
                     Listening(
+                        listener_id,
                         msg["listen-endpoint"],
                         msg["connect-endpoint"],
                     )
@@ -1737,11 +1746,11 @@ class Commands(Protocol):
                 )
             )
 
-    def _reply_positive(self, rid):
+    def _reply_positive(self, rid, listener_id):
         """
         Send a positive reply to a remote request
         """
-        return self._reply_generic(rid, listening=True)
+        return self._reply_generic(rid, listening=True, listener_id=listener_id)
 
     def _reply_negative(self, rid, reason=None):
         """
@@ -1749,7 +1758,7 @@ class Commands(Protocol):
         """
         return self._reply_generic(rid, listening=False, reason=reason)
 
-    def _reply_generic(self, rid, listening, reason=None):
+    def _reply_generic(self, rid, listening, reason=None, listener_id=None):
         """
         Send a positive or negative reply to a remote request
         """
@@ -1757,6 +1766,7 @@ class Commands(Protocol):
             content = {
                 "kind": "listener-response",
                 "reply-id": rid,
+                "listener-id": listener_id,
                 "listening": bool(listening),
             }
             if reason is not None and not listening:

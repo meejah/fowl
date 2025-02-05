@@ -29,11 +29,14 @@ from .messages import (
     LocalListener,
     RemoteListener,
     Listening,
+    RemoteListeningSucceeded,
     BytesIn,
     BytesOut,
     IncomingConnection,
+    IncomingDone,
     IncomingLost,
     OutgoingConnection,
+    OutgoingDone,
     WormholeError,
     GrantPermission,
     Ping,
@@ -45,6 +48,7 @@ from .messages import (
 class Connection:
     i: int = 0
     o: int = 0
+    listener_id: str = None  # Maybe<str>; Nothing if incoming connection
 
 
 @attr.frozen
@@ -53,6 +57,7 @@ class State:
     connected: bool = False
     verifier: Optional[str] = None
     listeners: list = attr.Factory(list)
+    remote_listeners: list = attr.Factory(list)
     connections: dict[int, Connection] = attr.Factory(dict)
 
     @property
@@ -84,10 +89,22 @@ async def frontend_tui(reactor, config):
         print(f"Listening: {msg.listen}")
         replace_state(attr.evolve(state[0], listeners=state[0].listeners + [msg]))
 
+    @output_message.register(RemoteListeningSucceeded)
+    def _(msg):
+        print(f"\b\b\b\bRemote side is listening: {msg.listen}")
+        replace_state(attr.evolve(state[0], remote_listeners=state[0].remote_listeners + [msg]))
+
     @output_message.register(IncomingConnection)
     def _(msg):
         conn = state[0].connections
-        conn[msg.id] = Connection(0, 0)
+        conn[msg.id] = Connection(0, 0, msg.listener_id)
+        replace_state(attr.evolve(state[0], connections=conn))
+
+    @output_message.register(IncomingDone)
+    def _(msg):
+        print(f"\b\b\b\bClosed: {msg.id}")
+        conn = state[0].connections
+        del conn[msg.id]
         replace_state(attr.evolve(state[0], connections=conn))
 
     @output_message.register(IncomingLost)
@@ -99,7 +116,14 @@ async def frontend_tui(reactor, config):
     @output_message.register(OutgoingConnection)
     def _(msg):
         conn = state[0].connections
-        conn[msg.id] = Connection(0, 0)
+        conn[msg.id] = Connection(0, 0, msg.listener_id)
+        replace_state(attr.evolve(state[0], connections=conn))
+
+    @output_message.register(OutgoingDone)
+    def _(msg):
+        conn = state[0].connections
+        print(f"\b\b\b\bClosed: {msg.id} from {conn[msg.id].listener_id}")
+        del conn[msg.id]
         replace_state(attr.evolve(state[0], connections=conn))
 
     @output_message.register(BytesIn)
@@ -389,11 +413,18 @@ async def _cmd_status(reactor, wh, state, *args):
     if state.listeners:
         print(f"  listeners:")
         for listener in state.listeners:
-            print(f"    {listener.listen} -> {listener.connect}")
+            print(f"    {listener.listener_id.lower()}: {listener.listen} -> {listener.connect}")
+    if state.remote_listeners:
+        print(f"  remote listeners:")
+        for listener in state.remote_listeners:
+            print(f"    {listener.listener_id}: {listener.connect} <- {listener.listen}")
     if state.connections:
         print(f"  connections:")
         for conn_id, conn in state.connections.items():
-            print(f"    {conn_id}: {conn.i} bytes in / {conn.o} bytes out")
+            listener = ""
+            if conn.listener_id is not None:
+                listener = f"  (via {conn.listener_id})"
+            print(f"    {conn_id}: {conn.i} bytes in / {conn.o} bytes out{listener}")
     print(f">>> ", end="", flush=True)
 
 
