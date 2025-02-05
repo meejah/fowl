@@ -403,8 +403,9 @@ async def _cmd_status(reactor, wh, state, *args):
     if state.connected: peer = "yes"
     if state.verifier:
         peer += f" verifier={state.verifier}"
+    else:
+        print(f"  code: {state.code}")
     print(f"  peer: {peer}")
-    print(f"  code: {state.code}")
     if state.listeners:
         print(f"  listeners:")
         for listener in state.listeners:
