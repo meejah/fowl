@@ -130,13 +130,13 @@ async def frontend_tui(reactor, config):
     @output_message.register(BytesIn)
     def _(msg):
         conn = state[0].connections
-        conn[msg.id] = evolve(conn[msg.id], i=conn[msg.id].i + msg.bytes)
+        conn[msg.id] = attr.evolve(conn[msg.id], i=conn[msg.id].i + msg.bytes)
         replace_state(attr.evolve(state[0], connections=conn))
 
     @output_message.register(BytesOut)
     def _(msg):
         conn = state[0].connections
-        conn[msg.id] = evolve(conn[msg.id], o=conn[msg.id].o + msg.bytes)
+        conn[msg.id] = attr.evolve(conn[msg.id], o=conn[msg.id].o + msg.bytes)
         replace_state(attr.evolve(state[0], connections=conn))
 
     @output_message.register(WormholeClosed)
@@ -398,30 +398,31 @@ async def _cmd_ping(reactor, wh, state, *args):
 
 
 async def _cmd_status(reactor, wh, state, *args):
-    print(f"status")
+    print("status")
     peer = "disconnected"
-    if state.connected: peer = "yes"
+    if state.connected:
+        peer = "yes"
     if state.verifier:
         peer += f" verifier={state.verifier}"
     else:
         print(f"  code: {state.code}")
     print(f"  peer: {peer}")
     if state.listeners:
-        print(f"  listeners:")
+        print("  listeners:")
         for listener in state.listeners:
             print(f"    {listener.listener_id.lower()}: {listener.listen} -> {listener.connect}")
     if state.remote_listeners:
-        print(f"  remote listeners:")
+        print("  remote listeners:")
         for listener in state.remote_listeners:
             print(f"    {listener.listener_id}: {listener.connect} <- {listener.listen}")
     if state.connections:
-        print(f"  connections:")
+        print("  connections:")
         for conn_id, conn in state.connections.items():
             listener = ""
             if conn.listener_id is not None:
                 listener = f"  (via {conn.listener_id})"
             print(f"    {conn_id}: {conn.i} bytes in / {conn.o} bytes out{listener}")
-    print(f">>> ", end="", flush=True)
+    print(">>> ", end="", flush=True)
 
 
 class CommandReader(LineReceiver):
