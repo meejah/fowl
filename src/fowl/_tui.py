@@ -129,19 +129,13 @@ async def frontend_tui(reactor, config):
     @output_message.register(BytesIn)
     def _(msg):
         conn = state[0].connections
-        conn[msg.id] = Connection(
-            conn[msg.id].i + msg.bytes,
-            conn[msg.id].o,
-        )
+        conn[msg.id] = evolve(conn[msg.id], i=conn[msg.id].i + msg.bytes)
         replace_state(attr.evolve(state[0], connections=conn))
 
     @output_message.register(BytesOut)
     def _(msg):
         conn = state[0].connections
-        conn[msg.id] = Connection(
-            conn[msg.id].i,
-            conn[msg.id].o + msg.bytes,
-        )
+        conn[msg.id] = evolve(conn[msg.id], o=conn[msg.id].o + msg.bytes)
         replace_state(attr.evolve(state[0], connections=conn))
 
     @output_message.register(WormholeClosed)

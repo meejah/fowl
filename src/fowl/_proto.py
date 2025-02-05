@@ -939,7 +939,7 @@ class Incoming(Protocol):
         pass#self._negative("XXXAgainst local policy")
 
     def _negative(self, reason):
-        print("negative", reason)
+        ##print("negative", self._local_connection, reason)
         msg = msgpack.packb({
             "connected": False,
             "reason": reason,
