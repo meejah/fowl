@@ -957,7 +957,6 @@ class Incoming(Protocol):
         pass#self._negative("XXXAgainst local policy")
 
     def _negative(self, reason):
-        ##print("negative", self._local_connection, reason)
         msg = msgpack.packb({
             "connected": False,
             "reason": reason,
@@ -1000,8 +999,6 @@ class Incoming(Protocol):
 
     @m.output()
     def local_disconnect(self):
-        # XXX error -- do we send an error message back first?
-        # (like "against local policy")
         self._negative("Against local policy")
         self.transport.loseConnection()
 
