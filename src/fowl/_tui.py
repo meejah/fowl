@@ -74,7 +74,7 @@ async def frontend_tui(reactor, config):
 
     @functools.singledispatch
     def output_message(msg):
-        print(f"unhandled output: {msg}")
+        print(f"\b\b\b\bunhandled output: {msg}")
 
     @output_message.register(Pong)
     def _(msg):
@@ -82,11 +82,11 @@ async def frontend_tui(reactor, config):
 
     @output_message.register(WormholeError)
     def _(msg):
-        print(f"ERROR: {msg.message}")
+        print(f"\b\b\b\bERROR: {msg.message}")
 
     @output_message.register(Listening)
     def _(msg):
-        print(f"Listening: {msg.listen}")
+        print(f"\b\b\b\bListening: {msg.listen}")
         replace_state(attr.evolve(state[0], listeners=state[0].listeners + [msg]))
 
     @output_message.register(RemoteListeningSucceeded)
@@ -109,6 +109,7 @@ async def frontend_tui(reactor, config):
 
     @output_message.register(IncomingLost)
     def _(msg):
+        print(f"\b\b\b\bLost: {msg.id}: {msg.reason}")
         conn = state[0].connections
         del conn[msg.id]
         replace_state(attr.evolve(state[0], connections=conn))
