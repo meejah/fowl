@@ -1228,6 +1228,10 @@ class FowlWormhole:
                     return
             verifier = results[0][1]
             versions = results[1][1]
+            print(f"versions: {versions}")
+            # XXX should "do stuff" with this, e.g. per
+            # https://github.com/meejah/fowl/issues/45 at least "we
+            # speak Fowl Application Protocol" or so
 
             d = self._do_dilate()
             @d.addCallback
