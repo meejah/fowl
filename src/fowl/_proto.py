@@ -821,6 +821,12 @@ class Incoming(Protocol):
         """
 
     @m.state()
+    def local_policy_check(self):
+        """
+        A connection has come in; we must check our policy
+        """
+
+    @m.state()
     def local_connect(self):
         """
         The initial message tells us where to connect locally
@@ -838,6 +844,18 @@ class Incoming(Protocol):
         """
         Completed the task of forwarding (e.g. client closed connection,
         subchannel closed, fatal error, etc)
+        """
+
+    @m.input()
+    def policy_bad(self, msg):
+        """
+        The local policy check has failed (not allowed)
+        """
+
+    @m.input()
+    def policy_ok(self, msg):
+        """
+        The local policy check has succeeded (allowed)
         """
 
     @m.input()
@@ -922,7 +940,7 @@ class Incoming(Protocol):
                     self.too_much_data("Too many bytes sent")
                     return
                 # warning: recursive state-machine message
-                self.got_initial_message(first_msg)
+                self.got_initial_message(msgpack.unpackb(first_msg))
 
     @m.output()
     def send_negative_reply(self, reason):
@@ -961,12 +979,47 @@ class Incoming(Protocol):
         self.transport.write(prefix + msg)
 
     @m.output()
+    def emit_incoming_connection(self, msg):
+        self.factory.message_out(
+            IncomingConnection(self._conn_id, msg["local-destination"], msg.get("listener-id", None))
+        )
+
+    @m.output()
+    def do_policy_check(self, msg):
+        # note: do this policy check after the IncomingConnection
+        # message is emitted (otherwise there will be cases where we
+        # emit _just_ a IncomingLost which is confusing)
+        if self.factory.config.connect_policy is not None:
+            ep = clientFromString(reactor, msg["local-destination"])
+            if not self.factory.config.connect_policy.can_connect(ep):
+                # warning: synchronous state-machine use
+                self.policy_bad(msg)
+            else:
+                # warning: synchronous state-machine use
+                self.policy_ok(msg)
+
+    @m.output()
+    def local_disconnect(self):
+        # XXX error -- do we send an error message back first?
+        # (like "against local policy")
+        self._negative("Against local policy")
+        self.transport.loseConnection()
+
+    @m.output()
+    def emit_incoming_lost(self, msg):
+        self.factory.message_out(
+            IncomingLost(
+                self._conn_id,
+                f"Incoming connection against local policy: {msg['local-destination']}"
+            )
+        )
+
+    @m.output()
     def establish_local_connection(self, msg):
         """
         FIXME
         """
-        data = msgpack.unpackb(msg)
-        ep = clientFromString(reactor, data["local-destination"])
+        ep = clientFromString(reactor, msg["local-destination"])
 
         factory = Factory.forProtocol(ConnectionForward)
         factory.other_proto = self
@@ -974,28 +1027,16 @@ class Incoming(Protocol):
         factory.conn_id = self._conn_id
         factory.message_out = self.factory.message_out
 
-        self.factory.message_out(
-            IncomingConnection(self._conn_id, data["local-destination"], data.get("listener-id", None))
-        )
-
-        # note: do this policy check after the IncomingConnection
-        # message is emitted (otherwise there will be cases where we
-        # emit _just_ a IncomingLost which is confusing)
-        if self.factory.config.connect_policy is not None:
-            if not self.factory.config.connect_policy.can_connect(ep):
-                # XXX error -- do we send an error message back first?
-                # (like "against local policy")
-                self._negative("Against local policy")
-                self.transport.loseConnection()
-                return
+#emit was here
 
         d = ep.connect(factory)
 
         def bad(fail):
+            # ideally maybe want a @output method send_incoming_lost or so?
             self.factory.message_out(
-                WormholeError(
-                    fail.getErrorMessage(),
-                    # extra={"id": self._conn_id}
+                IncomingLost(
+                    self._conn_id,
+                    f"{msg['local-destination']}: {fail.getErrorMessage()}",
                 )
             )
             reactor.callLater(0, lambda: self.connection_failed(fail.getErrorMessage()))
@@ -1024,9 +1065,21 @@ class Incoming(Protocol):
     )
     await_message.upon(
         got_initial_message,
+        enter=local_policy_check,
+        outputs=[emit_incoming_connection, do_policy_check]
+    )
+
+    local_policy_check.upon(
+        policy_ok,
         enter=local_connect,
         outputs=[establish_local_connection]
     )
+    local_policy_check.upon(
+        policy_bad,
+        enter=finished,
+        outputs=[local_disconnect, emit_incoming_lost]
+    )
+
     await_message.upon(
         subchannel_closed,
         enter=finished,
