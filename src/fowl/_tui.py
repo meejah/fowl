@@ -129,6 +129,13 @@ async def frontend_tui(reactor, config):
             print(textwrap.fill(msg.welcome["motd"].strip(), 80, initial_indent="    ", subsequent_indent="    "))
         print(">>> ", end="", flush=True)
 
+    # XXX this isn't really "an output message", but a "control
+    # message" -- factor this OUT of here so that we don't have to
+    # "remember to handle PleaseCloseWormhole properly" in two or
+    # three places; maybe we want a like:
+    #     daemon, worm, fowlwormhole = setup_the_things()
+    # approximately
+
     @output_message.register(PleaseCloseWormhole)
     def _(msg):
         print(f"Wormhole is closing: {msg.reason}")

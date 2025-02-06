@@ -58,6 +58,8 @@ from .messages import (
 
     FowlOutputMessage,
     FowlCommandMessage,
+
+    PleaseCloseWormhole,
 )
 from .policy import IClientListenPolicy, IClientConnectPolicy, AnyConnectPolicy, AnyListenPolicy
 
@@ -1547,7 +1549,6 @@ async def _forward_loop(reactor, config, w):
 
     See docs/messages.rst for more
     """
-
     def output_fowl_message(msg):
         if isinstance(msg, PleaseCloseWormhole):
             fowl.close_wormhole()
@@ -1577,14 +1578,19 @@ async def _forward_loop(reactor, config, w):
     # else:
     #     sm.allocate_code(config.code_length)
 
+    def foo():
+        print("FOO")
+        return ensureDeferred(fowl.stop())
+    reactor.addSystemEventTrigger("before", "shutdown", foo)
+
     try:
+        print("A")
         await fowl.when_done()
-    except Exception:
-        # XXXX okay, this fixes it .. but how to hook in cleanup etc "properly"
-        # (probably via state-machine etc)
+        print("B")
+    finally:
+        print("C")
         await fowl.stop()
-        ###sm.control_proto.transport.loseConnection()
-        raise
+    print("D")
 
 
 async def _local_to_remote_forward(reactor, config, connect_ep, on_listen, on_message, cmd):
