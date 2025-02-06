@@ -8,7 +8,9 @@ from .messages import (
     SendMessageToPeer,
     GotMessageFromPeer,
     WormholeClosed,
+    PleaseCloseWormhole,
 )
+
 
 class FowlDaemon:
     """
@@ -52,8 +54,7 @@ class FowlDaemon:
     m = automat.MethodicalMachine()
     set_trace = m._setTrace
 
-    def __init__(self, reactor, config, message_handler):
-        self._reactor = reactor
+    def __init__(self, config, message_handler):
         self._config = config
         self._messages = []  # pending plaintext messages to peer
         self._verifier = None
@@ -83,9 +84,22 @@ class FowlDaemon:
         """
 
     @m.state()
+    def verifying_version(self):
+        """
+        Does our peer have compatible versions?
+        """
+
+    @m.state()
     def connected(self):
         """
         Normal processing, our peer is connected
+        """
+
+    @m.state()
+    def closing(self):
+        """
+        We have asked to close the wormhole, wait until it is
+        closed
         """
 
     @m.state()
@@ -111,7 +125,7 @@ class FowlDaemon:
         # OUTSIDE (i.e. controlling function)
 
     @m.input()
-    def peer_connected(self, verifier: bytes, versions: dict):
+    def peer_connected(self, verifier: bytes, peer_features: dict):
         """
         We have a peer
 
@@ -119,10 +133,22 @@ class FowlDaemon:
             key. This should match what our peer sees (users can
             verify out-of-band for extra security)
 
-        :param versions: arbitrary JSON-able data from the peer,
+        :param peer_features: arbitrary JSON-able data from the peer,
             intended to be used for protocol and other negotiation. A
             one-time, at-startup pre-communication mechanism (definitely
             before any other messages). Also serves as key-confirmation.
+        """
+
+    @m.input()
+    def version_ok(self, verifier, peer_features):
+        """
+        Our peer version is compatible with ours
+        """
+
+    @m.input()
+    def version_incompatible(self, verifier, peer_features):
+        """
+        We cannot speak with this peer
         """
 
     @m.input()
@@ -148,13 +174,13 @@ class FowlDaemon:
         self._emit_message(CodeAllocated(code))
 
     @m.output()
-    def emit_peer_connected(self, verifier, versions):
+    def emit_peer_connected(self, verifier, peer_features):
         """
         """
         self._emit_message(
             PeerConnected(
                 binascii.hexlify(verifier).decode("utf8"),
-                versions,
+                peer_features,
             )
         )
 
@@ -181,17 +207,20 @@ class FowlDaemon:
         )
 
     @m.output()
-    def verify_version(self, verifier, versions):
-        try:
-            core = versions["fowl"]["features"]["core"]
-
-            assert core is not None, "fowl -> features -> core doesn't exist in peer app_version"
-            # no particular content for this yet, empty-dict
-        except KeyError:
-            # XXX need to send a protocol error to the machine, end
-            # the connection
-            print("didn't like", versions)
-            pass
+    def verify_version(self, verifier, peer_features):
+        """
+        Check that our peer supports the right features
+        """
+        features = peer_features.get("fowl", {}).get("features", [])
+        # note: if we add a feature we will want to do an intersection
+        # or something and then trigger different behavior depending
+        # what our peer supports .. for now there's only one thing,
+        # and it MUST be supported
+        from ._proto import SUPPORTED_FEATURES  # FIXME
+        if set(features) == set(SUPPORTED_FEATURES):
+            self.version_ok(verifier, peer_features)
+        else:
+            self.version_incompatible(verifier, peer_features)
 
     @m.output()
     def queue_message(self, plaintext):
@@ -207,6 +236,12 @@ class FowlDaemon:
     def emit_shutdown(self, result):
         self._emit_message(
             WormholeClosed(result)
+        )
+
+    @m.output()
+    def emit_close_wormhole(self):
+        self._emit_message(
+            PleaseCloseWormhole("versions are incompatible") # XXX hardcoded bad
         )
 
     waiting_code.upon(
@@ -247,8 +282,18 @@ class FowlDaemon:
     )
     waiting_peer.upon(
         peer_connected,
+        enter=verifying_version,
+        outputs=[verify_version]
+    )
+    verifying_version.upon(
+        version_ok,
         enter=connected,
-        outputs=[verify_version, emit_peer_connected, send_queued_messages],
+        outputs=[emit_peer_connected, send_queued_messages],
+    )
+    verifying_version.upon(
+        version_incompatible,
+        enter=closing,
+        outputs=[emit_close_wormhole],
     )
     waiting_peer.upon(
         shutdown,
@@ -267,6 +312,12 @@ class FowlDaemon:
         outputs=[emit_got_message]
     )
     connected.upon(
+        shutdown,
+        enter=closed,
+        outputs=[emit_shutdown]
+    )
+
+    closing.upon(
         shutdown,
         enter=closed,
         outputs=[emit_shutdown]

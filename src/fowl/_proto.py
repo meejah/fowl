@@ -71,6 +71,9 @@ WELL_KNOWN_MAILBOXES = {
     # Do YOU run a public mailbox service? Contact the project to
     # consider having it listed here
 }
+SUPPORTED_FEATURES = [
+    "core-v1",  # the only version of the protocol so far
+]
 
 
 def _sequential_id():
@@ -138,9 +141,7 @@ async def wormhole_from_config(reactor, config, wormhole_create=None):
         _enable_dilate=True,
         versions={
             "fowl": {
-                "features": {
-                    "core": {}
-                }
+                "features": SUPPORTED_FEATURES,
             }
         }
     )
@@ -285,7 +286,7 @@ async def frontend_accept_or_invite(reactor, config):
             w.send_message(json.dumps({"closed": True}).encode("utf8"))
             when_explicitly_closed_d.callback(None)
 
-    daemon = FowlDaemon(reactor, config, output_message)
+    daemon = FowlDaemon(config, output_message)
     w = await wormhole_from_config(reactor, config)
     wh = FowlWormhole(reactor, w, daemon, config)
     wh.start()
@@ -312,6 +313,8 @@ async def frontend_accept_or_invite(reactor, config):
             # maybe just say nothing? why does the user care about
             # this? (they probably hit ctrl-c anyway, how else can you get here?)
             print("Wormhole closed without peer")
+
+    ### XXX use PleaseCloseWormhole, approximately
     reactor.addSystemEventTrigger("before", "shutdown", lambda: ensureDeferred(disconnect_session()))
 
     kind = "invite" if config.code is None else "accept"
@@ -1121,6 +1124,7 @@ class FowlWormhole:
 
     # XXX wants to be an IService?
     async def stop(self):
+        print("STOP called")
         for port in self._listening_ports:
             # note to self port.stopListening and port.loseConnection are THE SAME
             port.stopListening()
@@ -1196,6 +1200,15 @@ class FowlWormhole:
         ensureDeferred(self._wormhole._closed_observer.when_fired()).addBoth(was_closed)
 
     # public API methods
+
+    def close_wormhole(self):
+        """
+        Shut down the wormhole
+        """
+        # XXX see also the whole "how to shutdown half-close etc"
+        self._wormhole.close()
+        # once the wormhole "actually" closes, the state-machine will
+        # trigger our "stop" codepath
 
     def command(self, command: FowlCommandMessage) -> None:
         """
@@ -1536,14 +1549,17 @@ async def _forward_loop(reactor, config, w):
     """
 
     def output_fowl_message(msg):
-        js = fowld_output_to_json(msg)
-        print(
-            json.dumps(js),
-            file=config.stdout,
-            flush=True,
-        )
+        if isinstance(msg, PleaseCloseWormhole):
+            fowl.close_wormhole()
+        else:
+            js = fowld_output_to_json(msg)
+            print(
+                json.dumps(js),
+                file=config.stdout,
+                flush=True,
+            )
 
-    sm = FowlDaemon(reactor, config, output_fowl_message)
+    sm = FowlDaemon(config, output_fowl_message)
 
 #    @sm.set_trace
     def _(start, edge, end):

@@ -218,6 +218,11 @@ class WormholeError(FowlOutputMessage):
     message: str
 
 
+@frozen
+class PleaseCloseWormhole(FowlOutputMessage):
+    reason: str
+
+
 #XXX these aren't really used; why state-machine has them?
 @frozen
 class SendMessageToPeer(FowlOutputMessage):

@@ -34,6 +34,7 @@ from .messages import (
     OutgoingConnection,
     WormholeError,
     GrantPermission,
+    PleaseCloseWormhole,
 )
 
 
@@ -115,7 +116,10 @@ async def frontend_tui(reactor, config):
 
     @output_message.register(WormholeClosed)
     def _(msg):
-        print(f"{msg.result}...", end="", flush=True)
+        print(f"Closed({msg.result})...", end="", flush=True)
+        # close our standard input, so the human can't give us more
+        # commands -- because we're done
+        command_reader.transport.loseConnection()
 
     @output_message.register(Welcome)
     def _(msg):
@@ -125,12 +129,18 @@ async def frontend_tui(reactor, config):
             print(textwrap.fill(msg.welcome["motd"].strip(), 80, initial_indent="    ", subsequent_indent="    "))
         print(">>> ", end="", flush=True)
 
-    daemon = FowlDaemon(reactor, config, output_message)
+    @output_message.register(PleaseCloseWormhole)
+    def _(msg):
+        print(f"Wormhole is closing: {msg.reason}")
+        wh.close_wormhole()
+
+    daemon = FowlDaemon(config, output_message)
     w = await wormhole_from_config(reactor, config)
     wh = FowlWormhole(reactor, w, daemon, config)
 
     # make into IService?
     wh.start()
+    # XXX how is wh.stop() called in this setup?
 
     state = [State()]
 
@@ -167,10 +177,9 @@ async def frontend_tui(reactor, config):
 
     print(">>> ", end="", flush=True)
     while True:
-        wc = ensureDeferred(command_reader.when_closed())
         what, result = await race([
             ensureDeferred(command_reader.next_command()),
-            wc,
+            ensureDeferred(command_reader.when_closed()),
         ])
         if what == 0:
             cmd_line = result
