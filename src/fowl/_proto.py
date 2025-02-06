@@ -159,6 +159,7 @@ class Connection:
     endpoint: str
     i: int = 0
     o: int = 0
+    listener_id: str = "unknown"
 
 
 async def frontend_accept_or_invite(reactor, config):
@@ -249,7 +250,7 @@ async def frontend_accept_or_invite(reactor, config):
 
     @output_message.register(OutgoingConnection)
     def _(msg):
-        connections[msg.id] = Connection(msg.endpoint, 0, 0)
+        connections[msg.id] = Connection(msg.endpoint, 0, 0, msg.listener_id)
 
     @output_message.register(BytesIn)
     def _(msg):
@@ -258,6 +259,7 @@ async def frontend_accept_or_invite(reactor, config):
             connections[msg.id].endpoint,
             connections[msg.id].i + msg.bytes,
             connections[msg.id].o,
+            "fixme"
         )
 
     @output_message.register(BytesOut)
@@ -266,6 +268,7 @@ async def frontend_accept_or_invite(reactor, config):
             connections[msg.id].endpoint,
             connections[msg.id].i,
             connections[msg.id].o + msg.bytes,
+            "fixme"
         )
 
     @output_message.register(WormholeClosed)

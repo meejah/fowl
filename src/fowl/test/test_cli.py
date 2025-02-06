@@ -58,6 +58,10 @@ async def test_happy_path(reactor, request, mailbox):
     Improvement: let Hypothesis make up commands, order, etc (how to assert?)
     """
 
+    # NOTE: if debugging this, might want to print output in
+    # CollectStreams -- perhaps we need a better solution to
+    # "immediately and obviously" print stack-traces there?
+
     print("Starting invite side", os.environ.get("COVERAGE_PROCESS_STARTUP", "no startup"))
 
     invite_proto = CollectStreams(reactor)
