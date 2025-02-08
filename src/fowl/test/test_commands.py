@@ -47,6 +47,9 @@ def command_class_to_arg_generators(cls):
             "listen": port_lists(),
             "connect": port_lists(),
         },
+        messages.Ping: {
+            "ping_id": text(),  # should really be "base16-encoded 4-bytes of binary"
+        },
     }[cls]
 
 

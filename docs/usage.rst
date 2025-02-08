@@ -172,12 +172,15 @@ Most humans should use ``fowl`` instead.
 See :ref:`frontend-protocol` for details on the stdin / stdout protocol that is spoken by ``fowld``.
 
 
-``fowl-tui`` Usage
-==================
+``fowl --interactive`` Usage
+============================
 
 Mostly aimed at developers or advanced usage, this command essentially directly maps the frontend protocol (see :ref:`frontend-protocol`) to interactive commands.
 
-At the `>>>` prompt, certain commands are accepted.
+At the ``>>>`` prompt, certain commands are accepted.
 These map directly to ``"kind"` JSON commands from the above-referenced protocol.
 
 That is, you _could_ just run ``fowld`` and type in JSON directly -- but this is a little nicer!
+
+There is also a ``status`` command that shows our current knowledge of listeners and active connections.
+For debugging, it can sometimes be useful to use the ``ping`` command.
