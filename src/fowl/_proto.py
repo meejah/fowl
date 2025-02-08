@@ -345,31 +345,6 @@ async def frontend_accept_or_invite(reactor, config):
             last_displayed = set(connections.values())
 
 
-async def forward(reactor, config):
-    """
-    Set up a wormhole and process commands relating to forwarding.
-    """
-    w = await wormhole_from_config(reactor, config)
-    if config.debug_file:
-        w.debug_set_trace("forward", which="B N M S O K SK R RC L C T", file=config.debug_file)
-
-    try:
-        # if we succeed, we are done and should close
-        await _forward_loop(reactor, config, w)
-        await w.close()  # waits for ack
-
-    except Exception:
-        # if we catch an error, we should close and then return the original
-        # error (the close might give us an error, but it isn't as important
-        # as the original one)
-        try:
-            await w.close()  # might be an error too?
-        except Exception as e:
-            print("moar error", e)
-            pass
-        raise
-
-
 class SubchannelForwarder(Protocol):
     """
     This is the side of the protocol that was listening .. so it has
@@ -1133,6 +1108,7 @@ class FowlWormhole:
         if self.control_proto is not None:
             self.control_proto.transport.loseConnection()
             await self.control_proto.when_done()
+        # XXX make sure wormhole is closed? (closing dance)
 
     # XXX wants to be an IService?
     def start(self):
@@ -1539,9 +1515,29 @@ def parse_fowld_output(json_str: str) -> FowlOutputMessage:
     return kind_to_message[kind](cmd)
 
 
-async def _forward_loop(reactor, config, w):
+
+async def create_fowl(config, output_fowl_message):
+    w = await wormhole_from_config(reactor, config)
+    if config.debug_file:
+        w.debug_set_trace("forward", which="B N M S O K SK R RC L C T", file=config.debug_file)
+
+    def command_message(msg):
+        if isinstance(msg, PleaseCloseWormhole):
+            fowl.close_wormhole()
+
+    sm = FowlDaemon(config, output_fowl_message, command_message)
+
+#    @sm.set_trace
+    def _(start, edge, end):
+        print(f"trace: {start} --[ {edge} ]--> {end}")
+    fowl = FowlWormhole(reactor, w, sm, config)
+    return fowl
+
+async def forward(reactor, config):
     """
-    Run the main loop of the forward:
+    Set up a wormhole and process commands relating to forwarding.
+
+    That is, run the main loop of the forward:
        - perform setup (version stuff etc)
        - wait for commands (as single-line JSON messages) on stdin
        - write results to stdout (as single-line JSON messages)
@@ -1550,22 +1546,15 @@ async def _forward_loop(reactor, config, w):
     See docs/messages.rst for more
     """
     def output_fowl_message(msg):
-        if isinstance(msg, PleaseCloseWormhole):
-            fowl.close_wormhole()
-        else:
-            js = fowld_output_to_json(msg)
-            print(
-                json.dumps(js),
-                file=config.stdout,
-                flush=True,
-            )
+        js = fowld_output_to_json(msg)
+        print(
+            json.dumps(js),
+            file=config.stdout,
+            flush=True,
+        )
 
-    sm = FowlDaemon(config, output_fowl_message)
 
-#    @sm.set_trace
-    def _(start, edge, end):
-        print(f"trace: {start} --[ {edge} ]--> {end}")
-    fowl = FowlWormhole(reactor, w, sm, config)
+    fowl = create_fowl(config, output_fowl_message)
     fowl.start()
 
     # arrange to read incoming commands from stdin
@@ -1573,24 +1562,8 @@ async def _forward_loop(reactor, config, w):
     dispatch = LocalCommandDispatch(config, fowl)
     create_stdio(dispatch)
 
-    # if config.code:
-    #     sm.set_code(config.code)
-    # else:
-    #     sm.allocate_code(config.code_length)
-
-    def foo():
-        print("FOO")
-        return ensureDeferred(fowl.stop())
-    reactor.addSystemEventTrigger("before", "shutdown", foo)
-
-    try:
-        print("A")
-        await fowl.when_done()
-        print("B")
-    finally:
-        print("C")
-        await fowl.stop()
-    print("D")
+    # arrange to shut down nicely (e.g. on ctrl-C)
+    reactor.addSystemEventTrigger("before", "shutdown", lambda: ensureDeferred(fowl.stop()))
 
 
 async def _local_to_remote_forward(reactor, config, connect_ep, on_listen, on_message, cmd):

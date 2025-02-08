@@ -16,7 +16,7 @@ from wormhole.errors import LonelyError
 import attr
 
 from .observer import Next, When
-from ._proto import wormhole_from_config, FowlDaemon, FowlWormhole
+from ._proto import wormhole_from_config, FowlDaemon, FowlWormhole, create_fowl
 from .messages import (
     Welcome,
     CodeAllocated,
@@ -129,24 +129,9 @@ async def frontend_tui(reactor, config):
             print(textwrap.fill(msg.welcome["motd"].strip(), 80, initial_indent="    ", subsequent_indent="    "))
         print(">>> ", end="", flush=True)
 
-    # XXX this isn't really "an output message", but a "control
-    # message" -- factor this OUT of here so that we don't have to
-    # "remember to handle PleaseCloseWormhole properly" in two or
-    # three places; maybe we want a like:
-    #     daemon, worm, fowlwormhole = setup_the_things()
-    # approximately
-
-    @output_message.register(PleaseCloseWormhole)
-    def _(msg):
-        print(f"Wormhole is closing: {msg.reason}")
-        wh.close_wormhole()
-
-    daemon = FowlDaemon(config, output_message)
-    w = await wormhole_from_config(reactor, config)
-    wh = FowlWormhole(reactor, w, daemon, config)
-
+    fowl_wh = await create_fowl(config, output_message)
     # make into IService?
-    wh.start()
+    fowl_wh.start()
     # XXX how is wh.stop() called in this setup?
 
     state = [State()]
@@ -204,7 +189,7 @@ async def frontend_tui(reactor, config):
                     print(">>> ", end="", flush=True)
                     continue
                 # XXX should be passing "high level" FowlWormhole thing, not Wormhole direct
-                await cmd_fn(reactor, wh, state[0], *cmd[1:])
+                await cmd_fn(reactor, fowl_wh, state[0], *cmd[1:])
             else:
                 print(">>> ", end="", flush=True)
         elif what == 1:
@@ -212,7 +197,7 @@ async def frontend_tui(reactor, config):
 
     print("\nClosing mailbox...", end="", flush=True)
     try:
-        await w.close()
+        await fowl_wh.stop()
     except LonelyError:
         pass
     print("done.")

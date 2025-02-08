@@ -54,12 +54,13 @@ class FowlDaemon:
     m = automat.MethodicalMachine()
     set_trace = m._setTrace
 
-    def __init__(self, config, message_handler):
+    def __init__(self, config, message_handler, command_handler):
         self._config = config
         self._messages = []  # pending plaintext messages to peer
         self._verifier = None
         self._versions = None
         self._message_out = message_handler
+        self._command_out = command_handler
 
     def _emit_message(self, msg):
         """
@@ -71,6 +72,12 @@ class FowlDaemon:
         except Exception as e:
             print(f"Error in user code sending a message: {e}")
             print(type(e), e)
+
+    def _emit_command(self, msg):
+        """
+        Internal helper to pass a command up to our IO handler
+        """
+        self._command_out(msg)
 
     @m.state(initial=True)
     def waiting_code(self):
@@ -240,7 +247,7 @@ class FowlDaemon:
 
     @m.output()
     def emit_close_wormhole(self):
-        self._emit_message(
+        self._emit_command(
             PleaseCloseWormhole("versions are incompatible") # XXX hardcoded bad
         )
 
