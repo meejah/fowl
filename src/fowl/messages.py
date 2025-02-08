@@ -113,6 +113,11 @@ class RemoteListener(FowlCommandMessage):
 
 
 @frozen
+class Ping(FowlCommandMessage):
+    ping_id: int
+
+
+@frozen
 class Listening(FowlOutputMessage):
     """
     We have opened a local listener.
@@ -122,6 +127,7 @@ class Listening(FowlOutputMessage):
     may result from a LocalListener or a RemoteListener command. This
     message will always appear on the side that's actually listening.
     """
+    listener_id: str  # random identifier
     listen: str  # Twisted server-type endpoint string
     connect: str  # Twisted client-type endpoint string
 
@@ -140,7 +146,9 @@ class RemoteListeningSucceeded(FowlOutputMessage):
     """
     The remote peer suceeded at fulfilling our listen request.
     """
+    listener_id: str  # arbitrary identifier
     listen: str  # Twisted server-type endpoint string
+    connect: str  # Twisted client-type endpoint string
 
 
 @frozen
@@ -160,7 +168,7 @@ class OutgoingConnection(FowlOutputMessage):
     """
     id: int
     endpoint: str  # connection to here on far side
-    # XXX local_listener: str ??
+    listener_id: str  # which listener this is from
 
 
 @frozen
@@ -187,6 +195,7 @@ class IncomingConnection(FowlOutputMessage):
     """
     id: int
     endpoint: str
+    listener_id: str
 
 
 @frozen
@@ -226,6 +235,12 @@ class WormholeError(FowlOutputMessage):
 @frozen
 class PleaseCloseWormhole(FowlInternalControl):
     reason: str
+
+
+@frozen
+class Pong(FowlOutputMessage):
+    ping_id: int
+    time_of_flight: float
 
 
 #XXX these aren't really used; why state-machine has them?

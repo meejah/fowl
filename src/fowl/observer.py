@@ -96,7 +96,7 @@ class Next:
 @define
 class When:
     """
-    An observerable event that can by async-ly listened for and
+    An observerable event that can be async-ly listened for and
     triggers exactly once.
 
     Used for implementing the a ``when_thing()`` style of method.
