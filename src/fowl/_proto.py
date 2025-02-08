@@ -174,7 +174,7 @@ async def frontend_accept_or_invite(reactor, config):
 
     @output_message.register(WormholeError)
     def _(msg):
-        print(f"ERROR: {msg.message}")
+        print(f"ERROR: {msg.message}", file=config.stderr)
         print(msg)
 
     @output_message.register(Pong)
@@ -1598,19 +1598,19 @@ def parse_fowld_output(json_str: str) -> FowlOutputMessage:
         "set-code": parser(SetCode, [("code", None)]),
         "code-allocated": parser(CodeAllocated, [("code", None)]),
         "peer-connected": parser(PeerConnected, [("verifier", binascii.unhexlify), ("versions", None)]),
-        "listening": parser(Listening, [("listen", None), ("connect", None)]),
+        "listening": parser(Listening, [("listener_id", None), ("listen", None), ("connect", None)]),
         "remote-listening-failed": parser(RemoteListeningFailed, [("listen", None), ("reason", None)]),
-        "remote-listening-succeeded": parser(RemoteListeningSucceeded, [("listen", None), ("connect", None), ("listener-id", None)]),
+        "remote-listening-succeeded": parser(RemoteListeningSucceeded, [("listen", None), ("connect", None), ("listener_id", None)]),
         "remote-connect-failed": parser(RemoteConnectFailed, [("id", int), ("reason", None)]),
         "outgoing-connection": parser(OutgoingConnection, [("id", int), ("endpoint", None)]),
 ##        "outgoing-lost": parser(),
         "outgoing-done": parser(OutgoingDone, [("id", int)]),
-        "incoming-connection": parser(IncomingConnection, [("id", int), ("endpoint", None), ("listener-id", None)]),
+        "incoming-connection": parser(IncomingConnection, [("id", int), ("endpoint", None), ("listener_id", None)]),
         "incoming-lost": parser(IncomingLost, [("id", int), ("reason", None)]),
         "incoming-done": parser(IncomingDone, [("id", int)]),
         "bytes-in": parser(BytesIn, [("id", int), ("bytes", int)]),
         "bytes-out": parser(BytesOut, [("id", int), ("bytes", int)]),
-        "pong": parser(Pong, [("ping_id", bytes)], [("time_of_flight", float)]),
+        "pong": parser(Pong, [("ping_id", bytes), ("time_of_flight", float)]),
     }
     return kind_to_message[kind](cmd)
 
