@@ -18,7 +18,7 @@ from wormhole.errors import LonelyError
 import attr
 
 from .observer import Next, When
-from ._proto import wormhole_from_config, FowlDaemon, FowlWormhole
+from ._proto import wormhole_from_config, FowlDaemon, FowlWormhole, fowld_output_to_json
 from .messages import (
     Welcome,
     CodeAllocated,
@@ -151,7 +151,17 @@ async def frontend_tui(reactor, config):
             print(textwrap.fill(msg.welcome["motd"].strip(), 80, initial_indent="    ", subsequent_indent="    "))
         print(">>> ", end="", flush=True)
 
-    daemon = FowlDaemon(reactor, config, output_message)
+    if config.output_debug_messages:
+        def output_wrapper(msg):
+            try:
+                config.output_debug_messages.write("{}\n".format(fowld_output_to_json(msg)))
+            except Exception as e:
+                print(e)
+            return output_message(msg)
+    else:
+        output_wrapper = output_message
+
+    daemon = FowlDaemon(reactor, config, output_wrapper)
     w = await wormhole_from_config(reactor, config)
     wh = FowlWormhole(reactor, w, daemon, config)
 
