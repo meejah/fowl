@@ -8,7 +8,7 @@ import textwrap
 import functools
 import struct
 from base64 import b16encode
-from typing import IO, Callable
+from typing import IO, Callable, TextIO
 from functools import partial
 from itertools import count
 
@@ -110,6 +110,7 @@ class _Config:
     commands: list[FowlCommandMessage] = AttrFactory(list)
     connect_policy: IClientConnectPolicy = None
     listen_policy: IClientListenPolicy = None
+    output_debug_messages: TextIO = None  # Option<Writable>
 
 
 async def wormhole_from_config(reactor, config, wormhole_create=None):
