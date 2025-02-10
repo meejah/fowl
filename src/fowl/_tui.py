@@ -1,4 +1,4 @@
-
+import json
 import curses
 import textwrap
 import functools
@@ -151,10 +151,17 @@ async def frontend_tui(reactor, config):
             print(textwrap.fill(msg.welcome["motd"].strip(), 80, initial_indent="    ", subsequent_indent="    "))
         print(">>> ", end="", flush=True)
 
+    start_time = reactor.seconds()
+
     if config.output_debug_messages:
         def output_wrapper(msg):
             try:
-                config.output_debug_messages.write("{}\n".format(fowld_output_to_json(msg)))
+                js = fowld_output_to_json(msg)
+                # don't leak our absolute time, more convenient anyway
+                js["timestamp"] = reactor.seconds() - start_time
+                config.output_debug_messages.write(
+                    json.dumps(js) + "\n"
+                )
             except Exception as e:
                 print(e)
             return output_message(msg)
