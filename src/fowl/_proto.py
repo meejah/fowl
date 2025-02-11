@@ -1603,7 +1603,7 @@ def parse_fowld_output(json_str: str) -> FowlOutputMessage:
         "remote-listening-failed": parser(RemoteListeningFailed, [("listen", None), ("reason", None)]),
         "remote-listening-succeeded": parser(RemoteListeningSucceeded, [("listen", None), ("connect", None), ("listener_id", None)]),
         "remote-connect-failed": parser(RemoteConnectFailed, [("id", int), ("reason", None)]),
-        "outgoing-connection": parser(OutgoingConnection, [("id", int), ("endpoint", None)]),
+        "outgoing-connection": parser(OutgoingConnection, [("id", int), ("endpoint", None), ("listener_id", None)]),
 ##        "outgoing-lost": parser(),
         "outgoing-done": parser(OutgoingDone, [("id", int)]),
         "incoming-connection": parser(IncomingConnection, [("id", int), ("endpoint", None), ("listener_id", None)]),
@@ -1611,6 +1611,7 @@ def parse_fowld_output(json_str: str) -> FowlOutputMessage:
         "incoming-done": parser(IncomingDone, [("id", int)]),
         "bytes-in": parser(BytesIn, [("id", int), ("bytes", int)]),
         "bytes-out": parser(BytesOut, [("id", int), ("bytes", int)]),
+        "closed": parser(WormholeClosed, [("result", str)]),
         "pong": parser(Pong, [("ping_id", bytes), ("time_of_flight", float)]),
     }
     return kind_to_message[kind](cmd)
