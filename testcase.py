@@ -4,11 +4,11 @@ import json
 from collections import defaultdict
 
 from twisted.internet.defer import Deferred
-from twisted.internet.task import react, deferLater
+from twisted.internet.task import react
 from twisted.internet.protocol import ProcessProtocol, Protocol, Factory
 from twisted.internet.endpoints import serverFromString, clientFromString
 
-from fowl.observer import When, Next, Accumulate
+from fowl.observer import Next, Accumulate
 
 
 class _FowlProtocol(ProcessProtocol):
@@ -31,7 +31,7 @@ class _FowlProtocol(ProcessProtocol):
     def childDataReceived(self, childFD, data):
         try:
             js = json.loads(data)
-        except Exception as e:
+        except Exception:
             print("BAD", data.decode("utf8"))
         else:
             self._maybe_notify(js)

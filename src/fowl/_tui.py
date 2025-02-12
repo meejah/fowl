@@ -18,7 +18,7 @@ from wormhole.errors import LonelyError
 import attr
 
 from .observer import Next, When
-from ._proto import wormhole_from_config, FowlDaemon, FowlWormhole, create_fowl, fowld_output_to_json
+from ._proto import wormhole_from_config, create_fowl, fowld_output_to_json
 from .messages import (
     Welcome,
     CodeAllocated,

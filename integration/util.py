@@ -12,7 +12,7 @@ import pytest_twisted
 
 from twisted.internet.interfaces import ITransport
 from twisted.internet.protocol import ProcessProtocol
-from twisted.internet.error import ProcessExitedAlready, ProcessDone
+from twisted.internet.error import ProcessExitedAlready
 from twisted.internet.defer import Deferred
 
 from fowl._proto import parse_fowld_output
