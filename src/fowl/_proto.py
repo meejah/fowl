@@ -19,7 +19,7 @@ from attrs import frozen, define, asdict, Factory as AttrFactory
 import msgpack
 import automat
 from twisted.internet import reactor
-from twisted.internet.defer import Deferred, ensureDeferred, DeferredList, race
+from twisted.internet.defer import Deferred, ensureDeferred, DeferredList, race, CancelledError
 from twisted.internet.task import deferLater
 from twisted.internet.endpoints import serverFromString, clientFromString
 from twisted.internet.protocol import Factory, Protocol
@@ -1647,7 +1647,7 @@ async def forward(reactor, config):
         )
 
 
-    fowl = create_fowl(config, output_fowl_message)
+    fowl = await create_fowl(config, output_fowl_message)
     fowl.start()
 
     # arrange to read incoming commands from stdin
@@ -1656,7 +1656,13 @@ async def forward(reactor, config):
     create_stdio(dispatch)
 
     # arrange to shut down nicely (e.g. on ctrl-C)
+    #XXX (or do we get a cancel in that case?)
     reactor.addSystemEventTrigger("before", "shutdown", lambda: ensureDeferred(fowl.stop()))
+
+    try:
+        await Deferred()
+    except CancelledError:
+        await fowl.stop()
 
 
 async def _local_to_remote_forward(reactor, config, connect_ep, on_listen, on_message, cmd):

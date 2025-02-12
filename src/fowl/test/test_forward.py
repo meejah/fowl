@@ -95,9 +95,12 @@ async def sleep(reactor, t):
 
 
 @pytest_twisted.ensureDeferred
-async def find_message(reactor, config, kind=None, timeout=10):
+async def find_message(reactor, config, kind=None, timeout=10, show_error=True):
     """
     Await a message of particular kind in the stdout of config
+
+    :param bool show_error: when True, immediately print any
+        "kind=error" messages encountered
     """
     for _ in range(timeout):
         messages = [
@@ -108,6 +111,8 @@ async def find_message(reactor, config, kind=None, timeout=10):
         for msg in messages:
             if msg["kind"] == kind:
                 return msg
+            if msg["kind"] == "error":
+                print(f"error: {msg.message}")
         await sleep(reactor, 1)
         if False:
             print("no '{}' yet: {}".format(kind, " ".join([m.get("kind", "<kind missing>") for m in messages])))
@@ -329,7 +334,13 @@ async def test_drawrof(reactor, request, mailbox, datasize, who, wait_peer):
     )
 
     listener = ServerFactory(reactor)
-    server_port = await serverFromString(reactor, "tcp:3333").listen(listener)
+    print("about to listen on 3333")
+    for x in range(5):
+        await deferLater(reactor, 1, lambda: None)
+        print(f"{10 - x}")
+    server_port = await serverFromString(reactor, "tcp:3333:interface=localhost").listen(listener)
+    print("listening", server_port)
+    request.addfinalizer(server_port.stopListening)
 
     # whether we explicitly wait for our peer, the underlying fowl
     # code should "do the right thing" if we just start issuing
@@ -339,6 +350,8 @@ async def test_drawrof(reactor, request, mailbox, datasize, who, wait_peer):
         msg = await find_message(reactor, config0, kind="peer-connected")
         msg = await find_message(reactor, config1, kind="peer-connected")
         print("Both sides have a peer")
+    else:
+        print("Not waiting for peer")
 
     # both sides are connected -- now we can issue a "remote listen"
     # request
@@ -365,15 +378,16 @@ async def test_drawrof(reactor, request, mailbox, datasize, who, wait_peer):
         d0.cancel()
         d1.cancel()
         server.transport.loseConnection()
-        server_port.stopListening()
         pytest_twisted.blockon(ensureDeferred(server.when_closed()))
     request.addfinalizer(cleanup)
 
     data = os.urandom(datasize)
     if who:
+        print("client sending")
         client_proto.send(data)
         msg = await server.next_message(len(data))
     else:
+        print("server sending")
         server.send(data)
         msg = await client_proto.next_message(len(data))
     assert msg == data, "Incorrect data transfer"
