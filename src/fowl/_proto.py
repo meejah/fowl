@@ -1622,7 +1622,6 @@ def parse_fowld_output(json_str: str) -> FowlOutputMessage:
     return kind_to_message[kind](cmd)
 
 
-
 async def create_fowl(config, output_fowl_message):
     w = await wormhole_from_config(reactor, config)
 
@@ -1643,6 +1642,7 @@ async def create_fowl(config, output_fowl_message):
     fowl = FowlWormhole(reactor, w, sm, config)
     return fowl
 
+
 async def forward(reactor, config):
     """
     Set up a wormhole and process commands relating to forwarding.
@@ -1662,7 +1662,6 @@ async def forward(reactor, config):
             file=config.stdout,
             flush=True,
         )
-
 
     fowl = await create_fowl(config, output_fowl_message)
     fowl.start()
