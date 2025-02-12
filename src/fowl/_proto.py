@@ -7,6 +7,7 @@ import binascii
 import textwrap
 import functools
 import struct
+import signal
 from base64 import b16encode
 from typing import IO, Callable, TextIO
 from functools import partial
@@ -314,19 +315,23 @@ async def frontend_accept_or_invite(reactor, config):
     #move to FowlWormhole if actually useful
     async def disconnect_session():
         if peer_connected:
-            ##print("disconnecting nicely, sending closing=True")
             fowl_wh._wormhole.send_message(json.dumps({"closing": True}).encode("utf8"))
-            # XXX we want to wait for "the other side's" phase=closing message {"closed": True}
             # (what would {"closed": False} even mean, though?)
-            ##print("waiting for explicitly_closed_d")  # ...but with brief timeout?
-            # XXX (what's a good timeout here? "until user gets bored?")
 
             async def wait_for_user():
+
+                def user_got_bored_waiting(*args):
+                    # add back original handler, probably Twisted's
+                    signal.signal(signal.SIGINT, old_handler)
+                    when_explicitly_closed_d.callback(None)
+                old_handler = signal.signal(signal.SIGINT, user_got_bored_waiting)
+
                 while not when_explicitly_closed_d.called:
                     # XXX can we .. catch something here so a second
                     # Ctrl-C means "don't wait, just close"?
                     await deferLater(reactor, 1.5, lambda: None)
                     print('waiting for {"closed": True} from peer')
+
             await race([
                 when_explicitly_closed_d,
                 ensureDeferred(wait_for_user()),
