@@ -326,10 +326,12 @@ async def frontend_accept_or_invite(reactor, config):
                     when_explicitly_closed_d.callback(None)
                 old_handler = signal.signal(signal.SIGINT, user_got_bored_waiting)
 
-                while not when_explicitly_closed_d.called:
+                start = reactor.seconds()
+
+                while (reactor.seconds() - start < 10) and not when_explicitly_closed_d.called:
                     # XXX can we .. catch something here so a second
                     # Ctrl-C means "don't wait, just close"?
-                    await deferLater(reactor, 1.5, lambda: None)
+                    await deferLater(reactor, 1.1, lambda: None)
                     print('waiting for {"closed": True} from peer')
 
             await race([
