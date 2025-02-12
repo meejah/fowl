@@ -76,7 +76,7 @@ async def test_happy_path(reactor, request, mailbox):
         ],
         env=os.environ,
     )
-    request.addfinalizer(lambda:invite.signalProcess(signal.SIGTERM))
+    request.addfinalizer(lambda:invite.signalProcess(signal.SIGKILL))
 
     line = await invite_proto.next_line()
     assert line == "Connected."
@@ -99,7 +99,7 @@ async def test_happy_path(reactor, request, mailbox):
         ],
         env=os.environ,
     )
-    request.addfinalizer(lambda:accept.signalProcess(signal.SIGTERM))
+    request.addfinalizer(lambda:accept.signalProcess(signal.SIGKILL))
 
     print("Starting accept side")
 
@@ -113,6 +113,8 @@ async def test_happy_path(reactor, request, mailbox):
         if "Listening:" in result:
             print("  one side is listening")
             break
+        if "failed to listen" in result:
+            assert False, '"failed to listen" detected in output'
 
     # now that they are connected, and one side is listening -- we can
     # ourselves listen on the "connect" port and connect on the
