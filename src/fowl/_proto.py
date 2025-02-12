@@ -281,7 +281,6 @@ async def frontend_accept_or_invite(reactor, config):
     @output_message.register(WormholeClosed)
     def _(msg):
         print(f"Closed: {msg.result}")
-        print("doing callback", we_closed_d)
         we_closed_d.callback(None)
 
     @output_message.register(Welcome)
@@ -292,18 +291,16 @@ async def frontend_accept_or_invite(reactor, config):
 
     @output_message.register(GotMessageFromPeer)
     def _(msg):
-        print(f"Message from peer: {msg}")
+        peer_msg = json.loads(msg.message)
+        print(f"peer: {peer_msg}")
         # XXX part of experimental / PoC "explicit shutdown" flow;
         # probably move to FowlWormhole or similar if useful
-        if json.loads(msg.message) == {"closing": True}:
-            print("  -> closing!")
+        if peer_msg == {"closing": True}:
             fowl_wh._wormhole.send_message(json.dumps({"closed": True}).encode("utf8"))
-            ##w.close()  # --> actually want to tell mainloop to exit
-            when_explicitly_closed_d.callback(None)
+            we_closed_d.callback(None)
             fowl_wh._wormhole.close()
-        if json.loads(msg.message) == {"closed": True}:
-            print("  -> closed!")
-            fowl_wh._wormhole.send_message(json.dumps({"closed": True}).encode("utf8"))
+        elif peer_msg == {"closed": True}:
+            print("peer has closed.")
             when_explicitly_closed_d.callback(None)
 
     fowl_wh = await create_fowl(config, output_message)
@@ -323,11 +320,17 @@ async def frontend_accept_or_invite(reactor, config):
             # (what would {"closed": False} even mean, though?)
             ##print("waiting for explicitly_closed_d")  # ...but with brief timeout?
             # XXX (what's a good timeout here? "until user gets bored?")
+
+            async def wait_for_user():
+                while not when_explicitly_closed_d.called:
+                    # XXX can we .. catch something here so a second
+                    # Ctrl-C means "don't wait, just close"?
+                    await deferLater(reactor, 1.5, lambda: None)
+                    print('waiting for {"closed": True} from peer')
             await race([
                 when_explicitly_closed_d,
-                deferLater(reactor, 5.1, lambda: None),
+                ensureDeferred(wait_for_user()),
             ])
-            print("explicitly closed!")
 
         try:
             await fowl_wh.close_wormhole()
