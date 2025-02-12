@@ -22,5 +22,6 @@ Sound interesting? Read on!
 
    README
    usage
+   releases
    frontend-protocol
    protocol
