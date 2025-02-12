@@ -170,9 +170,10 @@ class Connection:
 async def frontend_accept_or_invite(reactor, config):
 
     connections = dict()
-    when_explicitly_closed_d = Deferred()
+    got_closing_from_peer_d = Deferred()
     we_closed_d = Deferred()
     peer_connected = False
+    we_sent_closing = False
 
     @functools.singledispatch
     def output_message(msg):
@@ -296,13 +297,10 @@ async def frontend_accept_or_invite(reactor, config):
         print(f"peer: {peer_msg}")
         # XXX part of experimental / PoC "explicit shutdown" flow;
         # probably move to FowlWormhole or similar if useful
-        if peer_msg == {"closing": True}:
-            fowl_wh._wormhole.send_message(json.dumps({"closed": True}).encode("utf8"))
-            we_closed_d.callback(None)
-            fowl_wh._wormhole.close()
-        elif peer_msg == {"closed": True}:
-            print("peer has closed.")
-            when_explicitly_closed_d.callback(None)
+        if "closing" in peer_msg:
+            got_closing_from_peer_d.callback(peer_msg["closing"])
+            if not we_sent_closing:
+                print("If you also wish to quit, use ctrl-c")
 
     fowl_wh = await create_fowl(config, output_message)
     fowl_wh.start()
@@ -314,28 +312,70 @@ async def frontend_accept_or_invite(reactor, config):
     #XXX kind of experimental / PoC for "close down a session nicely";
     #move to FowlWormhole if actually useful
     async def disconnect_session():
+        """
+        Nicely disconnect the session, by communicating with our peer.
+
+        This is a PoC / test of a more robust "Mailbox closing"
+        mechanism. The main idea is that we have a "half-closed"
+        state, such that we can be sure the other side has gotten all
+        our messages (and vice versa).
+
+        Two peer computers, "Laptop" and "Desktop", are connected.
+
+        When Laptop's human is done their session, Laptop sends a
+        {"closing": True} message to Desktop. This indicates that
+        Laptop is "done" and will send no other RemoteListen etc
+        requests. Laptop now waits for Desktop to finish.
+
+        When Desktop receives the {"closing": True} message from
+        Laptop, it knows that human is done. Regardless of what UX
+        Desktop implements, at some point it too is "done". It then
+        sends a {"closing": True} message as well.
+
+        Once both sides have sent a {"closing": True} message, it is
+        safe to close the wormhole. Thus, when a side has both
+        "decided it is done" (and send its {"closing": True}) then it
+        waits for the other side's {"closing": True} message -- once
+        this is received, the wormhole may be closed and the program
+        exits.
+        """
         if peer_connected:
-            fowl_wh._wormhole.send_message(json.dumps({"closing": True}).encode("utf8"))
+            # XXX need to ensure we won't send new connection-open etc
+            # requests, so we should shut down all our listeners
+            # _first_
+            ##fowl_wh._wormhole.send_message(json.dumps({"closing": True}).encode("utf8"))
+            nonlocal we_sent_closing
+            we_sent_closing = True
+            fowl_wh._wormhole.send_message(json.dumps({
+                "closing": fowl_wh._wormhole._boss._next_tx_phase,
+            }).encode("utf8"))
             # (what would {"closed": False} even mean, though?)
+            # ... and maybe its best to send "higest phase message
+            # received so far" like {"closing": 4} or similar?
 
             async def wait_for_user():
 
                 def user_got_bored_waiting(*args):
                     # add back original handler, probably Twisted's
                     signal.signal(signal.SIGINT, old_handler)
-                    when_explicitly_closed_d.callback(None)
+                    got_closing_from_peer_d.callback(-1)
                 old_handler = signal.signal(signal.SIGINT, user_got_bored_waiting)
 
                 start = reactor.seconds()
+                delay = 0.5
 
-                while (reactor.seconds() - start < 10) and not when_explicitly_closed_d.called:
+                while not got_closing_from_peer_d.called:
                     # XXX can we .. catch something here so a second
                     # Ctrl-C means "don't wait, just close"?
-                    await deferLater(reactor, 1.1, lambda: None)
-                    print('waiting for {"closed": True} from peer')
+                    await deferLater(reactor, delay, lambda: None)
+                    delay = delay * 2
+                    if delay > 10.0:
+                        delay = 10.0
+                    delta = humanize.naturaldelta(reactor.seconds() - start)
+                    print(f'Waited {delta} for "closing" message from peer')
 
             await race([
-                when_explicitly_closed_d,
+                got_closing_from_peer_d,
                 ensureDeferred(wait_for_user()),
             ])
 
