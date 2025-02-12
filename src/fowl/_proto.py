@@ -290,29 +290,31 @@ async def frontend_accept_or_invite(reactor, config):
     @output_message.register(GotMessageFromPeer)
     def _(msg):
         print(f"Message from peer: {msg}")
+        # XXX part of experimental / PoC "explicit shutdown" flow;
+        # probably move to FowlWormhole or similar if useful
         if json.loads(msg.message) == {"closing": True}:
             print("  -> closing!")
-            w.send_message(json.dumps({"closed": True}).encode("utf8"))
+            fowl_wh._wormhole.send_message(json.dumps({"closed": True}).encode("utf8"))
             ##w.close()  # --> actually want to tell mainloop to exit
             when_explicitly_closed_d.callback(None)
-            w.close()
+            fowl_wh._wormhole.close()
         if json.loads(msg.message) == {"closed": True}:
             print("  -> closed!")
-            w.send_message(json.dumps({"closed": True}).encode("utf8"))
+            fowl_wh._wormhole.send_message(json.dumps({"closed": True}).encode("utf8"))
             when_explicitly_closed_d.callback(None)
 
-    daemon = FowlDaemon(config, output_message)
-    w = await wormhole_from_config(reactor, config)
-    wh = FowlWormhole(reactor, w, daemon, config)
-    wh.start()
+    fowl_wh = await create_fowl(config, output_message)
+    fowl_wh.start()
 
     ##@daemon.set_trace
     def _(o, i, n):
         print("{} --[ {} ]--> {}".format(o, i, n))
 
+    #XXX kind of experimental / PoC for "close down a session nicely";
+    #move to FowlWormhole if actually useful
     async def disconnect_session():
         ##print("disconnecting nicely, sending closing=True")
-        w.send_message(json.dumps({"closing": True}).encode("utf8"))
+        fowl_wh._wormhole.send_message(json.dumps({"closing": True}).encode("utf8"))
         # XXX we want to wait for "the other side's" phase=closing message {"closed": True}
         # (what would {"closed": False} even mean, though?)
         ##print("waiting for explicitly_closed_d")  # ...but with brief timeout?
@@ -321,13 +323,14 @@ async def frontend_accept_or_invite(reactor, config):
             when_explicitly_closed_d,
             deferLater(reactor, 5.1, lambda: None),
         ])
-        ##print("explicitly closed!")
+        print("explicitly closed!")
         try:
-            await w.close()
+            await fowl_wh.close_wormhole()
         except wormhole_errors.LonelyError:
             # maybe just say nothing? why does the user care about
             # this? (they probably hit ctrl-c anyway, how else can you get here?)
             print("Wormhole closed without peer")
+        print("done")
 
     ### XXX use PleaseCloseWormhole, approximately
     reactor.addSystemEventTrigger("before", "shutdown", lambda: ensureDeferred(disconnect_session()))
@@ -337,16 +340,16 @@ async def frontend_accept_or_invite(reactor, config):
         w.debug_set_trace(kind, which="B N M S O K SK R RC L C T", file=config.debug_file)
 
     if config.code is not None:
-        wh.command(
+        fowl_wh.command(
             SetCode(config.code)
         )
     else:
-        wh.command(
+        fowl_wh.command(
             AllocateCode(config.code_length)
         )
 
     for command in config.commands:
-        wh.command(command)
+        fowl_wh.command(command)
 
     last_displayed = None
     while not we_closed_d.called:
@@ -356,6 +359,8 @@ async def frontend_accept_or_invite(reactor, config):
                 conn = connections[ident]
                 print(f"{ident}: {humanize.naturalsize(conn.i)} in, {humanize.naturalsize(conn.o)} out")
             last_displayed = set(connections.values())
+        else:
+            print(".")
 
 
 class SubchannelForwarder(Protocol):
@@ -1173,6 +1178,8 @@ class FowlWormhole:
         if self.control_proto is not None:
             self.control_proto.transport.loseConnection()
             await self.control_proto.when_done()
+        print("done, closing wormhole")
+        await self._wormhole.close()
         # XXX make sure wormhole is closed? (closing dance)
 
     # XXX wants to be an IService?
@@ -1248,12 +1255,12 @@ class FowlWormhole:
 
     # public API methods
 
-    def close_wormhole(self):
+    async def close_wormhole(self):
         """
         Shut down the wormhole
         """
         # XXX see also the whole "how to shutdown half-close etc"
-        self._wormhole.close()
+        await self._wormhole.close()
         # once the wormhole "actually" closes, the state-machine will
         # trigger our "stop" codepath
 
@@ -1616,7 +1623,8 @@ async def create_fowl(config, output_fowl_message):
 
     def command_message(msg):
         if isinstance(msg, PleaseCloseWormhole):
-            fowl.close_wormhole()
+            d = ensureDeferred(fowl.close_wormhole())
+            d.addErrback(lambda f: print(f"Error closing: {f.value}"))
 
     sm = FowlDaemon(config, output_fowl_message, command_message)
 
@@ -1662,6 +1670,7 @@ async def forward(reactor, config):
     try:
         await Deferred()
     except CancelledError:
+        print("cancelled!")
         await fowl.stop()
 
 
