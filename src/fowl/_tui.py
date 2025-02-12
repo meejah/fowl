@@ -170,7 +170,7 @@ async def frontend_tui(reactor, config):
     else:
         output_wrapper = output_message
 
-    fowl_wh = await create_fowl(config, output_message)
+    fowl_wh = await create_fowl(config, output_wrapper)
 
     # make into IService?
     fowl_wh.start()

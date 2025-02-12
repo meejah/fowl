@@ -335,10 +335,6 @@ async def frontend_accept_or_invite(reactor, config):
     ### XXX use PleaseCloseWormhole, approximately
     reactor.addSystemEventTrigger("before", "shutdown", lambda: ensureDeferred(disconnect_session()))
 
-    kind = "invite" if config.code is None else "accept"
-    if config.debug_file:
-        w.debug_set_trace(kind, which="B N M S O K SK R RC L C T", file=config.debug_file)
-
     if config.code is not None:
         fowl_wh.command(
             SetCode(config.code)
@@ -1614,8 +1610,10 @@ def parse_fowld_output(json_str: str) -> FowlOutputMessage:
 
 async def create_fowl(config, output_fowl_message):
     w = await wormhole_from_config(reactor, config)
+
     if config.debug_file:
-        w.debug_set_trace("forward", which="B N M S O K SK R RC L C T", file=config.debug_file)
+        kind = "invite" if config.code is None else "accept"
+        w.debug_set_trace(kind, which="B N M S O K SK R RC L C T", file=config.debug_file)
 
     def command_message(msg):
         if isinstance(msg, PleaseCloseWormhole):
