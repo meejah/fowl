@@ -1,17 +1,10 @@
-import sys
-import json
-from collections import defaultdict
 
 import pytest_twisted
-from twisted.internet.interfaces import ITransport
-from twisted.internet.protocol import ProcessProtocol, Factory, Protocol
-from twisted.internet.task import deferLater
-from twisted.internet.error import ProcessExitedAlready, ProcessDone
+from twisted.internet.protocol import Factory, Protocol
 from twisted.internet.defer import Deferred
 from twisted.internet.endpoints import serverFromString, clientFromString
-from attrs import define
 
-from util import run_service, fowld
+from util import fowld
 
 from fowl.messages import *
 

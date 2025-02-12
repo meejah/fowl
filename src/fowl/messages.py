@@ -14,6 +14,11 @@ class FowlCommandMessage:
     """
 
 
+class FowlInternalControl:
+    "A message from the state-machine to outside, basically?"
+    pass
+
+
 # if we had ADT / Union types, these would both be that -- is this as
 # close as we can get in Python?
 
@@ -225,6 +230,11 @@ class BytesOut(FowlOutputMessage):
 @frozen
 class WormholeError(FowlOutputMessage):
     message: str
+
+
+@frozen
+class PleaseCloseWormhole(FowlInternalControl):
+    reason: str
 
 
 @frozen

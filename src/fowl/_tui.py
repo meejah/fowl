@@ -18,7 +18,7 @@ from wormhole.errors import LonelyError
 import attr
 
 from .observer import Next, When
-from ._proto import wormhole_from_config, FowlDaemon, FowlWormhole, fowld_output_to_json
+from ._proto import wormhole_from_config, create_fowl, fowld_output_to_json
 from .messages import (
     Welcome,
     CodeAllocated,
@@ -141,7 +141,10 @@ async def frontend_tui(reactor, config):
 
     @output_message.register(WormholeClosed)
     def _(msg):
-        print(f"{msg.result}...", end="", flush=True)
+        print(f"Closed({msg.result})...", end="", flush=True)
+        # close our standard input, so the human can't give us more
+        # commands -- because we're done
+        command_reader.transport.loseConnection()
 
     @output_message.register(Welcome)
     def _(msg):
@@ -152,7 +155,6 @@ async def frontend_tui(reactor, config):
         print(">>> ", end="", flush=True)
 
     start_time = reactor.seconds()
-
     if config.output_debug_messages:
         def output_wrapper(msg):
             try:
@@ -168,12 +170,10 @@ async def frontend_tui(reactor, config):
     else:
         output_wrapper = output_message
 
-    daemon = FowlDaemon(reactor, config, output_wrapper)
-    w = await wormhole_from_config(reactor, config)
-    wh = FowlWormhole(reactor, w, daemon, config)
+    fowl_wh = await create_fowl(config, output_wrapper)
 
     # make into IService?
-    wh.start()
+    fowl_wh.start()
 
     state = [State()]
 
@@ -210,10 +210,9 @@ async def frontend_tui(reactor, config):
 
     print(">>> ", end="", flush=True)
     while True:
-        wc = ensureDeferred(command_reader.when_closed())
         what, result = await race([
             ensureDeferred(command_reader.next_command()),
-            wc,
+            ensureDeferred(command_reader.when_closed()),
         ])
         if what == 0:
             cmd_line = result
@@ -231,7 +230,7 @@ async def frontend_tui(reactor, config):
                     print(">>> ", end="", flush=True)
                     continue
                 # XXX should be passing "high level" FowlWormhole thing, not Wormhole direct
-                await cmd_fn(reactor, wh, state[0], *cmd[1:])
+                await cmd_fn(reactor, fowl_wh, state[0], *cmd[1:])
             else:
                 print(">>> ", end="", flush=True)
         elif what == 1:
@@ -239,7 +238,7 @@ async def frontend_tui(reactor, config):
 
     print("\nClosing mailbox...", end="", flush=True)
     try:
-        await w.close()
+        await fowl_wh.stop()
     except LonelyError:
         pass
     print("done.")

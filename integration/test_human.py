@@ -1,20 +1,15 @@
 import re
-import sys
-import json
 import socket
-from collections import defaultdict
 
 import pytest_twisted
 from twisted.internet.interfaces import ITransport
 from twisted.internet.protocol import ProcessProtocol, Factory, Protocol
 from twisted.internet.task import deferLater
-from twisted.internet.error import ProcessExitedAlready, ProcessDone
 from twisted.internet.defer import Deferred
 from twisted.internet.endpoints import serverFromString, clientFromString
 from attrs import define
 
 from util import run_service
-from fowl.observer import Next
 
 # since the src/fowl/test/test_forward tests exercise the underlying
 # "fowld" functionality (minus the entry-point), this tests the
@@ -221,7 +216,7 @@ async def test_non_localhost_backwards(reactor, request, wormhole):
     m = await f0.protocol.have_line(".* code: (.*).*")
     code = m.group(1)
 
-    f1 = await fowl(reactor, request, "--allow-listen", f"8333", "--allow-listen", f"{ours}:8555", code, mailbox=wormhole.url)
+    f1 = await fowl(reactor, request, "--allow-listen", "8333", "--allow-listen", f"{ours}:8555", code, mailbox=wormhole.url)
 
     # both should say they're connected
     await f0.protocol.have_line("Peer is connected.")
