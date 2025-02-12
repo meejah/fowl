@@ -359,8 +359,6 @@ async def frontend_accept_or_invite(reactor, config):
                 conn = connections[ident]
                 print(f"{ident}: {humanize.naturalsize(conn.i)} in, {humanize.naturalsize(conn.o)} out")
             last_displayed = set(connections.values())
-        else:
-            print(".")
 
 
 class SubchannelForwarder(Protocol):
@@ -1171,16 +1169,14 @@ class FowlWormhole:
 
     # XXX wants to be an IService?
     async def stop(self):
-        print("STOP called")
         for port in self._listening_ports:
             # note to self port.stopListening and port.loseConnection are THE SAME
             port.stopListening()
         if self.control_proto is not None:
             self.control_proto.transport.loseConnection()
             await self.control_proto.when_done()
-        print("done, closing wormhole")
         await self._wormhole.close()
-        # XXX make sure wormhole is closed? (closing dance)
+        # XXX put "session ending" code here, if it's useful
 
     # XXX wants to be an IService?
     def start(self):
@@ -1663,14 +1659,9 @@ async def forward(reactor, config):
     dispatch = LocalCommandDispatch(config, fowl)
     create_stdio(dispatch)
 
-    # arrange to shut down nicely (e.g. on ctrl-C)
-    #XXX (or do we get a cancel in that case?)
-    reactor.addSystemEventTrigger("before", "shutdown", lambda: ensureDeferred(fowl.stop()))
-
     try:
         await Deferred()
     except CancelledError:
-        print("cancelled!")
         await fowl.stop()
 
 
