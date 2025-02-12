@@ -75,6 +75,12 @@ def fowld(ctx, ip_privacy, mailbox, debug):
 
 
 @click.option(
+    "--debug-messages",
+    default=None,
+    type=click.File(mode="w", encoding="utf8"),
+    help="Save all input/output messages to a file",
+)
+@click.option(
     "--ip-privacy/--clearnet",
     default=False,
     help="Enable operation over Tor (default is public Internet)",
@@ -147,7 +153,7 @@ def fowld(ctx, ip_privacy, mailbox, debug):
 )
 @click.argument("code", required=False)
 @click.command()
-def fowl(ip_privacy, mailbox, debug, allow_listen, allow_connect, local, remote, code_length, code, readme, interactive):
+def fowl(ip_privacy, mailbox, debug, allow_listen, allow_connect, local, remote, code_length, code, readme, interactive, debug_messages):
     """
     Forward Over Wormhole, Locally
 
@@ -253,6 +259,7 @@ def fowl(ip_privacy, mailbox, debug, allow_listen, allow_connect, local, remote,
         ],
         listen_policy=listen_policy,
         connect_policy=connect_policy,
+        output_debug_messages=debug_messages,
     )
 
     if interactive:
