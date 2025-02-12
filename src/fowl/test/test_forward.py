@@ -334,12 +334,7 @@ async def test_drawrof(reactor, request, mailbox, datasize, who, wait_peer):
     )
 
     listener = ServerFactory(reactor)
-    print("about to listen on 3333")
-    for x in range(5):
-        await deferLater(reactor, 1, lambda: None)
-        print(f"{10 - x}")
     server_port = await serverFromString(reactor, "tcp:3333:interface=localhost").listen(listener)
-    print("listening", server_port)
     request.addfinalizer(server_port.stopListening)
 
     # whether we explicitly wait for our peer, the underlying fowl
