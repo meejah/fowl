@@ -1136,6 +1136,7 @@ class FowlWormhole:
     # XXX wants to be an IService?
     async def stop(self):
         await self._stop_listening()
+        await self._close_active_connections()
         await self._wormhole.close()
         # XXX put "session ending" code here, if it's useful
 
