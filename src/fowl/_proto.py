@@ -286,7 +286,9 @@ async def frontend_accept_or_invite(reactor, config):
 
     @output_message.register(GotMessageFromPeer)
     def _(msg):
-        peer_msg = json.loads(msg.message)
+        # XXX do we even need this stuff? I guess it helps "fowl
+        # users" play around with extra mailbox messages?
+        json.loads(msg.message)
         ##print(f"peer: {peer_msg}")
 
     fowl_wh = await create_fowl(config, output_message)
@@ -1309,7 +1311,7 @@ class FowlWormhole:
                 if result >= 0:
                     print(f"Clean close; peer saw phase={result}")
                 else:
-                    print(f"Never got closing message from peer")
+                    print("Never got closing message from peer")
 
         try:
             await self.close_wormhole()
