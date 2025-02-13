@@ -170,10 +170,6 @@ class Connection:
 async def frontend_accept_or_invite(reactor, config):
 
     connections = dict()
-    got_closing_from_peer_d = Deferred()
-    we_closed_d = Deferred()
-    peer_connected = False
-    we_sent_closing = False
 
     @functools.singledispatch
     def output_message(msg):
@@ -194,8 +190,6 @@ async def frontend_accept_or_invite(reactor, config):
 
     @output_message.register(PeerConnected)
     def _(msg):
-        nonlocal peer_connected
-        peer_connected = True
         nice_verifier = " ".join(
             msg.verifier[a:a+4]
             for a in range(0, len(msg.verifier), 4)
@@ -283,7 +277,6 @@ async def frontend_accept_or_invite(reactor, config):
     @output_message.register(WormholeClosed)
     def _(msg):
         print(f"Closed: {msg.result}")
-        we_closed_d.callback(None)
 
     @output_message.register(Welcome)
     def _(msg):
@@ -294,13 +287,7 @@ async def frontend_accept_or_invite(reactor, config):
     @output_message.register(GotMessageFromPeer)
     def _(msg):
         peer_msg = json.loads(msg.message)
-        print(f"peer: {peer_msg}")
-        # XXX part of experimental / PoC "explicit shutdown" flow;
-        # probably move to FowlWormhole or similar if useful
-        if "closing" in peer_msg:
-            got_closing_from_peer_d.callback(peer_msg["closing"])
-            if not we_sent_closing:
-                print("If you also wish to quit, use ctrl-c")
+        ##print(f"peer: {peer_msg}")
 
     fowl_wh = await create_fowl(config, output_message)
     fowl_wh.start()
@@ -309,86 +296,8 @@ async def frontend_accept_or_invite(reactor, config):
     def _(o, i, n):
         print("{} --[ {} ]--> {}".format(o, i, n))
 
-    #XXX kind of experimental / PoC for "close down a session nicely";
-    #move to FowlWormhole if actually useful
-    async def disconnect_session():
-        """
-        Nicely disconnect the session, by communicating with our peer.
-
-        This is a PoC / test of a more robust "Mailbox closing"
-        mechanism. The main idea is that we have a "half-closed"
-        state, such that we can be sure the other side has gotten all
-        our messages (and vice versa).
-
-        Two peer computers, "Laptop" and "Desktop", are connected.
-
-        When Laptop's human is done their session, Laptop sends a
-        {"closing": True} message to Desktop. This indicates that
-        Laptop is "done" and will send no other RemoteListen etc
-        requests. Laptop now waits for Desktop to finish.
-
-        When Desktop receives the {"closing": True} message from
-        Laptop, it knows that human is done. Regardless of what UX
-        Desktop implements, at some point it too is "done". It then
-        sends a {"closing": True} message as well.
-
-        Once both sides have sent a {"closing": True} message, it is
-        safe to close the wormhole. Thus, when a side has both
-        "decided it is done" (and send its {"closing": True}) then it
-        waits for the other side's {"closing": True} message -- once
-        this is received, the wormhole may be closed and the program
-        exits.
-        """
-        if peer_connected:
-            # XXX need to ensure we won't send new connection-open etc
-            # requests, so we should shut down all our listeners
-            # _first_
-            ##fowl_wh._wormhole.send_message(json.dumps({"closing": True}).encode("utf8"))
-            nonlocal we_sent_closing
-            we_sent_closing = True
-            fowl_wh._wormhole.send_message(json.dumps({
-                "closing": fowl_wh._wormhole._boss._next_tx_phase,
-            }).encode("utf8"))
-            # (what would {"closed": False} even mean, though?)
-            # ... and maybe its best to send "higest phase message
-            # received so far" like {"closing": 4} or similar?
-
-            async def wait_for_user():
-
-                def user_got_bored_waiting(*args):
-                    # add back original handler, probably Twisted's
-                    signal.signal(signal.SIGINT, old_handler)
-                    got_closing_from_peer_d.callback(-1)
-                old_handler = signal.signal(signal.SIGINT, user_got_bored_waiting)
-
-                start = reactor.seconds()
-                delay = 0.5
-
-                while not got_closing_from_peer_d.called:
-                    # XXX can we .. catch something here so a second
-                    # Ctrl-C means "don't wait, just close"?
-                    await deferLater(reactor, delay, lambda: None)
-                    delay = delay * 2
-                    if delay > 10.0:
-                        delay = 10.0
-                    delta = humanize.naturaldelta(reactor.seconds() - start)
-                    print(f'Waited {delta} for "closing" message from peer')
-
-            await race([
-                got_closing_from_peer_d,
-                ensureDeferred(wait_for_user()),
-            ])
-
-        try:
-            await fowl_wh.close_wormhole()
-        except wormhole_errors.LonelyError:
-            # maybe just say nothing? why does the user care about
-            # this? (they probably hit ctrl-c anyway, how else can you get here?)
-            print("Wormhole closed without peer")
-        print("done")
-
     ### XXX use PleaseCloseWormhole, approximately
-    reactor.addSystemEventTrigger("before", "shutdown", lambda: ensureDeferred(disconnect_session()))
+    reactor.addSystemEventTrigger("before", "shutdown", lambda: ensureDeferred(fowl_wh.disconnect_session()))
 
     if config.code is not None:
         fowl_wh.command(
@@ -402,8 +311,10 @@ async def frontend_accept_or_invite(reactor, config):
     for command in config.commands:
         fowl_wh.command(command)
 
+    done_d = fowl_wh.when_done()
+
     last_displayed = None
-    while not we_closed_d.called:
+    while not done_d.called:
         await deferLater(reactor, 1, lambda: None)
         if connections and last_displayed != set(connections.values()):
             for ident in sorted(connections.keys()):
@@ -1218,16 +1129,25 @@ class FowlWormhole:
         self._got_welcome = When()  # we received the Welcome from the server
         self.connect_ep = self.control_proto = None
 
+        self._we_sent_closing = False
+        self._got_closing_from_peer_d = Deferred()
+        self._peer_connected = False
+
     # XXX wants to be an IService?
     async def stop(self):
+        await self._stop_listening()
+        await self._wormhole.close()
+        # XXX put "session ending" code here, if it's useful
+
+    async def _stop_listening(self):
         for port in self._listening_ports:
             # note to self port.stopListening and port.loseConnection are THE SAME
             port.stopListening()
+
+    async def _close_active_connections(self):
         if self.control_proto is not None:
             self.control_proto.transport.loseConnection()
             await self.control_proto.when_done()
-        await self._wormhole.close()
-        # XXX put "session ending" code here, if it's useful
 
     # XXX wants to be an IService?
     def start(self):
@@ -1274,10 +1194,26 @@ class FowlWormhole:
             @d.addCallback
             def did_dilate(arg):
                 self._daemon.peer_connected(verifier, versions)
+                self._peer_connected = True
                 return arg
 
         # hook up "incoming message" to input
         def got_message(plaintext):
+            # XXX should get rid of GotMessageFromPeer probably?
+            # user-code can't / shouldn't use that, it's only really
+            # for "closing" -- regardless, should *at least* "eat" the
+            # closing message here ...
+
+            # XXX this all should maybe go in "daemon"..? the "user
+            # interaction" stuff is hard then -- but wouldn't we need
+            # to make some kind of API for that regardless? (e.g. if
+            # it was in magic-wormhole?)
+            try:
+                js = json.loads(plaintext)
+                if "closing" in js:
+                    self._got_closing_from_peer_d.callback(js["closing"])
+            except Exception:
+                pass
             self._daemon.got_message(plaintext)
             ensureDeferred(self._wormhole.get_message()).addCallback(
                 got_message,
@@ -1301,6 +1237,86 @@ class FowlWormhole:
         ensureDeferred(self._wormhole._closed_observer.when_fired()).addBoth(was_closed)
 
     # public API methods
+
+    # XXX moved from elsewhere, unify with close_wormhole()
+    async def disconnect_session(self):
+        """
+        Nicely disconnect the session, by communicating with our peer.
+
+        This is a PoC / test of a more robust "Mailbox closing"
+        mechanism. The main idea is that we have a "half-closed"
+        state, such that we can be sure the other side has gotten all
+        our messages (and vice versa).
+
+        Two peer computers, "Laptop" and "Desktop", are connected.
+
+        When Laptop's human is done their session, Laptop sends a
+        {"closing": True} message to Desktop. This indicates that
+        Laptop is "done" and will send no other RemoteListen etc
+        requests. Laptop now waits for Desktop to finish.
+
+        When Desktop receives the {"closing": True} message from
+        Laptop, it knows that human is done. Regardless of what UX
+        Desktop implements, at some point it too is "done". It then
+        sends a {"closing": True} message as well.
+
+        Once both sides have sent a {"closing": True} message, it is
+        safe to close the wormhole. Thus, when a side has both
+        "decided it is done" (and send its {"closing": True}) then it
+        waits for the other side's {"closing": True} message -- once
+        this is received, the wormhole may be closed and the program
+        exits.
+        """
+        if self._peer_connected:
+            # before we emit "closing", we must ensure we won't start
+            # any new channels.
+            await self._stop_listening()
+            self._wormhole.send_message(json.dumps({
+                "closing": self._wormhole._boss._next_tx_phase,
+            }).encode("utf8"))
+            self._we_sent_closing = True
+
+            # this can take "forever" if the other side isn't
+            # responding at all, so we want to just hit the "race"
+            # codepath anyway
+            _ = ensureDeferred(self._close_active_connections())
+
+            async def wait_for_user():
+
+                def user_got_bored_waiting(*args):
+                    # add back original handler, probably Twisted's
+                    signal.signal(signal.SIGINT, old_handler)
+                    self._got_closing_from_peer_d.callback(-1)
+                old_handler = signal.signal(signal.SIGINT, user_got_bored_waiting)
+
+                start = self._reactor.seconds()
+                delay = 0.5
+
+                while not self._got_closing_from_peer_d.called:
+                    await deferLater(reactor, delay, lambda: None)
+                    delay = delay * 2
+                    if delay > 10.0:
+                        delay = 10.0
+                    delta = humanize.naturaldelta(reactor.seconds() - start)
+                    print(f'Waited {delta} for "closing" message from peer')
+
+            which, result = await race([
+                self._got_closing_from_peer_d,
+                ensureDeferred(wait_for_user()),
+            ])
+            if which == 0:
+                if result >= 0:
+                    print(f"Clean close; peer saw phase={result}")
+                else:
+                    print(f"Never got closing message from peer")
+
+        try:
+            await self.close_wormhole()
+        except wormhole_errors.LonelyError:
+            # maybe just say nothing? why does the user care about
+            # this? (they probably hit ctrl-c anyway, how else can you get here?)
+            print("Wormhole closed without peer")
+        print("done")
 
     async def close_wormhole(self):
         """
