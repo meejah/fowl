@@ -1,0 +1,84 @@
+{"url": "ws://relay.magic-wormhole.io:4000/v1", "welcome": {}, "kind": "welcome", "timestamp": 1.3514392375946045}
+{"code": "3-sympathy-chairlift", "kind": "code-allocated", "timestamp": 3.174710512161255}
+{"verifier": "509c29028ed1260cf8f4d435ce16a83a0c75e8fa1c1fb3946edc2a2bbc274b2d", "versions": {"fowl": {"features": {"core": {}}}}, "kind": "peer-connected", "timestamp": 5.518432378768921}
+{"listener_id": "5643F7", "listen": "tcp:4444:interface=localhost", "connect": "tcp:localhost:22", "kind": "listening", "timestamp": 7.126330614089966}
+{"listener_id": "762FC5", "listen": "tcp:4444:interface=localhost", "connect": "tcp:localhost:22", "kind": "remote-listening-succeeded", "timestamp": 9.0}
+{"id": 1, "endpoint": "tcp:localhost:22", "listener_id": "5643F7", "kind": "outgoing-connection", "timestamp": 11.454788446426392}
+{"id": 1, "bytes": 40, "kind": "bytes-out", "timestamp": 13.671136379241943}
+{"id": 1, "bytes": 40, "kind": "bytes-in", "timestamp": 13.672210454940796}
+{"id": 1, "bytes": 1536, "kind": "bytes-in", "timestamp": 13.675124406814575}
+{"id": 1, "bytes": 1136, "kind": "bytes-out", "timestamp": 13.925260543823242}
+{"id": 1, "bytes": 48, "kind": "bytes-in", "timestamp": 13.933594465255737}
+{"id": 1, "bytes": 596, "kind": "bytes-out", "timestamp": 14.284725904464722}
+{"id": 1, "bytes": 16, "kind": "bytes-in", "timestamp": 14.297775745391846}
+{"id": 1, "bytes": 44, "kind": "bytes-in", "timestamp": 14.299222230911255}
+{"id": 1, "bytes": 44, "kind": "bytes-out", "timestamp": 14.63912057876587}
+{"id": 1, "bytes": 68, "kind": "bytes-in", "timestamp": 14.640573978424072}
+{"id": 1, "bytes": 44, "kind": "bytes-out", "timestamp": 14.999800682067871}
+{"id": 1, "bytes": 140, "kind": "bytes-in", "timestamp": 15.001509428024292}
+{"id": 1, "bytes": 100, "kind": "bytes-out", "timestamp": 15.359763622283936}
+{"id": 1, "bytes": 228, "kind": "bytes-in", "timestamp": 15.367019176483154}
+{"id": 1, "bytes": 28, "kind": "bytes-out", "timestamp": 15.726409196853638}
+{"id": 1, "bytes": 112, "kind": "bytes-in", "timestamp": 15.728192806243896}
+{"id": 1, "bytes": 796, "kind": "bytes-out", "timestamp": 15.795321702957153}
+{"id": 1, "bytes": 44, "kind": "bytes-out", "timestamp": 16.084144830703735}
+{"id": 1, "bytes": 1088, "kind": "bytes-in", "timestamp": 16.086140394210815}
+{"id": 1, "bytes": 108, "kind": "bytes-out", "timestamp": 16.44160008430481}
+{"id": 1, "bytes": 668, "kind": "bytes-out", "timestamp": 16.442035675048828}
+{"id": 1, "bytes": 60, "kind": "bytes-out", "timestamp": 16.442363739013672}
+{"id": 1, "bytes": 36, "kind": "bytes-in", "timestamp": 18.93751358985901}
+{"id": 1, "bytes": 36, "kind": "bytes-in", "timestamp": 19.119226217269897}
+{"id": 1, "bytes": 36, "kind": "bytes-out", "timestamp": 19.192065715789795}
+{"id": 1, "bytes": 36, "kind": "bytes-in", "timestamp": 19.213802337646484}
+{"id": 1, "bytes": 36, "kind": "bytes-in", "timestamp": 19.294963598251343}
+{"id": 1, "bytes": 36, "kind": "bytes-out", "timestamp": 19.333325386047363}
+{"id": 1, "bytes": 36, "kind": "bytes-in", "timestamp": 19.496645212173462}
+{"id": 1, "bytes": 36, "kind": "bytes-out", "timestamp": 19.566128253936768}
+{"id": 1, "bytes": 36, "kind": "bytes-out", "timestamp": 19.567610025405884}
+{"id": 1, "bytes": 36, "kind": "bytes-out", "timestamp": 19.80325150489807}
+{"id": 1, "bytes": 36, "kind": "bytes-in", "timestamp": 20.300229787826538}
+{"id": 1, "bytes": 36, "kind": "bytes-out", "timestamp": 20.55157208442688}
+{"id": 1, "bytes": 36, "kind": "bytes-in", "timestamp": 20.724181175231934}
+{"id": 1, "bytes": 36, "kind": "bytes-in", "timestamp": 20.89018225669861}
+{"id": 1, "bytes": 36, "kind": "bytes-out", "timestamp": 20.96187996864319}
+{"id": 1, "bytes": 36, "kind": "bytes-in", "timestamp": 20.96571159362793}
+{"id": 1, "bytes": 36, "kind": "bytes-in", "timestamp": 21.0519859790802}
+{"id": 1, "bytes": 36, "kind": "bytes-out", "timestamp": 21.09884262084961}
+{"id": 1, "bytes": 36, "kind": "bytes-in", "timestamp": 21.13437533378601}
+{"id": 1, "bytes": 36, "kind": "bytes-out", "timestamp": 21.234243154525757}
+{"id": 1, "bytes": 36, "kind": "bytes-in", "timestamp": 21.245336055755615}
+{"id": 1, "bytes": 36, "kind": "bytes-out", "timestamp": 21.302200317382812}
+{"id": 1, "bytes": 36, "kind": "bytes-out", "timestamp": 21.37195110321045}
+{"id": 1, "bytes": 36, "kind": "bytes-in", "timestamp": 21.372792959213257}
+{"id": 1, "bytes": 36, "kind": "bytes-in", "timestamp": 21.46353507041931}
+{"id": 1, "bytes": 36, "kind": "bytes-out", "timestamp": 21.509737014770508}
+{"id": 1, "bytes": 36, "kind": "bytes-in", "timestamp": 21.637100219726562}
+{"id": 1, "bytes": 36, "kind": "bytes-out", "timestamp": 21.645970582962036}
+{"id": 1, "bytes": 36, "kind": "bytes-out", "timestamp": 21.71691393852234}
+{"id": 1, "bytes": 36, "kind": "bytes-out", "timestamp": 21.858344554901123}
+{"id": 1, "bytes": 156, "kind": "bytes-out", "timestamp": 21.859935522079468}
+{"id": 1, "bytes": 36, "kind": "bytes-in", "timestamp": 40.023802518844604}
+{"id": 1, "bytes": 52, "kind": "bytes-out", "timestamp": 40.273189306259155}
+{"id": 1, "bytes": 36, "kind": "bytes-in", "timestamp": 40.710275411605835}
+{"id": 1, "bytes": 52, "kind": "bytes-out", "timestamp": 40.95995211601257}
+{"id": 1, "bytes": 148, "kind": "bytes-out", "timestamp": 40.96175479888916}
+{"id": 1, "bytes": 36, "kind": "bytes-in", "timestamp": 41.09188365936279}
+{"id": 1, "bytes": 36, "kind": "bytes-in", "timestamp": 41.19298195838928}
+{"id": 1, "bytes": 36, "kind": "bytes-in", "timestamp": 41.294397592544556}
+{"id": 1, "bytes": 36, "kind": "bytes-in", "timestamp": 41.33403515815735}
+{"id": 1, "bytes": 36, "kind": "bytes-out", "timestamp": 41.34327173233032}
+{"id": 1, "bytes": 36, "kind": "bytes-out", "timestamp": 41.40972375869751}
+{"id": 1, "bytes": 36, "kind": "bytes-in", "timestamp": 41.415531396865845}
+{"id": 1, "bytes": 36, "kind": "bytes-out", "timestamp": 41.502840757369995}
+{"id": 1, "bytes": 36, "kind": "bytes-in", "timestamp": 41.53583121299744}
+{"id": 1, "bytes": 36, "kind": "bytes-out", "timestamp": 41.57434344291687}
+{"id": 1, "bytes": 36, "kind": "bytes-out", "timestamp": 41.645458936691284}
+{"id": 1, "bytes": 52, "kind": "bytes-out", "timestamp": 41.881882190704346}
+{"id": 1, "bytes": 44, "kind": "bytes-out", "timestamp": 41.88356280326843}
+{"id": 1, "bytes": 96, "kind": "bytes-out", "timestamp": 41.8839693069458}
+{"id": 1, "bytes": 36, "kind": "bytes-in", "timestamp": 44.97152805328369}
+{"id": 1, "bytes": 60, "kind": "bytes-out", "timestamp": 45.228837728500366}
+{"id": 1, "bytes": 176, "kind": "bytes-out", "timestamp": 45.229408979415894}
+{"id": 1, "bytes": 96, "kind": "bytes-in", "timestamp": 45.229941606521606}
+{"id": 1, "kind": "outgoing-done", "timestamp": 45.47497010231018}
+{"result": "happy", "kind": "closed", "timestamp": 47.56743550300598}
