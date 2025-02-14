@@ -1683,6 +1683,23 @@ def parse_fowld_output(json_str: str) -> FowlOutputMessage:
 
 
 async def create_fowl(config, output_fowl_message):
+
+    start_time = reactor.seconds()
+    if config.output_debug_messages:
+        def output_wrapper(msg):
+            try:
+                js = fowld_output_to_json(msg)
+                # don't leak our absolute time, more convenient anyway
+                js["timestamp"] = reactor.seconds() - start_time
+                config.output_debug_messages.write(
+                    json.dumps(js) + "\n"
+                )
+            except Exception as e:
+                print(e)
+            return output_fowl_message(msg)
+    else:
+        output_wrapper = output_fowl_message
+
     w = await wormhole_from_config(reactor, config)
 
     if config.debug_file:
@@ -1694,7 +1711,7 @@ async def create_fowl(config, output_fowl_message):
             d = ensureDeferred(fowl.close_wormhole())
             d.addErrback(lambda f: print(f"Error closing: {f.value}"))
 
-    sm = FowlDaemon(config, output_fowl_message, command_message)
+    sm = FowlDaemon(config, output_wrapper, command_message)
 
 #    @sm.set_trace
     def _(start, edge, end):
