@@ -37,8 +37,8 @@ t.add_row(status_local, message_text, status_remote)
 
 data = [
     json.loads(line)
-    ##for line in open("ssh-orig.json", "r").readlines()
-    for line in open("ssh.json", "r").readlines()
+    for line in open("ssh-orig.json", "r").readlines()
+    ##for line in open("ssh.json", "r").readlines()
     ##for line in open("demo.json", "r").readlines()
 ]
 
