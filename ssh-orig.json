@@ -2,7 +2,6 @@
 {"code": "3-sympathy-chairlift", "kind": "code-allocated", "timestamp": 3.174710512161255}
 {"verifier": "509c29028ed1260cf8f4d435ce16a83a0c75e8fa1c1fb3946edc2a2bbc274b2d", "versions": {"fowl": {"features": {"core": {}}}}, "kind": "peer-connected", "timestamp": 5.518432378768921}
 {"listener_id": "5643F7", "listen": "tcp:4444:interface=localhost", "connect": "tcp:localhost:22", "kind": "listening", "timestamp": 7.126330614089966}
-{"listener_id": "762FC5", "listen": "tcp:4444:interface=localhost", "connect": "tcp:localhost:22", "kind": "remote-listening-succeeded", "timestamp": 9.0}
 {"id": 1, "endpoint": "tcp:localhost:22", "listener_id": "5643F7", "kind": "outgoing-connection", "timestamp": 11.454788446426392}
 {"id": 1, "bytes": 40, "kind": "bytes-out", "timestamp": 13.671136379241943}
 {"id": 1, "bytes": 40, "kind": "bytes-in", "timestamp": 13.672210454940796}

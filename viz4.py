@@ -69,6 +69,7 @@ class Subchannel:
     src: RichRenderable
     bw: RichRenderable
     dest: RichRenderable
+    row: int
 
 
 @attrs.define
@@ -267,7 +268,7 @@ def _(msg):
     dst.plain = "connect\n" + str(msg.endpoint.split(":")[-1])
     src.plain = listeners[msg.listener_id].listen.split(":")[1] + "\nlisten"
     t.add_row(src, bw, dst)
-    subchannels[msg.id] = Subchannel(msg.endpoint, [], [], src, bw, dst)
+    subchannels[msg.id] = Subchannel(msg.endpoint, [], [], src, bw, dst, len(t.rows) - 1)
 
 
 @message.register(IncomingDone)
@@ -295,7 +296,7 @@ def _(msg):
     dst.plain = "connect\n" + str(msg.endpoint.split(":")[-1])
     src.plain = listeners[msg.listener_id].listen.split(":")[1] + "\nlisten"
     t.add_row(src, bw, dst)
-    subchannels[msg.id] = Subchannel(msg.endpoint, [], [], src, bw, dst)
+    subchannels[msg.id] = Subchannel(msg.endpoint, [], [], src, bw, dst, len(t.rows) - 1)
 
 
 @message.register(OutgoingDone)
@@ -303,8 +304,12 @@ def _(msg):
     out = humanize.naturalsize(sum([b for b, _ in subchannels[msg.id].o]))
     in_ = humanize.naturalsize(sum([b for b, _ in subchannels[msg.id].i]))
     print(f"{msg.id} closed: {out} out, {in_} in")
+    # better way to delete from the table?
+    for c in range(len(t.columns)):
+        del t.columns[c]._cells[subchannels[msg.id].row]
+    del t.rows[subchannels[msg.id].row]
+    # bye
     del subchannels[msg.id]
-    # delete from the table too
 
 
 @message.register(OutgoingLost)
@@ -350,5 +355,4 @@ with Live(t):
         local_blink = True
 
         msg = parse_fowld_output(json.dumps(d))
-        print(msg)
         message(msg)
