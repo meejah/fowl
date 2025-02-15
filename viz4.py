@@ -324,7 +324,11 @@ local_old_wizard = wizard1
 remote_blink = False
 remote_old_wizard = wizard1
 
-with Live(t):
+
+def render_wormhole_state():
+    return t
+
+with Live(get_renderable=render_wormhole_state):
     while data:
         d = data.pop(0)
         #FIXME indicates should have helper for json too?
