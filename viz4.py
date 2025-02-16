@@ -12,7 +12,6 @@ import functools
 import humanize
 
 
-wizard = "(/V\\)\n('.')\nJ\\~/L\n/\0 0/\\"
 wizard = "  / \\   \n /___\\  \n( o o ) \n)  L  ("
 wizard0 = "  / \\   \n /___\\  \n( o _ ) \n)  L  ("
 wizard1 = "  / \\   \n /___\\  \n( _ _ ) \n)  L  ("
@@ -21,7 +20,7 @@ wizard3 = "  / \\   \n /___\\  \n( o o ) \n)  L  ("
 wizard4 = "  / \\   \n /___\\  \n( - - ) \n)  L  ("
 wizard5 = "  / \\   \n /___\\  \n( o < ) \n)  L  ("
 
-interval = 0.5
+interval = 0.25
 t = Table(show_header=False, show_lines=True) #title="Active Connections")
 t.add_column(justify="left", width=7)
 t.add_column(justify="left", width=40)
@@ -357,6 +356,7 @@ with Live(get_renderable=render_wormhole_state):
         where_are_we = d["timestamp"]
         # blink every time we get a packet/message?
         local_blink = True
+        remote_blink = True
 
         msg = parse_fowld_output(json.dumps(d))
         message(msg)
