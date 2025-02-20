@@ -154,7 +154,7 @@ async def frontend_tui(reactor, config):
             print(textwrap.fill(msg.welcome["motd"].strip(), 80, initial_indent="    ", subsequent_indent="    "))
         print(">>> ", end="", flush=True)
 
-    fowl_wh = await create_fowl(config, output_wrapper)
+    fowl_wh = await create_fowl(config, output_message)
 
     # make into IService?
     fowl_wh.start()
