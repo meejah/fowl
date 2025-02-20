@@ -12,19 +12,87 @@ import functools
 import humanize
 
 
-wizard = "  / \\   \n /___\\  \n( o o ) \n)  L  ("
-wizard0 = "  / \\   \n /___\\  \n( o _ ) \n)  L  ("
 wizard1 = "  / \\   \n /___\\  \n( _ _ ) \n)  L  ("
 wizard2 = "  / \\   \n /___\\  \n( . . ) \n)  L  ("
 wizard3 = "  / \\   \n /___\\  \n( o o ) \n)  L  ("
 wizard4 = "  / \\   \n /___\\  \n( - - ) \n)  L  ("
 wizard5 = "  / \\   \n /___\\  \n( o < ) \n)  L  ("
 
+wizard1 = r"""  ,.    
+ (\(\)  
+ ;  . > 
+/  (_)  """
+wizard2 = r"""  ,.    
+ (\(\)  
+ ;  o > 
+/  (_)  """
+wizard3 = r"""  ,.    
+ (\(\)  
+ ;  * > 
+/  (_)  """
+wizard4 = r"""  ,.    
+ (\(\)  
+ ;  - > 
+/  (_)  """
+wizard5 = r"""  ,.    
+ (\(\)  
+ ;  ^ > 
+/  (_)  """
+
+
+wizard1 = r""" MM      
+<' \___/|
+  \_  _/ 
+    ][   """
+wizard2 = r""" MM      
+<` \___/|
+  \_  _/ 
+    ][   """
+wizard3 = r""" MM      
+>' \___/|
+  \_  _/ 
+    ][   """
+wizard4 = r""" MM      
+<" \___/|
+  \_  _/ 
+    ][   """
+wizard5 = """ MM      
+<\u203e \\___/|
+  \\_  _/ 
+    ][   """
+
+
+
+wizard1 = r"""    \\  
+    (-> 
+ \\_//) 
+  \_/_) """
+wizard2 = r"""    \\  
+    (o> 
+ \\_//) 
+  \_/_) """
+wizard3 = r"""    \\  
+    (o< 
+ \\_//) 
+  \_/_) """
+wizard4 = r"""    \\  
+    (-> 
+ \\_//) 
+  \_/_) """
+wizard5 = r"""    ||  
+    (o> 
+ \\_//) 
+  \_/_) """
+
+
+
+
+
 interval = 0.25
 t = Table(show_header=False, show_lines=True) #title="Active Connections")
-t.add_column(justify="left", width=7)
+t.add_column(justify="left", width=8)
 t.add_column(justify="left", width=40)
-t.add_column(justify="left", width=7)
+t.add_column(justify="left", width=8)
 
 status_local = Text(wizard1)
 status_local.stylize("rgb(100,255,0) on rgb(255,0,0)")
