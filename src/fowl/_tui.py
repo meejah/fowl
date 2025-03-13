@@ -78,7 +78,7 @@ async def frontend_tui(reactor, config):
 
     @output_message.register(Pong)
     def _(msg):
-        print(f"\b\b\b  <- Pong({b16encode(msg.ping_id).decode('utf8')}): {msg.time_of_flight}s\n>>> ", end="")
+        print(f"\b\b\b\b  <- Pong({b16encode(msg.ping_id).decode('utf8')}): {msg.time_of_flight}s\n>>> ", end="")
 
     @output_message.register(WormholeError)
     def _(msg):
