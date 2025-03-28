@@ -181,8 +181,11 @@ async def frontend_accept_or_invite(reactor, config):
     live = Live(get_renderable=render)
 
     def output_message(msg):
-        status.on_message(msg)
-        print(status)
+        print(msg)
+        try:
+            status.on_message(msg)
+        except Exception as e:
+            print(f"bad: {e}")
 
     fowl_wh = await create_fowl(config, output_message)
     fowl_wh.start()

@@ -72,11 +72,11 @@ class FowlStatus:
 
         @on_message.register(BytesIn)
         def _(msg):
-            this.subchannels[msg.id].i.insert(0, (msg.bytes, self.time_provider()))
+            self.subchannels[msg.id].i.insert(0, (msg.bytes, self.time_provider()))
 
         @on_message.register(BytesOut)
         def _(msg):
-            this.subchannels[msg.id].o.insert(0, (msg.bytes, self.time_provider()))
+            self.subchannels[msg.id].o.insert(0, (msg.bytes, self.time_provider()))
 
         @on_message.register(IncomingConnection)
         def _(msg):
@@ -87,25 +87,25 @@ class FowlStatus:
             #out = humanize.naturalsize(sum([b for b, _ in subchannels[msg.id].o]))
             #in_ = humanize.naturalsize(sum([b for b, _ in subchannels[msg.id].i]))
             #print(f"{msg.id} closed: {out} out, {in_} in")
-            del subchannels[msg.id]
+            del self.subchannels[msg.id]
 
         @on_message.register(IncomingLost)
         def _(msg):
-            del subchannels[msg.id]
+            del self.subchannels[msg.id]
 
         @on_message.register(OutgoingConnection)
         def _(msg):
-            subchannels[msg.id] = Subchannel(msg.endpoint, [], [])
+            self.subchannels[msg.id] = Subchannel(msg.endpoint, [], [])
 
         @on_message.register(OutgoingDone)
         def _(msg):
             #out = humanize.naturalsize(sum([b for b, _ in subchannels[msg.id].o]))
             #in_ = humanize.naturalsize(sum([b for b, _ in subchannels[msg.id].i]))
             #print(f"{msg.id} closed: {out} out, {in_} in")
-            del subchannels[msg.id]
+            del self.subchannels[msg.id]
 
         @on_message.register(OutgoingLost)
         def _(msg):
-            del subchannels[msg.id]
+            del self.subchannels[msg.id]
 
         self.on_message = on_message

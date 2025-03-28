@@ -56,6 +56,20 @@ def render_status(st: FowlStatus) -> Table:  # Panel? seomthing else
         status_remote.plain = chicken.default[2]
         status_remote.stylize("rgb(0,100,0) on rgb(100,255,100)")
 
+    for id_, data in st.listeners.items():
+        if data.remote:
+            t.add_row(
+                Text(""),
+                Text("{} <--".format(data.connect.split(":")[2]), justify="right"),
+                Text("{} 🧙".format(data.listen.split(":")[1])),
+            )
+        else:
+            t.add_row(
+                Text("🧙 {}".format(data.listen.split(":")[1])),
+                Text("--> {}".format(data.connect.split(":")[2])),
+                Text(""),
+            )
+
     return t
 
 
