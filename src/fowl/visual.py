@@ -70,59 +70,73 @@ def render_status(st: FowlStatus) -> Table:  # Panel? seomthing else
                 Text(""),
             )
 
+    for id_, data in st.subchannels.items():
+        if data.listener_id in st.listeners:
+            local = Text(st.listeners[data.listener_id].listen.split(":")[1] + "\nlisten")
+            remote = Text("connect\n" + str(data.endpoint.split(":")[-1]))
+        else:
+            remote = Text("from peer")
+            local = Text("connect\n" + str(data.endpoint.split(":")[-1]))
+        bw = render_bw(data)
+        t.add_row(local, bw, remote)
+
     return t
 
 
+interval = 0.25
+
+
 def render_bw(sub):
-    start = time.time()
-    if not sub.i:
-        return
-    accum = 0
-    idx = 0
-    next_time = start - interval
-    points = []
-    for _ in range(20):
-        while idx < len(sub.i) and sub.i[idx][1] > next_time:
-            accum += sub.i[idx][0]
-            idx += 1
-
-        points.append(accum)
+    start = time.time()  # FIXME time provuder
+    if sub.i:
         accum = 0
-        next_time = next_time - interval
+        idx = 0
+        next_time = start - interval
+        points = []
+        for _ in range(25):
+            while idx < len(sub.i) and sub.i[idx][1] > next_time:
+                accum += sub.i[idx][0]
+                idx += 1
 
-    bw = ""
-    for p in points:
-        if p < 1:
-            bw += "\u2581"
-        elif p < 100:
-            bw += "\u2582"
-        elif p < 1000:
-            bw += "\u2583"
-        elif p < 10000:
-            bw += "\u2584"
-        elif p < 100000:
-            bw += "\u2585"
-        elif p < 10000000:
-            bw += "\u2586"
-        elif p < 10000000000:
-            bw += "\u2587"
-        else:
-            bw += "\u2588"
-    bw += "  " + humanize.naturalsize(sum(x[0] for x in sub.i))
-    sub.bw.plain = ""
-    sub.bw.append_text(Text(bw, style="blue"))
-    sub.bw.append_text(Text("\n" + render_bw_out(sub), style="yellow"))
+            points.append(accum)
+            accum = 0
+            next_time = next_time - interval
+
+        bw = ""
+        for p in points:
+            if p < 1:
+                bw += "\u2581"
+            elif p < 100:
+                bw += "\u2582"
+            elif p < 1000:
+                bw += "\u2583"
+            elif p < 10000:
+                bw += "\u2584"
+            elif p < 100000:
+                bw += "\u2585"
+            elif p < 10000000:
+                bw += "\u2586"
+            elif p < 10000000000:
+                bw += "\u2587"
+            else:
+                bw += "\u2588"
+        bw += "  " + humanize.naturalsize(sum(x[0] for x in sub.i))
+    else:
+        bw = ""
+    rendered = Text(bw, style="blue", justify="center")
+    rendered.append_text(Text("\n" + render_bw_out(sub), style="yellow"))
+    return rendered
 
 
 def render_bw_out(sub):
     start = time.time()
     if not sub.o:
-        return
+        return ""
     accum = 0
     idx = 0
     next_time = start - interval
     points = []
-    for _ in range(30):
+    for _ in range(25):
         while idx < len(sub.o) and sub.o[idx][1] > next_time:
             accum += sub.o[idx][0]
             idx += 1

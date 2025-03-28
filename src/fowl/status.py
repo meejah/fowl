@@ -15,6 +15,7 @@ import attrs
 @attrs.define
 class Subchannel:
     endpoint: str
+    listener_id: str
     i: list
     o: list
 
@@ -80,7 +81,7 @@ class FowlStatus:
 
         @on_message.register(IncomingConnection)
         def _(msg):
-            self.subchannels[msg.id] = Subchannel(msg.endpoint, [], [])
+            self.subchannels[msg.id] = Subchannel(msg.endpoint, msg.listener_id, [], [])
 
         @on_message.register(IncomingDone)
         def _(msg):
@@ -95,7 +96,7 @@ class FowlStatus:
 
         @on_message.register(OutgoingConnection)
         def _(msg):
-            self.subchannels[msg.id] = Subchannel(msg.endpoint, [], [])
+            self.subchannels[msg.id] = Subchannel(msg.endpoint, msg.listener_id, [], [])
 
         @on_message.register(OutgoingDone)
         def _(msg):
