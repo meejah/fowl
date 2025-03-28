@@ -44,6 +44,7 @@ dependencies = [
     "humanize",
     "twisted",
     "magic-wormhole[dilate]",
+    "rich",
 ]
 
 [project.optional-dependencies]
