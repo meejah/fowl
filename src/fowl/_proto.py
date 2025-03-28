@@ -68,7 +68,8 @@ from .messages import (
     PleaseCloseWormhole,
 )
 from .policy import IClientListenPolicy, IClientConnectPolicy, AnyConnectPolicy, AnyListenPolicy
-
+from .status import FowlStatus
+from .visual import render_status
 
 
 APPID = u"meejah.ca/wormhole/forward"
@@ -167,129 +168,21 @@ class Connection:
     listener_id: str = "unknown"
 
 
+from rich.live import Live
+
+
 async def frontend_accept_or_invite(reactor, config):
 
-    connections = dict()
+    status = FowlStatus()
 
-    @functools.singledispatch
+    def render():
+        return render_status(status)
+
+    live = Live(get_renderable=render)
+
     def output_message(msg):
-        print(f"UNhandled output: {msg}")
-
-    @output_message.register(WormholeError)
-    def _(msg):
-        print(f"ERROR: {msg.message}", file=config.stderr)
-        print(msg)
-
-    @output_message.register(Pong)
-    def _(msg):
-        print(f"Pong: {b16encode(msg.ping_id)}: {msg.time_of_flight}s")
-
-    @output_message.register(CodeAllocated)
-    def _(msg):
-        print(f"Secret code: {msg.code}")
-
-    @output_message.register(PeerConnected)
-    def _(msg):
-        nice_verifier = " ".join(
-            msg.verifier[a:a+4]
-            for a in range(0, len(msg.verifier), 4)
-        )
-        print(f"Peer is connected.\nVerifier: {nice_verifier}")
-
-    @output_message.register(Listening)
-    def _(msg):
-        print(f"Listening: {msg.listen}")
-
-    @output_message.register(RemoteListeningSucceeded)
-    def _(msg):
-        print(f"Peer is listening: {msg.listen} (-> {msg.connect})")
-
-    @output_message.register(RemoteListeningFailed)
-    def _(msg):
-        print(f"Peer failed to listen: {msg.listen}: {msg.reason}")
-
-    @output_message.register(IncomingConnection)
-    def _(msg):
-        connections[msg.id] = Connection(msg.endpoint, 0, 0, msg.listener_id)
-
-    @output_message.register(RemoteConnectFailed)
-    def _(msg):
-        print("Forwarding to {} failed: {}".format(connections[msg.id].endpoint, msg.reason))
-        # we will get an OutgoingDone(msg.id) for this one too, so do not delete here!
-        # (XXX should maybe mark it as "failed" somehow?)
-        ##del connections[msg.id]
-
-    @output_message.register(IncomingLost)
-    def _(msg):
-        try:
-            del connections[msg.id]
-            print(f"Lost: {msg.id}: {msg.reason}")
-        except KeyError:
-            print("WEIRD: got IncomingLost(id={}) but don't have that connection".format(msg.id))
-
-    @output_message.register(IncomingDone)
-    def _(msg):
-        try:
-            del connections[msg.id]
-            print(f"{msg.id}: closed")
-        except KeyError:
-            print("WEIRD: got IncomingDone(id={}) but don't have that connection".format(msg.id))
-
-    @output_message.register(OutgoingLost)
-    def _(msg):
-        try:
-            del connections[msg.id]
-            print(f"Lost: {msg.id}: {msg.reason}")
-        except KeyError:
-            print("WEIRD: got OutgoingLost(id={}) but don't have that connection".format(msg.id))
-
-    @output_message.register(OutgoingDone)
-    def _(msg):
-        try:
-            del connections[msg.id]
-            print(f"{msg.id}: closed")
-        except KeyError:
-            print("WEIRD: got OutgoingDone(id={}) but don't have that connection".format(msg.id))
-
-    @output_message.register(OutgoingConnection)
-    def _(msg):
-        connections[msg.id] = Connection(msg.endpoint, 0, 0, msg.listener_id)
-
-    @output_message.register(BytesIn)
-    def _(msg):
-        print(msg)
-        connections[msg.id] = Connection(
-            connections[msg.id].endpoint,
-            connections[msg.id].i + msg.bytes,
-            connections[msg.id].o,
-            "fixme"
-        )
-
-    @output_message.register(BytesOut)
-    def _(msg):
-        connections[msg.id] = Connection(
-            connections[msg.id].endpoint,
-            connections[msg.id].i,
-            connections[msg.id].o + msg.bytes,
-            "fixme"
-        )
-
-    @output_message.register(WormholeClosed)
-    def _(msg):
-        print(f"Closed: {msg.result}")
-
-    @output_message.register(Welcome)
-    def _(msg):
-        print("Connected.")
-        if "motd" in msg.welcome:
-            print(textwrap.fill(msg.welcome["motd"].strip(), 80, initial_indent="    ", subsequent_indent="    "))
-
-    @output_message.register(GotMessageFromPeer)
-    def _(msg):
-        # XXX do we even need this stuff? I guess it helps "fowl
-        # users" play around with extra mailbox messages?
-        json.loads(msg.message)
-        ##print(f"peer: {peer_msg}")
+        status.on_message(msg)
+        print(status)
 
     fowl_wh = await create_fowl(config, output_message)
     fowl_wh.start()
@@ -315,14 +208,9 @@ async def frontend_accept_or_invite(reactor, config):
 
     done_d = fowl_wh.when_done()
 
-    last_displayed = None
-    while not done_d.called:
-        await deferLater(reactor, 1, lambda: None)
-        if connections and last_displayed != set(connections.values()):
-            for ident in sorted(connections.keys()):
-                conn = connections[ident]
-                print(f"{ident}: {humanize.naturalsize(conn.i)} in, {humanize.naturalsize(conn.o)} out")
-            last_displayed = set(connections.values())
+    with live:
+        while not done_d.called:
+            await deferLater(reactor, 1, lambda: None)
 
 
 class SubchannelForwarder(Protocol):
