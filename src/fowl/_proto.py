@@ -181,7 +181,7 @@ async def frontend_accept_or_invite(reactor, config):
     live = Live(get_renderable=render)
 
     def output_message(msg):
-        print(msg)
+        ##print(msg)
         try:
             status.on_message(msg)
         except Exception as e:
