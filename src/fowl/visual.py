@@ -25,7 +25,7 @@ def render_status(st: FowlStatus) -> Table:  # Panel? seomthing else
     t.add_column(justify="left", width=8)
 
     status_local = Text(chicken.default[0])
-    status_remote = Text(chicken.default[0])
+    status_remote = Text(chicken.peer[0])
     message_text = Text("")
     t.add_row(status_local, message_text, status_remote)
 
@@ -53,7 +53,7 @@ def render_status(st: FowlStatus) -> Table:  # Panel? seomthing else
         message_text.append(nice_verifier)
         status_local.plain = chicken.default[2]
         status_local.stylize("rgb(0,100,0) on rgb(100,255,100)")
-        status_remote.plain = chicken.default[2]
+        status_remote.plain = chicken.peer[2]
         status_remote.stylize("rgb(0,100,0) on rgb(100,255,100)")
 
     for id_, data in st.listeners.items():
@@ -75,7 +75,7 @@ def render_status(st: FowlStatus) -> Table:  # Panel? seomthing else
             local = Text(st.listeners[data.listener_id].listen.split(":")[1] + "\nlisten")
             remote = Text("connect\n" + str(data.endpoint.split(":")[-1]))
         else:
-            remote = Text("from peer")
+            remote = Text("remote\npeer  🧙")
             local = Text("connect\n" + str(data.endpoint.split(":")[-1]))
         bw = render_bw(data)
         t.add_row(local, bw, remote)
