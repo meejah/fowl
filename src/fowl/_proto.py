@@ -173,6 +173,19 @@ from rich.live import Live
 
 
 async def frontend_accept_or_invite(reactor, config):
+    """
+    This runs the core of the default 'fowl' behavior:
+      - creates a code (or: consumes a code)
+      - creates any local listeners
+      - creates any remote listeners
+      - await incoming subchannels:
+        - attempt local connection (if permitted by policy)
+        - forward traffic until one side closes
+      - await connects on local listeners:
+        - open subchannel
+        - request far-side connection
+        - forward traffic until one side closes
+    """
 
     status = FowlStatus()
 
