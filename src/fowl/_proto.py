@@ -120,7 +120,7 @@ class _Config:
     output_debug_messages: TextIO = None  # Option<Writable>
 
 
-async def wormhole_from_config(reactor, config, wormhole_create=None):
+async def wormhole_from_config(reactor, config, wormhole_create=None, on_status=None):
     """
     Create a suitable wormhole for the given configuration.
 
@@ -153,7 +153,8 @@ async def wormhole_from_config(reactor, config, wormhole_create=None):
             "fowl": {
                 "features": SUPPORTED_FEATURES,
             }
-        }
+        },
+        on_status_update=on_status,
     )
     if config.debug_state:
         w.debug_set_trace("forward", file=config.stdout)
@@ -187,7 +188,12 @@ async def frontend_accept_or_invite(reactor, config):
         except Exception as e:
             print(f"bad: {e}")
 
-    fowl_wh = await create_fowl(config, output_message)
+    # XXX anything we care about from status should be wired through
+    # fowl-daemon? (i.e. emitted as a FowlOutputMessage or so from there)
+    def on_status(status):
+        print(status)
+
+    fowl_wh = await create_fowl(config, output_message, on_status)
     fowl_wh.start()
 
     ##@daemon.set_trace
@@ -1568,11 +1574,12 @@ def parse_fowld_output(json_str: str) -> FowlOutputMessage:
         "bytes-out": parser(BytesOut, [("id", int), ("bytes", int)]),
         "closed": parser(WormholeClosed, [("result", str)]),
         "pong": parser(Pong, [("ping_id", bytes), ("time_of_flight", float)]),
+        "error": parser(WormholeError, [("message", str)]),
     }
     return kind_to_message[kind](cmd)
 
 
-async def create_fowl(config, output_fowl_message):
+async def create_fowl(config, output_fowl_message, on_status):
 
     start_time = reactor.seconds()
     if config.output_debug_messages:
@@ -1590,7 +1597,7 @@ async def create_fowl(config, output_fowl_message):
     else:
         output_wrapper = output_fowl_message
 
-    w = await wormhole_from_config(reactor, config)
+    w = await wormhole_from_config(reactor, config, on_status=on_status)
 
     if config.debug_file:
         kind = "invite" if config.code is None else "accept"
@@ -1630,7 +1637,10 @@ async def forward(reactor, config):
             flush=True,
         )
 
-    fowl = await create_fowl(config, output_fowl_message)
+    def on_status(status):
+        pass
+
+    fowl = await create_fowl(config, output_fowl_message, on_status)
     fowl.start()
 
     # arrange to read incoming commands from stdin
