@@ -6,6 +6,7 @@ import json
 import binascii
 import textwrap
 import functools
+import random
 import struct
 import signal
 from base64 import b16encode
@@ -203,8 +204,9 @@ async def frontend_accept_or_invite(reactor, config):
 
     # XXX anything we care about from status should be wired through
     # fowl-daemon? (i.e. emitted as a FowlOutputMessage or so from there)
-    def on_status(status):
-        print(status)
+    def on_status(st):
+        status.connection = st.mailbox_connection
+        print("status", st)
 
     fowl_wh = await create_fowl(config, output_message, on_status)
     fowl_wh.start()
@@ -232,7 +234,7 @@ async def frontend_accept_or_invite(reactor, config):
 
     with live:
         while not done_d.called:
-            await deferLater(reactor, 1, lambda: None)
+            await deferLater(reactor, 0.25, lambda: None)
 
 
 class SubchannelForwarder(Protocol):

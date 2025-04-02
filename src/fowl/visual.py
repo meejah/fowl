@@ -11,6 +11,8 @@ import functools
 
 import humanize
 
+from wormhole._status import Connecting, Disconnected
+
 from .status import FowlStatus
 from fowl import chicken
 
@@ -55,6 +57,14 @@ def render_status(st: FowlStatus) -> Table:  # Panel? seomthing else
         status_local.stylize("rgb(0,100,0) on rgb(100,255,100)")
         status_remote.plain = chicken.peer[2]
         status_remote.stylize("rgb(0,100,0) on rgb(100,255,100)")
+
+    if isinstance(st.connection, Connecting):
+        status_local.stylize("rgb(0,100,100) on rgb(100,255,200)")
+    elif isinstance(st.connection, Connecting):
+        status_local.stylize("rgb(0,100,100) on rgb(100,255,255)")
+
+    if random.choice("abcdefgh") == "a":
+        status_local.plain = random.choice(chicken.default)
 
     for id_, data in st.listeners.items():
         if data.remote:

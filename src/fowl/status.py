@@ -25,12 +25,15 @@ class Listener:
     listen: str
     connect: str
     remote: bool
+from wormhole._status import ConnectionStatus
 
 from .messages import FowlOutputMessage
+
 
 @attrs.define
 class FowlStatus:
     url: Optional[str] = None
+    connection: Optional[ConnectionStatus] = None
     welcome: dict = {}
     code: Optional[str] = None
     verifier: Optional[str] = None
