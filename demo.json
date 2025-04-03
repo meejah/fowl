@@ -1,8 +1,0 @@
-{"url": "ws://localhost:4000/v1", "welcome": {}, "kind": "welcome", "timestamp": 0.32491517066955566}
-{"code": "3-recipe-pupil", "kind": "code-allocated", "timestamp": 0.7967281341552734}
-{"verifier": "8fb256becaf267064f5a8c14bb2350305666f3c79cc5367142a9fa826f6fe914", "versions": {"fowl": {"features": {"core": {}}}}, "kind": "peer-connected", "timestamp": 3.537891387939453}
-{"id": 1, "endpoint": "tcp:localhost:4321", "listener_id": "7EC7BF", "kind": "incoming-connection", "timestamp": 5.0682007}
-{"id": 1, "bytes": 7, "kind": "bytes-out", "timestamp": 7.58661913871765}
-{"id": 1, "bytes": 8, "kind": "bytes-in", "timestamp": 9.008291482925415}
-{"id": 1, "kind": "incoming-done", "timestamp": 10.888546466827393}
-{"result": "happy", "kind": "closed", "timestamp": 12.557650327682495}
