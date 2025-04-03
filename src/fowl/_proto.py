@@ -595,10 +595,6 @@ class LocalServer(Protocol):
         self.remote = None
         self._conn_id = allocate_connection_id()
 
-        # XXX refactor into SubchannelForwarder.onOpen or whatever, since that exists anyway?
-        def got_proto(proto):
-            return proto
-
         # XXX do we need registerProducer somewhere here?
         factory = Factory.forProtocol(SubchannelForwarder)
         factory.other_proto = self
@@ -612,7 +608,6 @@ class LocalServer(Protocol):
         # to be confused with the endpoint created from the "local
         # endpoint string"
         d = self.factory.connect_ep.connect(factory)
-        d.addCallback(got_proto)
 
         def err(f):
             self.factory.message_out(
