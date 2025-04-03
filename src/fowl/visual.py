@@ -63,9 +63,11 @@ def render_status(st: FowlStatus) -> Table:  # Panel? seomthing else
     elif isinstance(st.mailbox_connection, Connecting):
         status_local.stylize("rgb(0,100,100) on rgb(100,255,255)")
 
-    # when we got the "closing=X" message from our peer
+    # turn purple if we / they are closing
     if st.peer_closing:
         status_remote.stylize("rgb(0,100,100) on rgb(255,100,255)")
+    if st.we_closing:
+        status_local.stylize("rgb(0,100,100) on rgb(255,100,255)")
 
     if random.choice("abcdefgh") == "a":
         status_local.plain = random.choice(chicken.default)

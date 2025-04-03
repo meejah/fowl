@@ -43,6 +43,7 @@ class FowlStatus:
     time_provider: Callable[[], float] = time.time
     on_message: Optional[Callable[[FowlOutputMessage], None]] = None
     peer_closing: bool = False
+    we_closing: bool = False
 
     def __attrs_post_init__(self):
         @functools.singledispatch
