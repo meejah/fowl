@@ -1,17 +1,12 @@
-from rich.columns import Columns
 from rich.table import Table
-from rich.live import Live
-from rich.abc import RichRenderable
 from rich.text import Text
 
 import time
-import json
 import random
-import functools
 
 import humanize
 
-from wormhole._status import Connecting, Disconnected
+from wormhole._status import Connecting
 
 from .status import FowlStatus
 from fowl import chicken

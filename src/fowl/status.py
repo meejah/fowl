@@ -1,15 +1,13 @@
 import time
 import json
-import random
 import functools
 from typing import Dict, Optional, Callable
 
-import humanize
-
-
-from fowl.messages import BytesIn, BytesOut, OutgoingConnection, OutgoingDone, OutgoingLost, Listening, Welcome, PeerConnected, LocalListener, RemoteListeningSucceeded, WormholeClosed, CodeAllocated, IncomingConnection, IncomingDone, IncomingLost, GotMessageFromPeer
-
 import attrs
+
+from wormhole._status import ConnectionStatus
+
+from fowl.messages import BytesIn, BytesOut, OutgoingConnection, OutgoingDone, OutgoingLost, Listening, Welcome, PeerConnected, RemoteListeningSucceeded, WormholeClosed, CodeAllocated, IncomingConnection, IncomingDone, IncomingLost, GotMessageFromPeer, FowlOutputMessage
 
 
 @attrs.define
@@ -25,9 +23,6 @@ class Listener:
     listen: str
     connect: str
     remote: bool
-from wormhole._status import ConnectionStatus
-
-from .messages import FowlOutputMessage
 
 
 @attrs.define

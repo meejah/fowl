@@ -4,9 +4,7 @@ import os
 import sys
 import json
 import binascii
-import textwrap
 import functools
-import random
 import struct
 import signal
 from base64 import b16encode
@@ -60,7 +58,6 @@ from .messages import (
     OutgoingLost,
     WormholeClosed,
     WormholeError,
-    GotMessageFromPeer,
 
     Ping,
     Pong,
