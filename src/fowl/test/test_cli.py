@@ -5,7 +5,6 @@ import pytest_twisted
 from zope.interface import implementer
 from twisted.internet.interfaces import IProcessProtocol
 from twisted.internet.protocol import ProcessProtocol
-from twisted.internet.defer import DeferredList
 from twisted.internet.endpoints import serverFromString, clientFromString
 from twisted.internet.task import deferLater
 from hypothesis.strategies import integers, sampled_from, one_of, ip_addresses
@@ -105,10 +104,10 @@ async def test_happy_path(reactor, request, mailbox):
     while True:
         if "🧙".encode("utf8") in invite_proto._streams[1]:
             print("invite side listening")
-            break;
+            break
         elif "🧙".encode("utf8") in accept_proto._streams[1]:
             print("accept side listening")
-            break;
+            break
         await deferLater(reactor, 0.5, lambda: None)
 
     # now that they are connected, and one side is listening -- we can
