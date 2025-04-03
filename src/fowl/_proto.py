@@ -18,6 +18,8 @@ import click
 import humanize
 from attrs import frozen, define, asdict, Factory as AttrFactory
 
+from rich.live import Live
+
 import msgpack
 import automat
 from twisted.internet import reactor
@@ -170,9 +172,6 @@ class Connection:
     listener_id: str = "unknown"
 
 
-from rich.live import Live
-
-
 async def frontend_accept_or_invite(reactor, config):
     """
     This runs the core of the default 'fowl' behavior:
@@ -196,16 +195,14 @@ async def frontend_accept_or_invite(reactor, config):
     live = Live(get_renderable=render)
 
     def output_message(msg):
-        ##print(msg)
-        try:
-            status.on_message(msg)
-        except Exception as e:
-            print(f"bad: {e}")
+        status.on_message(msg)
 
-    # XXX anything we care about from status should be wired through
-    # fowl-daemon? (i.e. emitted as a FowlOutputMessage or so from there)
+
+    # XXX anything we care about from status should probably be wired
+    # through fowl-daemon? (i.e. emitted as a FowlOutputMessage or so
+    # from there)
     def on_status(st):
-        status.connection = st.mailbox_connection
+        status.mailbox_connection = st.mailbox_connection
         print("status", st)
 
     fowl_wh = await create_fowl(config, output_message, on_status)
@@ -1079,7 +1076,7 @@ class FowlWormhole:
         # (note that wormhole will "error" these Deferreds when the
         # wormhole shuts down early, e.g. with LonelyError -- but we
         # handle that elsewhere, so ignore errors here)
-        results_d = DeferredList(
+        peer_connected_d = DeferredList(
             [
                 self._wormhole.get_verifier(),
                 self._wormhole.get_versions(),
@@ -1087,8 +1084,8 @@ class FowlWormhole:
             consumeErrors=True,
         )
 
-        @results_d.addCallback
-        def got_results(results):
+        @peer_connected_d.addCallback
+        def peer_is_verified(results):
             for ok, exc in results:
                 if not ok:
                     self._handle_error(exc)
@@ -1101,6 +1098,7 @@ class FowlWormhole:
             # speak Fowl Application Protocol" or so
 
             d = self._do_dilate()
+
             @d.addCallback
             def did_dilate(arg):
                 self._daemon.peer_connected(verifier, versions)
@@ -1121,7 +1119,10 @@ class FowlWormhole:
             try:
                 js = json.loads(plaintext)
                 if "closing" in js:
-                    self._got_closing_from_peer_d.callback(js["closing"])
+                    self._got_closing_from_peer_d.callback(int(js["closing"]))
+                    if not self._we_sent_closing:
+                        d = ensureDeferred(self.disconnect_session())
+                        d.addErrback(self._handle_error)
             except Exception:
                 pass
             self._daemon.got_message(plaintext)
@@ -1180,6 +1181,7 @@ class FowlWormhole:
         if self._peer_connected:
             # before we emit "closing", we must ensure we won't start
             # any new channels.
+            self._peer_connected = False  # XXX double-duty as "we are shutting down" bool?
             await self._stop_listening()
             self._wormhole.send_message(json.dumps({
                 "closing": self._wormhole._boss._next_tx_phase,

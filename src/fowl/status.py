@@ -7,7 +7,7 @@ from typing import Dict, Optional, Callable
 import humanize
 
 
-from fowl.messages import BytesIn, BytesOut, OutgoingConnection, OutgoingDone, OutgoingLost, Listening, Welcome, PeerConnected, LocalListener, RemoteListeningSucceeded, WormholeClosed, CodeAllocated, IncomingConnection, IncomingDone, IncomingLost
+from fowl.messages import BytesIn, BytesOut, OutgoingConnection, OutgoingDone, OutgoingLost, Listening, Welcome, PeerConnected, LocalListener, RemoteListeningSucceeded, WormholeClosed, CodeAllocated, IncomingConnection, IncomingDone, IncomingLost, GotMessageFromPeer
 
 import attrs
 
@@ -33,7 +33,7 @@ from .messages import FowlOutputMessage
 @attrs.define
 class FowlStatus:
     url: Optional[str] = None
-    connection: Optional[ConnectionStatus] = None
+    mailbox_connection: Optional[ConnectionStatus] = None
     welcome: dict = {}
     code: Optional[str] = None
     verifier: Optional[str] = None
@@ -42,6 +42,7 @@ class FowlStatus:
     listeners: Dict[str, Listener] = {}
     time_provider: Callable[[], float] = time.time
     on_message: Optional[Callable[[FowlOutputMessage], None]] = None
+    peer_closing: bool = False
 
     def __attrs_post_init__(self):
         @functools.singledispatch
@@ -61,6 +62,13 @@ class FowlStatus:
         @on_message.register(PeerConnected)
         def _(msg):
             self.verifier = msg.verifier
+
+        @on_message.register(GotMessageFromPeer)
+        def _(msg):
+            d = json.loads(msg.message)
+            print(f"peer: {d}")
+            if "closing" in d:
+                self.peer_closing = True
 
         @on_message.register(WormholeClosed)
         def _(msg):
