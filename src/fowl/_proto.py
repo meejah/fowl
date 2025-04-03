@@ -212,11 +212,13 @@ async def frontend_accept_or_invite(reactor, config):
     def _(o, i, n):
         print("{} --[ {} ]--> {}".format(o, i, n))
 
-    def we_are_closing():  # can't assign in a lambda
-        status.we_closing = True
-    reactor.addSystemEventTrigger("before", "shutdown", we_are_closing)
     ### XXX use PleaseCloseWormhole, approximately
     reactor.addSystemEventTrigger("before", "shutdown", lambda: ensureDeferred(fowl_wh.disconnect_session()))
+
+    def we_are_closing():  # can't assign in a lambda
+        print("Closing...")
+        status.we_closing = True
+    reactor.addSystemEventTrigger("before", "shutdown", we_are_closing)
 
     if config.code is not None:
         fowl_wh.command(
