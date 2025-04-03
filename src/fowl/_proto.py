@@ -189,7 +189,10 @@ async def frontend_accept_or_invite(reactor, config):
     def render():
         return render_status(status)
 
-    live = Live(get_renderable=render)
+    # XXX for testing .. maybe an option instead?
+    from rich.console import Console
+    console = Console(force_terminal=True)
+    live = Live(get_renderable=render, console=console)
 
     def output_message(msg):
         status.on_message(msg)
@@ -200,7 +203,6 @@ async def frontend_accept_or_invite(reactor, config):
     # from there)
     def on_status(st):
         status.mailbox_connection = st.mailbox_connection
-        print("status", st)
 
     fowl_wh = await create_fowl(config, output_message, on_status)
     fowl_wh.start()
