@@ -51,7 +51,7 @@ class CollectStreams(ProcessProtocol):
 
 # maybe Hypothesis better, via strategies.binary() ?
 @pytest_twisted.ensureDeferred
-async def test_happy_path(reactor, request, mailbox, console):
+async def test_happy_path(reactor, request, mailbox):
     """
     One side invites, other accepts.
 
@@ -82,7 +82,7 @@ async def test_happy_path(reactor, request, mailbox, console):
         await deferLater(reactor, 1, lambda: None)
         #print(invite_proto._streams)
         if m := x.search(invite_proto._streams[1]):
-            code = m.group(1)
+            code = m.group(1).decode("utf8")
 
     print(f"Detected code: {code}")
 
