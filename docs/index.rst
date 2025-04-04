@@ -10,6 +10,7 @@ Allowed ports and permissions are **whitelist** based.
   :width: 100%
   :alt: Fowl forwarding a connection, with traffic visualization and some ascii-art showing connected peers
 
+
 There are no logins, no identities and the server can't see content because it's end-to-end (E2E) encrypted between exactly two peers.
 Additionally, the server is often not involved in the "bulk transport" of bytes at all as the protocol prefers P2P connections.
 
