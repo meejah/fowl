@@ -43,7 +43,8 @@ dependencies = [
     "msgpack",
     "humanize",
     "twisted",
-    "magic-wormhole[dilate]",
+    "magic-wormhole[dilate] @ git+https://github.com/magic-wormhole/magic-wormhole.git#egg=magic-wormhole[dilate]",
+    "rich",
 ]
 
 [project.optional-dependencies]
@@ -70,6 +71,9 @@ dev = [
 [project.scripts]
 fowl = "fowl.cli:fowl"
 fowld = "fowl.cli:fowld"
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.hatch.version]
 path = "src/fowl/__init__.py"
