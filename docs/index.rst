@@ -2,7 +2,7 @@
 fowl: Forward Over Wormhole, Locally
 =======================================
 
-``fowl`` is a tool that utilizes `Magic Wormhole <http://magic-wormhole.io>`_ and its Dilation feature to forward arbitrary streams over an easy-to-setup yet secure connection.
+``fowl`` is a tool that utilizes `Magic Wormhole <http://magic-wormhole.io>`_ and its Dilation feature to forward arbitrary streams (TCP, Unix, stdin, etc) over an easy-to-setup yet secure connection.
 **Peers** communicate to each other over an **end-to-end encrypted** connection, and can use client-type or server-type network services from each side.
 Allowed ports and permissions are **whitelist** based.
 
