@@ -22,6 +22,11 @@ For more context, see my blog posts: `Forwarding Streams over Magic Wormhole <ht
 To generalize this a little: there are many FOSS client/server programs that _can_ be self-hosted -- ``fowl`` lets us use these sorts of programs in a peer-to-peer fashion, behind NATs.
 This means only depending on one general-purpose, public-IP-having server (the Magic Wormhole "mailbox server" used to set up connections) instead of "one per application" (or more).
 
+.. image:: fowl-interaction-screenshot-1000.png
+   :height: 474px
+   :width: 1000px
+   :alt: screenshot of four terminals demonstrating fowl with two peers, one "nc" and one "telnet": encrypted chat with telnet over wormhole
+
 
 🦃 What?
 --------
