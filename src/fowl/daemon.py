@@ -70,7 +70,7 @@ class FowlDaemon:
         try:
             self._message_out(msg)
         except Exception as e:
-            print(f"Error in user code sending a message: {e}")
+            print(f"Error in user code sending {msg}: {e}")
             print(type(e), e)
 
     def _emit_command(self, msg):

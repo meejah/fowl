@@ -112,7 +112,7 @@ async def find_message(reactor, config, kind=None, timeout=10, show_error=True):
             if msg["kind"] == kind:
                 return msg
             if msg["kind"] == "error":
-                print(f"error: {msg.message}")
+                print(f"error: {msg['message']}")
         await sleep(reactor, 1)
         if False:
             print("no '{}' yet: {}".format(kind, " ".join([m.get("kind", "<kind missing>") for m in messages])))

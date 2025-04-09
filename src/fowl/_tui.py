@@ -1,4 +1,3 @@
-import json
 import curses
 import textwrap
 import functools
@@ -18,7 +17,7 @@ from wormhole.errors import LonelyError
 import attr
 
 from .observer import Next, When
-from ._proto import wormhole_from_config, create_fowl, fowld_output_to_json
+from ._proto import wormhole_from_config, create_fowl
 from .messages import (
     Welcome,
     CodeAllocated,
@@ -154,23 +153,7 @@ async def frontend_tui(reactor, config):
             print(textwrap.fill(msg.welcome["motd"].strip(), 80, initial_indent="    ", subsequent_indent="    "))
         print(">>> ", end="", flush=True)
 
-    start_time = reactor.seconds()
-    if config.output_debug_messages:
-        def output_wrapper(msg):
-            try:
-                js = fowld_output_to_json(msg)
-                # don't leak our absolute time, more convenient anyway
-                js["timestamp"] = reactor.seconds() - start_time
-                config.output_debug_messages.write(
-                    json.dumps(js) + "\n"
-                )
-            except Exception as e:
-                print(e)
-            return output_message(msg)
-    else:
-        output_wrapper = output_message
-
-    fowl_wh = await create_fowl(config, output_wrapper)
+    fowl_wh = await create_fowl(config, output_message)
 
     # make into IService?
     fowl_wh.start()

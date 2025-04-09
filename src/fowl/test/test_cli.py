@@ -5,8 +5,8 @@ import pytest_twisted
 from zope.interface import implementer
 from twisted.internet.interfaces import IProcessProtocol
 from twisted.internet.protocol import ProcessProtocol
-from twisted.internet.defer import DeferredList
 from twisted.internet.endpoints import serverFromString, clientFromString
+from twisted.internet.task import deferLater
 from hypothesis.strategies import integers, sampled_from, one_of, ip_addresses
 from hypothesis import given
 import click
@@ -58,10 +58,6 @@ async def test_happy_path(reactor, request, mailbox):
     Improvement: let Hypothesis make up commands, order, etc (how to assert?)
     """
 
-    # NOTE: if debugging this, might want to print output in
-    # CollectStreams -- perhaps we need a better solution to
-    # "immediately and obviously" print stack-traces there?
-
     print("Starting invite side", os.environ.get("COVERAGE_PROCESS_STARTUP", "no startup"))
 
     invite_proto = CollectStreams(reactor)
@@ -78,12 +74,14 @@ async def test_happy_path(reactor, request, mailbox):
     )
     request.addfinalizer(lambda:invite.signalProcess(signal.SIGKILL))
 
-    line = await invite_proto.next_line()
-    assert line == "Connected."
-
-    line = await invite_proto.next_line()
-    assert line.startswith("Secret code: "), "Expected secret code"
-    code = line.split(":")[1].strip()
+    import re
+    x = re.compile(b"code: (.*)\x1b")
+    code = None
+    while not code:
+        await deferLater(reactor, 1, lambda: None)
+        #print(invite_proto._streams)
+        if m := x.search(invite_proto._streams[1]):
+            code = m.group(1).decode("utf8")
 
     print(f"Detected code: {code}")
 
@@ -104,17 +102,13 @@ async def test_happy_path(reactor, request, mailbox):
     print("Starting accept side")
 
     while True:
-        result, who = await DeferredList(
-            [invite_proto.next_line(), accept_proto.next_line()],
-            fireOnOneCallback=True,
-        )
-        who = "ACC" if who == 1 else "INV"
-        print(f"   {who}: {result.strip()}")
-        if "Listening:" in result:
-            print("  one side is listening")
+        if "🧙".encode("utf8") in invite_proto._streams[1]:
+            print("invite side listening")
             break
-        if "failed to listen" in result:
-            assert False, '"failed to listen" detected in output'
+        elif "🧙".encode("utf8") in accept_proto._streams[1]:
+            print("accept side listening")
+            break
+        await deferLater(reactor, 0.5, lambda: None)
 
     # now that they are connected, and one side is listening -- we can
     # ourselves listen on the "connect" port and connect on the
