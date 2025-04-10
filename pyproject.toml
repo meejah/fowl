@@ -14,6 +14,11 @@ ignore = [
     "E712"  # at least in policy tests, I want to ensure API returns booleans
 ]
 
+[project.urls]
+Homepage = https://sr.ht/~meejah/git-withme/
+Repository = https://git.sr.ht/~meejah/git-withme
+Issues = https://todo.sr.ht/~meejah/git-withme
+
 [project]
 name = "fowl"
 dynamic = ["version"]
