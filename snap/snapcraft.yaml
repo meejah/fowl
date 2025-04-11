@@ -1,0 +1,23 @@
+name: fowl
+base: core24
+version: '24.12.0' #Update this to the version of the relese
+summary: Get TCP streams from one computer to another, safely.
+description: |
+  The base protocol below Magic Wormhole provides a powerful account-less, peer-to-peer networking solution
+  fowl helps you use this power immediately with existing programs
+
+grade: stable
+confinement: strict
+
+parts:
+  fowl:
+    source: .
+    plugin: python
+
+apps:
+  fowl:
+    command: bin/fowl
+    plugs: [network, network-bind]
+  fowld:
+    command: bin/fowld
+    plugs: [network, network-bind]
