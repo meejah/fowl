@@ -9,15 +9,30 @@ Any release my introduce breaking changes to any of the protocols or options.
 next
 ----
 
-*(Likely to be released as 25.x.y)*
+* (describe new work here)
 
-- First release containing these release notes.
+
+25.4.0
+------
+
+- Proper metadata for PyPI
 - Use ``app_versions`` to properly indicate our version to the peer.
 - debug message output
 - ``status`` command in the TUI
-- ping/pong
+- add explicit ping/pong
 - use ``furo`` theme for docs; much editing
-- "policy" and "permissions" APIs
+- Drop Python 3.9
+- finish, expose "policy" and "permissions" APIs
+
+
+24.12.0
+-------
+
+- First release containing these release notes.
+- allow non-localhost connections (#37)
+- enable allow-list style connection permission
+- beginning of "policy" and "permissions" APIs
+
 
 
 24.3.2
