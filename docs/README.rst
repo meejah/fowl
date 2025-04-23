@@ -117,7 +117,7 @@ Human CLI users can use ``fowl`` itself to set up and use connections, for any p
 
 For developers doing integration, ``fowld`` provides a simple stdin/out protocol for any runtime to use.
 That is, some "glue" code running ``fowld`` as a sub-process.
-This co-ordinatoin program will also handle running necessary client-type or server-type networking applications that accomplish some goal useful to users. For example, "pair-programming" (for my case).
+This co-ordination program will also handle running necessary client-type or server-type networking applications that accomplish some goal useful to users. For example, "pair-programming" (for my case).
 
 Some other ideas to get you started:
 
@@ -177,10 +177,11 @@ It's not pretty, but it works fine.
 
 However, we want to talk to other machines.
 This means we need:
+
 * encryption;
 * and a way to arrange network connectivity
 
-**These additional features are exactly what ``fowl`` gives us.**
+**These additional features are exactly what** ``fowl`` **gives us.**
 
 So, we still run the exact same ``nc`` and ``telnet`` commands, but first do some ``fowl`` magic on each machine.
 
