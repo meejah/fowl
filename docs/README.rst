@@ -180,7 +180,7 @@ This means we need:
 * encryption;
 * and a way to arrange network connectivity
 
-**These additional features are exactly what ``fowl`` gives us.**
+**These additional features are exactly what** ``fowl`` **gives us.**
 
 So, we still run the exact same ``nc`` and ``telnet`` commands, but first do some ``fowl`` magic on each machine.
 
