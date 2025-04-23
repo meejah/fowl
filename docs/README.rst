@@ -117,7 +117,7 @@ Human CLI users can use ``fowl`` itself to set up and use connections, for any p
 
 For developers doing integration, ``fowld`` provides a simple stdin/out protocol for any runtime to use.
 That is, some "glue" code running ``fowld`` as a sub-process.
-This co-ordinatoin program will also handle running necessary client-type or server-type networking applications that accomplish some goal useful to users. For example, "pair-programming" (for my case).
+This co-ordination program will also handle running necessary client-type or server-type networking applications that accomplish some goal useful to users. For example, "pair-programming" (for my case).
 
 Some other ideas to get you started:
 
