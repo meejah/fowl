@@ -101,8 +101,8 @@ def fowld(ctx, ip_privacy, mailbox, debug):
     "--local", "-L",
     multiple=True,
     help=(
-        "Listen locally, connect remotely (accepted multiple times)."
-        "Unless otherwise specified, (local) bind and (remote) connect addresses are localhost."
+        "Listen locally, connect remotely (accepted multiple times). "
+        "Unless otherwise specified, (local) bind and (remote) connect addresses are localhost. "
         'For example "127.0.0.1:1234:127.0.0.1:22" is the same as "1234:22" effectively.'
     ),
     metavar="[bind-address:]listen-port[:remote-address][:connect-port]",
@@ -111,8 +111,8 @@ def fowld(ctx, ip_privacy, mailbox, debug):
     "--remote", "-R",
     multiple=True,
     help=(
-        "Listen remotely, connect locally (accepted multiple times)"
-        "Unless otherwise specified, the (remote) bind and (local) connect addresses are localhost."
+        "Listen remotely, connect locally (accepted multiple times) "
+        "Unless otherwise specified, the (remote) bind and (local) connect addresses are localhost. "
         'For example "127.0.0.1:1234:127.0.0.1:22" is the same as "1234:22" effectively.'
         ),
     metavar="[remote-bind-address:]listen-port[:local-connect-address][:local-connect-port]",
@@ -121,8 +121,8 @@ def fowld(ctx, ip_privacy, mailbox, debug):
     "--allow-listen",
     multiple=True,
     help=(
-        "Accept a connection to this local port. Accepted multiple times."
-        "Note that local listeners added via --local are already allowed and do not need this option."
+        "Accept a connection to this local port. Accepted multiple times. "
+        "Note that local listeners added via --local are already allowed and do not need this option. "
         'If no interface is specified, "localhost" is assumed.'
     ),
     metavar="[interface:]listen-port",
@@ -131,7 +131,7 @@ def fowld(ctx, ip_privacy, mailbox, debug):
     "--allow-connect",
     multiple=True,
     help=(
-        "Accept a connection to this local port. Accepted multiple times"
+        "Accept a connection to this local port. Accepted multiple times "
         'If no address is specified, "localhost" is assumed.'
     ),
     metavar="[address:]connect-port",
