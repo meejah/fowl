@@ -215,7 +215,7 @@ Computer two:
 
 .. code-block:: shell
 
-    $ fowl --listen 8888 accept 1-foo-bar
+    $ fowl --local 8888 1-foo-bar
     $ telnet localhost 8888
 
 **Now we have encrypted chat**.
