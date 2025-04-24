@@ -188,6 +188,7 @@ So, we still run the exact same ``nc`` and ``telnet`` commands, but first do som
 On the *second* machine (the one running ``telnet``) we'll need to add in something that listens on port 8888.
 This thing is: ``fowl --listen 8888 invite``
 When connected to the public Mailbox Server, this will print out a ``<secret code>`` like ``1-foo-bar``
+If needed, you can specify you own made up invite code directly like so: `fowl --local 8888 1-foo-bar`.
 
 Next we want all the information this listener gets to be magically forwarded to the first machine (the one running ``nc``).
 So, on it we run: ``fowl --allow-connect 8888 accept <secret code>``.
@@ -210,6 +211,8 @@ Full example, computer one:
     $ nc -l localhost 8888
     $ fowl --allow-connect 8888 invite
     Invite code: 1-foo-bar
+
+*Note: `invite` is used to generate a code, but you can specify an invite code directly: `fowl --allow-connect 8888 1-foo-bar`*
 
 Computer two:
 
