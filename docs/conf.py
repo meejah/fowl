@@ -31,6 +31,7 @@ html_theme_options = {
     "source_repository": "https://github.com/meejah/fowl/",
     "source_branch": "main",
     "source_directory": "docs/",
+    "navigation_with_keys": True,
     "footer_icons": [
         {
             "name": "GitHub",
