@@ -185,15 +185,11 @@ This means we need:
 
 So, we still run the exact same ``nc`` and ``telnet`` commands, but first do some ``fowl`` magic on each machine.
 
-On the *second* machine (the one running ``telnet``) we'll need to add in something that listens on port 8888.
-This thing is: ``fowl --listen 8888 invite``
-When connected to the public Mailbox Server, this will print out a ``<secret code>`` like ``1-foo-bar``
+On the *first* machine, open a terminal and start ``nc`` on port 8888 via ``nc -l localhost 8888``. We'll then need to add in something that *listens* on port 8888 and sends it through the wormhole.
+This thing is: ``fowl --allow-connect 8888 <secret code>``. If you don't specify a ``<secret code>``, ``fowl`` will generate one for you, say ``1-foo-bar`` If you want to generate your own codes, you can specify it directly like so: ``fowl --allow-connect 8888 1-foo-bar``.
 
-Next we want all the information this listener gets to be magically forwarded to the first machine (the one running ``nc``).
-So, on it we run: ``fowl --allow-connect 8888 accept <secret code>``.
-The ``<secret code>`` comes from the "invite" above, and is communicated -- usually via a human or two -- to the second machine.
-
-Note that we could swap "``invite``" and "``accept``" around if it's more convenient for one or the other human to go first.
+On the *second* machine we'll need to add in something that connects our wormhole to our own 8888 port.
+This thing is: ``fowl --local 8888 <secret-code>``, in our case ``fowl --local 8888 1-boo-bar``
 
 What happens under the hood is that the two ``fowl`` programs establish a secure connection, via the public Mailbox Server.
 They then use this connection to maintain a persistent (possibly changing) TCP connection between each other (worst case, using the public Transit Relay) to send end-to-end encrypted messages.
@@ -208,14 +204,14 @@ Full example, computer one:
 .. code-block:: shell
 
     $ nc -l localhost 8888
-    $ fowl --allow-connect 8888 invite
+    $ fowl --allow-connect 8888
     Invite code: 1-foo-bar
 
 Computer two:
 
 .. code-block:: shell
 
-    $ fowl --listen 8888 accept 1-foo-bar
+    $ fowl --local 8888 1-foo-bar
     $ telnet localhost 8888
 
 **Now we have encrypted chat**.
