@@ -81,6 +81,21 @@ After this, a lot of things are "symmetric" in that either side can listen on a 
 
 The "symmetric" parts are described in the next session, following which are things specific to the "accept" or the "invite" side.
 
+This wording can become a little confusing due to the symmetry.
+Basically, either peer can set up a listener.
+When doing so, you must take care to allow connecting permission on the *other* peer.
+
+Thus, if you have a ``--local`` on one peer you should expect a corresponding ``--allow-connect`` on the other peer.
+Similarly, if there is a ``--remote`` on one peer, you should expect the other peer to require a corresponding ``--allow-listen`` argument.
+
+
+.. csv-table:: Peer Listener Examples
+    :header: "Peer A runs", "Peer B runs", "Result"
+
+    "fowl --local 8080", "fowl [code] --allow-connect 8080", "Peer A listens on 8080, forwards to port 8080 on Peer B"
+    "fowl --remote 8080", "fowl [code] --allow-listen 8080", "Peer B listens on 8080, forwards to port 8080 on Peer A"
+    "fowl --local 4321:22", "fowl [code] --allow-connect 22", "Peer A listens on 4321, forwards to port 22 on Peer B"
+
 
 Common ``fowl`` Options: An Example
 -----------------------------------
