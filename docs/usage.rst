@@ -83,7 +83,7 @@ The "symmetric" parts are described in the next session, following which are thi
 
 This wording can become a little confusing due to the symmetry.
 Basically, either peer can set up a listener.
-When doing so, you must take care to allow connecting permission on the *other* peer.
+When doing so, you must take care set up permissions on the *other* peer.
 
 Thus, if you have a ``--local`` on one peer you should expect a corresponding ``--allow-connect`` on the other peer.
 Similarly, if there is a ``--remote`` on one peer, you should expect the other peer to require a corresponding ``--allow-listen`` argument.
@@ -93,8 +93,14 @@ Similarly, if there is a ``--remote`` on one peer, you should expect the other p
 
 
 So, in the above we have "Peer A" running a Web server (in this case Twisted's) that it wishes to expose to Peer B's "curl" command.
-The "Controlling App" on "Peer A" runs the "twisted web" as a subprocess, and also a "fowld" (or "fowl") as a subprocess.
+The "Controlling App" on "Peer A" runs the "twisted web" as a subprocess, and also a "fowld" as a subprocess.
 Similar on the "Peer B" side: it also runs a "fowld" and, in this case, the "client" application.
+
+.. NOTE::
+
+    Although we explain this example using ``fowl`` options, usually a
+    controlling application like this would use ``fowld``.
+
 
 There is more than one way to set up the desired flow in ``fowl``!
 
