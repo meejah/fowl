@@ -32,7 +32,7 @@ The general flow of a session is that one side "starts" it (allocating a secret 
 These codes can be used precisely once: if a bad actor guesses or intercepts the code, your partner will know (because it won't work for them).
 
 You may also gain additional security by using the "verifier" feature, if desired (this ensures that you're 100% definitely communicating with the intended party).
-See the `magic-wormhole documentation <>`_ for a full security discussion.
+See the `magic-wormhole documentation <https://magic-wormhole.readthedocs.io/en/latest/>`_ for a full security discussion.
 
 
 Philsophy of Commands
@@ -80,6 +80,47 @@ One computer runs ``fowl invite`` and the other computer runs ``fowl accept``.
 After this, a lot of things are "symmetric" in that either side can listen on a port (or cause the peer to listen on a port) and subsequently forward data over resulting connections.
 
 The "symmetric" parts are described in the next session, following which are things specific to the "accept" or the "invite" side.
+
+This wording can become a little confusing due to the symmetry.
+Basically, either peer can set up a listener.
+When doing so, you must take care set up permissions on the *other* peer.
+
+Thus, if you have a ``--local`` on one peer you should expect a corresponding ``--allow-connect`` on the other peer.
+Similarly, if there is a ``--remote`` on one peer, you should expect the other peer to require a corresponding ``--allow-listen`` argument.
+
+
+.. image:: _static/magic-peer-networking.svg
+
+
+So, in the above we have "Peer A" running a Web server (in this case Twisted's) that it wishes to expose to Peer B's "curl" command.
+The "Controlling App" on "Peer A" runs the "twisted web" as a subprocess, and also a "fowld" as a subprocess.
+Similar on the "Peer B" side: it also runs a "fowld" and, in this case, the "client" application.
+
+.. NOTE::
+
+    Although we explain this example using ``fowl`` options, usually a
+    controlling application like this would use ``fowld``.
+
+
+There are two ways to set up the desired flow in ``fowl``!
+
+One way is for "Peer A" to direct its "fowl" to do a "remote" listener (e.g. with ``--remote 4321:8080``) which says to listen on "4321" on the far-side peer (i.e. "Peer B") and forward connections to "8080" on the near side (i.e. "Peer A").
+"Peer B" will check its permission (e.g. ``--allow-listen 4321``) before actually listening.
+
+The other way is for "Peer B" to direct its "fowl" to do a "local" listener (e.g. with ``--local 4321:8080``) which says to listen on "4321" on the near-side peer (i.e. "Peer B") and to forward connections to "8080" on the far side (i.e. "Peer A").
+
+These are both pretty equivalent, because they end up with the same situation: Peer A has "server-style" application running on port 8080, and Peer B makes it *look* like it's accessible there.
+The listener on Peer B is "fowl".
+That is, "twistd web" is listening on 8080 on Peer A and "fowl" is listening on "4321" on Peer B.
+
+When "curl" runs on Peer B, the fowl on Peer B sees a connection, and opens a "dilation subchannel" to Peer A.
+It then sends an initial ``msgpack``-encoded message asking for ``local-destination`` of ``tcp:localhost:8080``.
+Peer B checks its policy (e.g. ``--allow-connect 8080``) and replies good or bad.
+If good, all data is forwarded across the subchannel.
+
+Choosing one over the other is up to the "Controlling Application".
+In this example, the "Controlling Application" could be a Web preview or collaboration tool where "Peer A" has the Web site files.
+"Peer B" can then see the proposed Web site.
 
 
 Common ``fowl`` Options: An Example
