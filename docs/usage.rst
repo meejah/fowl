@@ -32,7 +32,7 @@ The general flow of a session is that one side "starts" it (allocating a secret 
 These codes can be used precisely once: if a bad actor guesses or intercepts the code, your partner will know (because it won't work for them).
 
 You may also gain additional security by using the "verifier" feature, if desired (this ensures that you're 100% definitely communicating with the intended party).
-See the `magic-wormhole documentation <>`_ for a full security discussion.
+See the `magic-wormhole documentation <https://magic-wormhole.readthedocs.io/en/latest/>`_ for a full security discussion.
 
 
 Philsophy of Commands
