@@ -244,19 +244,28 @@ def fowl(ip_privacy, mailbox, debug, allow_listen, allow_connect, local, remote,
             [to_local_port(port) for port in allow_connect]
         )
 
+    all_commands = [
+        to_local(*t)
+        for t in local_commands
+    ] + [
+        to_remote(*t)
+        for t in remote_commands
+    ]
+    if not all_commands and not connect_policy and not listen_policy:
+        print("You have requested no listeners and allowed nothing.")
+        print("This will not do anything.")
+        print()
+        print("You should use at least one of: --remote, --local, --allow-listen or --allow-connect")
+        print("For more information: fowl --help")
+        return 1
+
     cfg = _Config(
         relay_url=WELL_KNOWN_MAILBOXES.get(mailbox, mailbox),
         use_tor=bool(ip_privacy),
         debug_file=debug,
         code=code,
         code_length=code_length,
-        commands=[
-            to_local(*t)
-            for t in local_commands
-        ] + [
-            to_remote(*t)
-            for t in remote_commands
-        ],
+        commands=all_commands,
         listen_policy=listen_policy,
         connect_policy=connect_policy,
         output_debug_messages=debug_messages,
