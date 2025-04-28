@@ -223,7 +223,6 @@ Also the stream will **survive changing networks** (disconnects, new IP addresse
 
 
 .. note::
-
     The two public servers mentioned (the Mailbox Server and the Transit Relay) will learn the IP addresses of who is communicating.
     Tor is supported for users who do not wish to reveal their network location.
     **Neither server can see any plaintext** (like any other attacker, the Mailbox Server could try a single but destructive and noticable guess at the code for any mailbox).
