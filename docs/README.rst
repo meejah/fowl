@@ -221,8 +221,8 @@ Like TCP promises, all bytes are delivered in-order.
 In addition, they are **encrypted**.
 Also the stream will **survive changing networks** (disconnects, new IP addresses, etc); that is, the actual inter-computer TCP connection is re-stablished, but to the applications (``nc``, ``telnet``) it looks uninterupted.
 
-
 .. note::
+
     The two public servers mentioned (the Mailbox Server and the
     Transit Relay) will learn the IP addresses of who is
     communicating.
