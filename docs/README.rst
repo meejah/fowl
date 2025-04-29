@@ -19,7 +19,7 @@ That could be solved by self-hosting, but we also like avoiding the extra work o
 
 For more context, see my blog posts: `Forwarding Streams over Magic Wormhole <https://meejah.ca/blog/fow-wormhole-forward>`_ and `Wizard Gardens vision <https://meejah.ca/blog/wizard-gardens-vision>`_.
 
-To generalize this a little: there are many FOSS client/server programs that _can_ be self-hosted -- ``fowl`` lets us use these sorts of programs in a peer-to-peer fashion, behind NATs.
+To generalize this a little: there are many FOSS client/server programs that *can* be self-hosted -- ``fowl`` lets us use these sorts of programs in a peer-to-peer fashion, behind NATs.
 This means only depending on one general-purpose, public-IP-having server (the Magic Wormhole "mailbox server" used to set up connections) instead of "one per application" (or more).
 
 .. image:: fowl-interaction-screenshot-1000.png

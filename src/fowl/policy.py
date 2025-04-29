@@ -71,6 +71,9 @@ class LocalhostTcpPortsListenPolicy(LocalhostAnyPortsListenPolicy):
                 return True
         return False
 
+    def __bool__(self):
+        return self.ports != []
+
 
 @implementer(IClientListenPolicy)
 @frozen
@@ -90,6 +93,9 @@ class ArbitraryInterfaceTcpPortsListenPolicy:
                     if port == allowed_port:
                         return True
         return False
+
+    def __bool__(self):
+        return self.listeners != []
 
 
 @implementer(IClientListenPolicy)
@@ -150,3 +156,7 @@ class LocalhostTcpPortsConnectPolicy(LocalhostAnyPortsConnectPolicy):
             if endpoint._port in self.ports:
                 return True
         return False
+
+    def __bool__(self):
+        return self.ports != []
+
