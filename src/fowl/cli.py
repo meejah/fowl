@@ -29,6 +29,16 @@ from .policy import (
 )
 
 
+WOULD_DO_NOTHING_ERROR = """
+You have requested no listeners and allowed neither listening nor connecting.
+This would not do anything useful.
+
+You should use at least one of: --remote, --local, --allow-listen or --allow-connect
+For more information: fowl --help
+"""
+
+
+
 @click.option(
     "--ip-privacy/--clearnet",
     default=False,
@@ -252,12 +262,9 @@ def fowl(ip_privacy, mailbox, debug, allow_listen, allow_connect, local, remote,
         for t in remote_commands
     ]
     if not all_commands and not connect_policy and not listen_policy:
-        print("You have requested no listeners and allowed nothing.")
-        print("This will not do anything.")
-        print()
-        print("You should use at least one of: --remote, --local, --allow-listen or --allow-connect")
-        print("For more information: fowl --help")
-        return 1
+        raise click.UsageError(WOULD_DO_NOTHING_ERROR)
+    else:
+        breakpoint()
 
     cfg = _Config(
         relay_url=WELL_KNOWN_MAILBOXES.get(mailbox, mailbox),
