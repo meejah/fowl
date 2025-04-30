@@ -263,8 +263,6 @@ def fowl(ip_privacy, mailbox, debug, allow_listen, allow_connect, local, remote,
     ]
     if not all_commands and not connect_policy and not listen_policy:
         raise click.UsageError(WOULD_DO_NOTHING_ERROR)
-    else:
-        breakpoint()
 
     cfg = _Config(
         relay_url=WELL_KNOWN_MAILBOXES.get(mailbox, mailbox),
