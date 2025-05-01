@@ -197,7 +197,6 @@ async def frontend_accept_or_invite(reactor, config):
     def output_message(msg):
         status.on_message(msg)
 
-
     # XXX anything we care about from status should probably be wired
     # through fowl-daemon? (i.e. emitted as a FowlOutputMessage or so
     # from there)
@@ -212,7 +211,10 @@ async def frontend_accept_or_invite(reactor, config):
         print("{} --[ {} ]--> {}".format(o, i, n))
 
     ### XXX use PleaseCloseWormhole, approximately
-    reactor.addSystemEventTrigger("before", "shutdown", lambda: ensureDeferred(fowl_wh.disconnect_session()))
+    async def shutdown():
+        await fowl_wh.disconnect_session()
+        live.stop()
+    reactor.addSystemEventTrigger("before", "shutdown", lambda: ensureDeferred(shutdown()))
 
     def we_are_closing():  # can't assign in a lambda
         print("Closing...")
