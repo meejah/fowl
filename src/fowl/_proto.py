@@ -238,10 +238,12 @@ async def frontend_accept_or_invite(reactor, config):
             await deferLater(reactor, 0.25, lambda: None)
 
 
-class SubchannelForwarder(Protocol):
+class FowlNearToFar(Protocol):
     """
-    This is the side of the protocol that was listening .. so it has
-    opened a subchannel and sent the initial message. So the
+    This is the side of the protocol that was listening .. so a local
+    connection has come in, creating an instance of this protocol.
+
+    In ``connectionMade`` we send the initial message. So the
     state-machine here is waiting for the reply before forwarding
     data.
 
@@ -597,7 +599,7 @@ class LocalServer(Protocol):
         self._conn_id = allocate_connection_id()
 
         # XXX do we need registerProducer somewhere here?
-        factory = Factory.forProtocol(SubchannelForwarder)
+        factory = Factory.forProtocol(FowlNearToFar)
         factory.other_proto = self
         factory.conn_id = self._conn_id
         factory.listener_id = self.factory.listener_id
