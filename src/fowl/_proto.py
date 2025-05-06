@@ -466,12 +466,14 @@ class FowlNearToFar(Protocol):
 
         self.local = self.factory.other_proto
         self.factory.other_proto.remote = self
-        msg = msgpack.packb({
-            "local-destination": self.factory.endpoint_str,
-            "listener-id": self.factory.listener_id,
-        })
-        prefix = struct.pack("!H", len(msg))
-        self.transport.write(prefix + msg)
+        self.transport.write(
+            _pack_netstring(
+                msgpack.packb({
+                    "local-destination": self.factory.endpoint_str,
+                    "listener-id": self.factory.listener_id,
+                })
+            )
+        )
 
         self.factory.message_out(
             OutgoingConnection(self.factory.conn_id, self.factory.endpoint_str, self.factory.listener_id)
@@ -638,6 +640,20 @@ class LocalServer(Protocol):
             BytesIn(self._conn_id, len(data))
         )
         self.remote.transport.write(data)
+
+
+def _pack_netstring(data):
+    """
+    :param bytes data: data to length-prefix
+
+    :returns: a binary 'netstring' with a length prefix encoded as a
+    unsigned 16-bit integer.
+    """
+    if len(data) >= 2**16:
+        raise ValueError("Too many bytes to encode in 16-bit integer")
+    prefix = struct.pack("!H", len(data))
+    return prefix + data
+
 
 
 class Incoming(Protocol):
@@ -810,20 +826,15 @@ class Incoming(Protocol):
         """
         self._negative(reason)
 
-    @m.output()
-    def send_negative_reply_subchannel(self):
-        """
-        Tell our peer local policy doesn't let the connection happen.
-        """
-        pass#self._negative("XXXAgainst local policy")
-
     def _negative(self, reason):
-        msg = msgpack.packb({
-            "connected": False,
-            "reason": reason,
-        })
-        prefix = struct.pack("!H", len(msg))
-        self.transport.write(prefix + msg)
+        self.transport.write(
+            _pack_netstring(
+                msgpack.packb({
+                    "connected": False,
+                    "reason": reason,
+                })
+            )
+        )
 
 
     @m.output()
@@ -831,12 +842,13 @@ class Incoming(Protocol):
         """
         Reply to the other side that we've connected properly
         """
-        # XXX there's other sections like this; factor to pack_netstring() or something
-        msg = msgpack.packb({
-            "connected": True,
-        })
-        prefix = struct.pack("!H", len(msg))
-        self.transport.write(prefix + msg)
+        self.transport.write(
+            _pack_netstring(
+                msgpack.packb({
+                    "connected": True,
+                })
+            )
+        )
 
     @m.output()
     def emit_incoming_connection(self, msg):
@@ -1723,16 +1735,18 @@ class Commands(Protocol):
 
     def request_forward(self, cmd):
         rid = next(self._create_request_id)
-        msg = msgpack.packb({
-            "kind": "remote-to-local",
-            "listen-endpoint": cmd.listen,
-            "connect-endpoint": cmd.connect,
-            "reply-id": rid,
-        })
         d = Deferred()
         self._local_requests[rid] = d, cmd
-        prefix = struct.pack("!H", len(msg))
-        self.transport.write(prefix + msg)
+        self.transport.write(
+            _pack_netstring(
+                msgpack.packb({
+                    "kind": "remote-to-local",
+                    "listen-endpoint": cmd.listen,
+                    "connect-endpoint": cmd.connect,
+                    "reply-id": rid,
+                })
+            )
+        )
         return d
 
     def when_done(self):
@@ -1838,9 +1852,11 @@ class Commands(Protocol):
             }
             if reason is not None and not listening:
                 content["reason"] = str(reason)
-            reply = msgpack.packb(content)
-            prefix = struct.pack("!H", len(reply))
-            self.transport.write(prefix + reply)
+            self.transport.write(
+                _pack_netstring(
+                    msgpack.packb(content)
+                )
+            )
             del self._remote_requests[rid]
         else:
             raise ValueError(
