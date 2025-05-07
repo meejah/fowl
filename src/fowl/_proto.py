@@ -31,7 +31,7 @@ from twisted.protocols.basic import LineReceiver
 from zope.interface import directlyProvides, implementer
 from wormhole.cli.public_relay import RENDEZVOUS_RELAY as PUBLIC_MAILBOX_URL
 import wormhole.errors as wormhole_errors
-from wormhole import SubchannelAddress, ISubchannelFactory
+from wormhole import SubchannelAddress, ISubchannelListenFactory, ISubchannelConnectFactory
 
 from .observer import When
 from .messages import (
@@ -121,7 +121,7 @@ class _Config:
     output_debug_messages: TextIO = None  # Option<Writable>
 
 
-async def wormhole_from_config(reactor, config, wormhole_create=None, on_status=None):
+async def wormhole_from_config(reactor, config, on_status, message_out, wormhole_create=None):
     """
     Create a suitable wormhole for the given configuration.
 
@@ -150,7 +150,7 @@ async def wormhole_from_config(reactor, config, wormhole_create=None, on_status=
         tor=tor,
         timing=None,  # args.timing,
         dilation_subprotocols={
-            "fowl": FowlSubprotocolListener(config),
+            "fowl": FowlSubprotocolListener(config, message_out),
         },
         versions={
             "fowl": {
@@ -607,7 +607,10 @@ class LocalServer(Protocol):
         self._conn_id = allocate_connection_id()
 
         # XXX do we need registerProducer somewhere here?
+        # XXX make a real Factory subclass instead
         factory = Factory.forProtocol(FowlNearToFar)
+        factory.subprotocol = "fowl"
+        directlyProvides(factory, ISubchannelConnectFactory)
         factory.other_proto = self
         factory.conn_id = self._conn_id
         factory.listener_id = self.factory.listener_id
@@ -648,11 +651,12 @@ class LocalServer(Protocol):
         self.remote.transport.write(data)
 
 
-@implementer(ISubchannelFactory)
+@implementer(ISubchannelListenFactory)
 class FowlSubprotocolListener(Factory):
 
-    def __init__(self, config):
-        self._config = config
+    def __init__(self, config, message_out):
+        self.config = config
+        self.message_out = message_out
         super(FowlSubprotocolListener, self).__init__()
 
     def subprotocol_config_for(self, name):
@@ -669,7 +673,7 @@ class FowlSubprotocolListener(Factory):
     def buildProtocol(self, addr):
         # 'addr' is a SubchannelAddress
         assert addr.subprotocol == "fowl", f"unknown subprotocol name: {addr}"
-        p = FowlFarToNear()
+        p = FowlFarToNear()  # XXX cross-the-road joke in the naming? plz??
         p.factory = self
         return p
 
@@ -688,7 +692,7 @@ def _pack_netstring(data):
 
 
 
-class Incoming(Protocol):
+class FowlFarToNear(Protocol):
     """
     Handle an incoming Dilation subchannel. This will be from a
     listener on the other end of the wormhole.
@@ -1656,8 +1660,6 @@ async def create_fowl(config, output_fowl_message, on_status):
     else:
         output_wrapper = output_fowl_message
 
-    w = await wormhole_from_config(reactor, config, on_status=on_status)
-
     if config.debug_file:
         kind = "invite" if config.code is None else "accept"
         w.debug_set_trace(kind, which="B N M S O K SK R RC L C T", file=config.debug_file)
@@ -1668,6 +1670,7 @@ async def create_fowl(config, output_fowl_message, on_status):
             d.addErrback(lambda f: print(f"Error closing: {f.value}"))
 
     sm = FowlDaemon(config, output_wrapper, command_message)
+    w = await wormhole_from_config(reactor, config, on_status, sm._message_out)
 
 #    @sm.set_trace
     def _(start, edge, end):
