@@ -28,9 +28,10 @@ from twisted.internet.protocol import Factory, Protocol
 from twisted.internet.error import ConnectionDone
 from twisted.internet.stdio import StandardIO
 from twisted.protocols.basic import LineReceiver
-from zope.interface import directlyProvides
+from zope.interface import directlyProvides, implementer
 from wormhole.cli.public_relay import RENDEZVOUS_RELAY as PUBLIC_MAILBOX_URL
 import wormhole.errors as wormhole_errors
+from wormhole import SubchannelAddress, ISubchannelFactory
 
 from .observer import When
 from .messages import (
@@ -148,7 +149,9 @@ async def wormhole_from_config(reactor, config, wormhole_create=None, on_status=
         reactor,
         tor=tor,
         timing=None,  # args.timing,
-        _enable_dilate=True,
+        dilation_subprotocols={
+            "fowl": FowlSubprotocolListener(config),
+        },
         versions={
             "fowl": {
                 "features": SUPPORTED_FEATURES,
@@ -640,6 +643,32 @@ class LocalServer(Protocol):
             BytesIn(self._conn_id, len(data))
         )
         self.remote.transport.write(data)
+
+
+@implementer(ISubchannelFactory)
+class FowlSubprotocolListener(Factory):
+
+    def __init__(self, config):
+        self._config = config
+        super(FowlSubprotocolListener, self).__init__()
+
+    def subprotocol_config_for(self, name):
+        """
+        :returns: the static configuration our peer needs to function
+        """
+        assert name == "fowl", f"{name} is not fowl"
+        # ISubchannelFactory
+        # versions from https://en.wikipedia.org/wiki/List_of_chicken_breeds
+        return {
+            "features": ["chantecler"]
+        }
+
+    def buildProtocol(self, addr):
+        # 'addr' is a SubchannelAddress
+        assert addr.subprotocol == "fowl", f"unknown subprotocol name: {addr}"
+        p = FowlFarToNear()
+        p.factory = self
+        return p
 
 
 def _pack_netstring(data):
@@ -1346,7 +1375,7 @@ class FowlWormhole:
         return self._connected.when_triggered()
 
     def _do_dilate(self):
-        self.control_ep, self.connect_ep, self.listen_ep = self._wormhole.dilate(
+        self.control_ep, self.connect_ep = self._wormhole.dilate(
             transit_relay_location="tcp:magic-wormhole-transit.debian.net:4001",
         )
         d = ensureDeferred(self._post_dilation_setup())
@@ -1379,13 +1408,14 @@ class FowlWormhole:
         fac.connect_ep = self.connect_ep  # so we can pass it command handlers
         self.control_proto = await self.control_ep.connect(fac)
 
-        # listen for incoming subchannel OPENs
-        in_factory = Factory.forProtocol(Incoming)
-        in_factory.config = self._config
-        in_factory.connect_ep = self.connect_ep
-        in_factory.message_out = self._daemon._message_out
-        listen_port = await self.listen_ep.listen(in_factory)
-        self._listening_ports.append(listen_port)
+        # XXX now in the wormhole/dilation stuff itself
+        # # listen for incoming subchannel OPENs
+        # in_factory = Factory.forProtocol(Incoming)
+        # in_factory.config = self._config
+        # in_factory.connect_ep = self.connect_ep
+        # in_factory.message_out = self._daemon._message_out
+        # listen_port = await self.listen_ep.listen(in_factory)
+        # self._listening_ports.append(listen_port)
 
         await self._wormhole.get_unverified_key()
         verifier_bytes = await self._wormhole.get_verifier()  # might WrongPasswordError
