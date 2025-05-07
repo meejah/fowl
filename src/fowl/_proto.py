@@ -683,9 +683,6 @@ class Incoming(Protocol):
     receives a reply from this side. This side (the connecting
     side) may deny the connection for any reason (e.g. it might
     not even try, if policy says not to).
-
-    XXX want some opt-in / permission on this side, probably? (for
-    now: anything goes)
     """
 
     m = automat.MethodicalMachine()
@@ -813,7 +810,6 @@ class Incoming(Protocol):
                 self._buffer = None
                 # there should be no "leftover" data
                 if bsize > 2 + expected_size:
-                    ##raise RuntimeError("protocol error: more than opening message sent")
                     self.too_much_data("Too many bytes sent")
                     return
                 # warning: recursive state-machine message
