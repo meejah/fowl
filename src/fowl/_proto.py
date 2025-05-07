@@ -464,6 +464,9 @@ class FowlNearToFar(Protocol):
     do_trace = m._setTrace
 
     def connectionMade(self):
+        # might be "better state-machine" to do the message-sending in
+        # an @output and use this method to send "connected()" @input
+        # or similar?
         self._buffer = b""
         # self.do_trace(lambda o, i, n: print("{} --[ {} ]--> {}".format(o, i, n)))
 
