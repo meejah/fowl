@@ -149,8 +149,10 @@ async def wormhole_from_config(reactor, config, on_status, message_out, wormhole
         reactor,
         tor=tor,
         timing=None,  # args.timing,
+
         dilation_subprotocols={
-            "fowl": FowlSubprotocolListener(config, message_out),
+            "fowl": FowlSubprotocolListener(reactor, config, message_out),
+            "fowl-control": FowlCommandsListener(reactor, config, message_out),
         },
         versions={
             "fowl": {
@@ -654,7 +656,8 @@ class LocalServer(Protocol):
 @implementer(ISubchannelListenFactory)
 class FowlSubprotocolListener(Factory):
 
-    def __init__(self, config, message_out):
+    def __init__(self, reactor, config, message_out):
+        self.reactor = reactor
         self.config = config
         self.message_out = message_out
         super(FowlSubprotocolListener, self).__init__()
@@ -667,7 +670,7 @@ class FowlSubprotocolListener(Factory):
         # ISubchannelFactory
         # versions from https://en.wikipedia.org/wiki/List_of_chicken_breeds
         return {
-            "features": ["chantecler"]
+            "versions": ["chantecler"]
         }
 
     def buildProtocol(self, addr):
@@ -1382,7 +1385,7 @@ class FowlWormhole:
         return self._connected.when_triggered()
 
     def _do_dilate(self):
-        self.control_ep, self.connect_ep = self._wormhole.dilate(
+        self._dilated = self._wormhole.dilate(
             transit_relay_location="tcp:magic-wormhole-transit.debian.net:4001",
         )
         d = ensureDeferred(self._post_dilation_setup())
@@ -1406,14 +1409,16 @@ class FowlWormhole:
         )
 
     async def _post_dilation_setup(self):
-        # listen for commands from the other side on the control channel
-        assert self.control_ep is not None, "Need control connection"
-        fac = Factory.forProtocol(Commands)
+        # # listen for commands from the other side on the control channel
+        fac = Factory.forProtocol(FowlCommands)
         fac.config = self._config
         fac.message_out = self._daemon._message_out  # XXX
         fac.reactor = self._reactor
-        fac.connect_ep = self.connect_ep  # so we can pass it command handlers
-        self.control_proto = await self.control_ep.connect(fac)
+        # so we can pass it command handlers
+        fac.connect_ep = self._dilated.subprotocol_connector_for("fowl")
+
+        control_ep = self._dilated.subprotocol_control_for("fowl-control")
+        self.control_proto = await control_ep.connect(fac)
 
         # XXX now in the wormhole/dilation stuff itself
         # # listen for incoming subchannel OPENs
@@ -1751,9 +1756,24 @@ async def _remote_to_local_forward(control_proto, cmd):
     return reply
 
 
-class Commands(Protocol):
+class ControlDemultiplex(Protocol):
+
+    def register_plugin(self, name):
+        "or something"
+
+    def dataReceived(self, data):
+        msg = msgpack.unpackb(data)
+        try:
+            plugin = self.plugin[msg["subprotocol"]]
+            plugin.got_control_mesage(msg)
+        except KeyError:
+            print("no valid plugin found")
+
+
+
+class FowlCommands(Protocol):
     """
-    Listen for (and send) commands over the command subchannel
+    Listen for (and send) commands from the peer
     """
 
     def __init__(self, *args, **kw):
@@ -1764,6 +1784,9 @@ class Commands(Protocol):
         self._remote_requests = dict()
         self._local_requests = dict()
         self._create_request_id = count(1)
+
+    # def connectionMade(self):
+    #     self.transport.write("hello, my name is meejah!")
 
     def request_forward(self, cmd):
         rid = next(self._create_request_id)
@@ -1910,6 +1933,27 @@ class Commands(Protocol):
         @d.addCallback
         def _(_):
             self._done.trigger(self.factory.reactor, None)
+
+
+@implementer(ISubchannelListenFactory)
+class FowlCommandsListener(Factory):
+    protocol = FowlCommands
+
+    def __init__(self, reactor, config, message_out):
+        self.reactor = reactor
+        self.config = config
+        self.message_out = message_out
+
+    def subprotocol_config_for(self, name):
+        """
+        :returns: the static configuration our peer needs to function
+        """
+        assert name == "fowl-control", f"{name} is not fowl"
+        # ISubchannelFactory
+        # versions from https://en.wikipedia.org/wiki/List_of_chicken_breeds
+        return {
+            "features": ["chantecler"]
+        }
 
 
 class LocalCommandDispatch(LineReceiver):
