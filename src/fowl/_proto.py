@@ -31,9 +31,9 @@ from twisted.protocols.basic import LineReceiver
 from zope.interface import directlyProvides, implementer
 from wormhole.cli.public_relay import RENDEZVOUS_RELAY as PUBLIC_MAILBOX_URL
 import wormhole.errors as wormhole_errors
-from wormhole import SubchannelAddress, ISubchannelListenFactory, ISubchannelConnectFactory
+from wormhole import SubchannelAddress
 
-from .observer import When
+from .observer import When, Next
 from .messages import (
     SetCode,
     AllocateCode,
@@ -150,10 +150,107 @@ async def wormhole_from_config(reactor, config, on_status, message_out, wormhole
         tor=tor,
         timing=None,  # args.timing,
 
-        dilation_subprotocols={
-            "fowl": FowlSubprotocolListener(reactor, config, message_out),
-            "fowl-control": FowlCommandsListener(reactor, config, message_out),
-        },
+
+# peer a: fowl --local 1234:22
+# peer b: fowl --allow-connect 22
+
+# peer a: fowl --remote 1234:22   # hey, other peer, please LISTEN on 1234 and send back to me on 22
+# peer b: fowl --allow-listen 1234
+
+# file-transfer, it might also "commands"
+# peer a sends a "command"
+# - global control channel
+# - ...but how
+#
+# shapr: unix server sockets. like "xinetd". "i want to connect on 'web'" -> nginx -> etc
+# (only one thing can listen on TCP)
+#
+# okay, so then we have "a" protocol spoken on the control-channel
+# ...but it says "this message is for subprotocol X"
+# ...so then it can de-multiplex to the 'actual' subprotocol control channel
+#
+# OPEN scid 'fowl'
+#  -> DATA: <actual data>
+# OPEN 0 ''
+#  -> DATA: 'fowl-control' <actual data>
+#  -> DATA: 'file-transfer-control' <actual data>
+#
+# Follow: connects, Leader: listens
+#  -> if i'm the leader, and app code asks for 'fowl-control' channel, I need to wait for the OPEN
+#  -> if i'm the follower and app code asks for 'fowl-control' channel, I immediately send OPEN
+#
+#  -> both peers only get notified of a _successul_ connect when the BOTH do the above
+#
+# features:
+# - unused plugins NEVER have an open contol-channel (or any other channel)
+#
+# if user_wants_fowl:  # implicit? GUI?
+#     ep = api.subprotocol_control_for('fowl-control')
+#     proto = await ep.connect(Factory)
+#
+# shapr: how do we know if the other side wants it?
+#   - GUI app: 'share terminal', 'send file', 'share GIT'
+#   - peer A clicks 'send file'
+#   - peer B ...? how does it know it even needs a control channel?
+#   - (it already created one?)
+#
+# (can the control channel come up w/o much overhead? yes)
+
+# docs: if your protocol has a control channel, you should .connect()
+# it ASAP once you have a peer
+#
+
+# 'file-transfer': FileTransferListener()
+#
+# to send a file:
+#   - OPEN a subchannel
+#   - immediately send a msgpack-encoded Offer
+#   - wait for "yes, no"
+#   - if no: close subchannel
+#   - if yes: stream file / offer data
+#
+# the use-case for the control-channel is:
+#  - we want a SINGLE channel (for ordering)
+#  - and the application doesn't know who goes first
+#
+#  - look at libp2p: how do they do this? do they??
+#  - shapr: priority system on the hints -- variation on happy eyeballs
+#
+#  - shapr: okay, ARE there any plugins or protocols or use-cases that
+#    aren't served by req/resp http style
+#
+#  - what is A / THE use-case(s) for control-channel
+#
+# - chat session
+# - ssh session (kind-of)
+# - games?
+# - randomly spew out a list of protocols ... do any NEED the control-channel thing?
+# - ...
+# - coming up blank on when you might NEEEEED the control-channel
+#
+# - TODO: write docs for Dilation w/ Subprotocols --- flesh out the above
+# - TODO: can we make control-channels a new feature/version/whatever
+#
+# - maybe conclusion: wait and see; if someone comes along as says
+#   they need a singletonl / control channel OR someone wants to know
+#   leader/follower THEN we ask why etc -- and write it all up as a
+#   future use-case.
+#
+# - another wrapper? with "the messages" of the protocol
+# - how can we make it EVEN NICER to use plugins / etc
+# - write "tty-share" greenfield thing that is "a wormhole
+#
+# - bigger picture things:
+#   - opinionated plugins: 'nice' api etc etc
+#   - GUI for ^
+#   - how to compose ^
+#   - low-level, HOWTO write ssh-over-wormhole
+#
+#
+# meejah, "the outer layer of the onion shouldn't make you cry"
+
+##        dilation_subprotocols=subprotocols,
+        dilation=True,
         versions={
             "fowl": {
                 "features": SUPPORTED_FEATURES,
@@ -238,6 +335,11 @@ async def frontend_accept_or_invite(reactor, config):
 
     done_d = fowl_wh.when_done()
 
+    # debugging: "rich" is decent at showing you stuff printed out,
+    # but for reasons unknown to me it doesn't show "unhandled error"
+    # from Twisted -- replace "with live:" here with "if 1:" to see
+    # more error stuff (but of course no TUI)
+    #if 1:
     with live:
         while not done_d.called:
             await deferLater(reactor, 0.25, lambda: None)
@@ -612,7 +714,6 @@ class LocalServer(Protocol):
         # XXX make a real Factory subclass instead
         factory = Factory.forProtocol(FowlNearToFar)
         factory.subprotocol = "fowl"
-        directlyProvides(factory, ISubchannelConnectFactory)
         factory.other_proto = self
         factory.conn_id = self._conn_id
         factory.listener_id = self.factory.listener_id
@@ -624,6 +725,20 @@ class LocalServer(Protocol):
         # to be confused with the endpoint created from the "local
         # endpoint string"
         d = self.factory.connect_ep.connect(factory)
+
+
+# XXXX epiphany on the way home: we need some "space" between
+# "versions" and "what subprotocols can we speak?" .. maybe .. and so
+# we put the subprotocols={} in dilate() not wormhole.create()?
+#
+# ...but then it CAN'T go in "version" (although app can put whatever
+# it likes in app_versions={}) ... so how do we know 'what can it speak'?
+# maybe we just "don't care" and go with IETF "try it and see"?
+#
+# ...but "our side" magic-wormhole still knows which Factories it
+# has. We make those "functions that return a factory", taking
+# "DilatedWormhole" as an arg .. and then we can create the connect_ep
+# that our factory wants
 
         def err(f):
             self.factory.message_out(
@@ -653,7 +768,61 @@ class LocalServer(Protocol):
         self.remote.transport.write(data)
 
 
-@implementer(ISubchannelListenFactory)
+class LocalServerFarSide(Protocol):
+    """
+    """
+
+    def connectionMade(self):
+        self.queue = []
+        self.remote = None
+        self._conn_id = allocate_connection_id()
+        print("CONN MADE", self._conn_id, self.factory)
+
+        # XXX do we need registerProducer somewhere here?
+        # XXX make a real Factory subclass instead
+        factory = Factory.forProtocol(FowlNearToFar)
+        factory.subprotocol = "fowl"
+        factory.other_proto = self
+        factory.conn_id = self._conn_id
+        factory.listener_id = self.factory.listener_id
+        factory.endpoint_str = self.factory.endpoint_str
+        factory.config = self.factory.config
+        factory.message_out = self.factory.message_out
+
+        d = self.factory.connect_ep.connect(factory)
+
+        def err(f):
+            self.factory.message_out(
+                WormholeError(
+                    str(f.value),
+                    # extra={"id": self._conn_id}
+                )
+            )
+        d.addErrback(err)
+
+        def got_proto(proto):
+            print("proto", proto)
+        d.addCallback(got_proto)
+        return d
+
+    def _maybe_drain_queue(self):
+        while self.queue:
+            msg = self.queue.pop(0)
+            self.remote.transport.write(msg)
+        self.queue = None
+
+    def connectionLost(self, reason):
+        # XXX causes duplice local_close 'errors' in magic-wormhole ... do we not want to do this?)
+        if self.remote is not None and self.remote.transport:
+            self.remote.transport.loseConnection()
+
+    def dataReceived(self, data):
+        self.factory.message_out(
+            BytesIn(self._conn_id, len(data))
+        )
+        self.remote.transport.write(data)
+
+
 class FowlSubprotocolListener(Factory):
 
     def __init__(self, reactor, config, message_out):
@@ -1086,11 +1255,12 @@ class FowlWormhole:
         self._done = When() # we have shut down completely
         self._connected = When()  # our Peer has connected
         self._got_welcome = When()  # we received the Welcome from the server
-        self.connect_ep = self.control_proto = None
+        self.connect_ep = None
 
         self._we_sent_closing = False
         self._got_closing_from_peer_d = Deferred()
         self._peer_connected = False
+        self._dilated = None  # DilatedWormhole instance from wh.dilate()
 
     # XXX wants to be an IService?
     async def stop(self):
@@ -1105,9 +1275,7 @@ class FowlWormhole:
             port.stopListening()
 
     async def _close_active_connections(self):
-        if self.control_proto is not None:
-            self.control_proto.transport.loseConnection()
-            await self.control_proto.when_done()
+        pass
 
     # XXX wants to be an IService?
     def start(self):
@@ -1322,8 +1490,8 @@ class FowlWormhole:
         @cmd.register(RemoteListener)
         async def _(msg):
             await self.when_connected()
-            assert self.control_proto is not None, "need control_proto"
-            msg = await _remote_to_local_forward(self.control_proto, msg)
+            assert self._dilated is not None, "need self._dilated"
+            msg = await _remote_to_local_forward(self._reactor, self._dilated, msg)
             self._daemon._message_out(msg)
             # XXX cheating? private access (_daemon._message_out)
 
@@ -1385,9 +1553,20 @@ class FowlWormhole:
         return self._connected.when_triggered()
 
     def _do_dilate(self):
+        #XXX okay, so maybe we could make these _functions_ that are
+        #given the "api" that dilate() will return and must create a
+        #factory ... or we do this dance
+        commands = FowlCommandsListener(self._reactor, self._config, self._daemon._message_out)
+        subprotocols = {
+            "fowl": FowlSubprotocolListener(self._reactor, self._config, self._daemon._message_out),
+            "fowl-commands": commands,
+        }
+
         self._dilated = self._wormhole.dilate(
+            subprotocols,
             transit_relay_location="tcp:magic-wormhole-transit.debian.net:4001",
         )
+        commands.connect_ep = self._dilated.subprotocol_connector_for("fowl")
         d = ensureDeferred(self._post_dilation_setup())
         d.addErrback(self._handle_error)
         return d
@@ -1409,30 +1588,22 @@ class FowlWormhole:
         )
 
     async def _post_dilation_setup(self):
-        # # listen for commands from the other side on the control channel
-        fac = Factory.forProtocol(FowlCommands)
-        fac.config = self._config
-        fac.message_out = self._daemon._message_out  # XXX
-        fac.reactor = self._reactor
-        # so we can pass it command handlers
-        fac.connect_ep = self._dilated.subprotocol_connector_for("fowl")
-
-        control_ep = self._dilated.subprotocol_control_for("fowl-control")
-        self.control_proto = await control_ep.connect(fac)
-
-        # XXX now in the wormhole/dilation stuff itself
-        # # listen for incoming subchannel OPENs
-        # in_factory = Factory.forProtocol(Incoming)
-        # in_factory.config = self._config
-        # in_factory.connect_ep = self.connect_ep
-        # in_factory.message_out = self._daemon._message_out
-        # listen_port = await self.listen_ep.listen(in_factory)
-        # self._listening_ports.append(listen_port)
-
         await self._wormhole.get_unverified_key()
         verifier_bytes = await self._wormhole.get_verifier()  # might WrongPasswordError
         self._connected.trigger(self._reactor, verifier_bytes)
 
+        # we're already _listening_ for remote-listen requests as
+        # "fowl-commands" subprotocol via create() .. so if we have
+        # any such requests to make, we create a connector for that
+        # and fire them off -- our protocol does one request per
+        # subchannel. the way the 'listen' side is written we could do
+        # multiple requests per subchannel, but subchannels are fairly
+        # cheap to set up (one round-trip *** can/do we pipeline
+        # immediately-available data? is that possible? ***)
+        #
+        # ...a series of RemoteListeners will be emitted for every
+        # command-line option, so we'll call
+        # _remote_to_local_forward() for each of those
 
 
 # FowlDaemon is the state-machine
@@ -1673,6 +1844,8 @@ async def create_fowl(config, output_fowl_message, on_status):
         if isinstance(msg, PleaseCloseWormhole):
             d = ensureDeferred(fowl.close_wormhole())
             d.addErrback(lambda f: print(f"Error closing: {f.value}"))
+        else:
+            print(msg)
 
     sm = FowlDaemon(config, output_wrapper, command_message)
     w = await wormhole_from_config(reactor, config, on_status, sm._message_out)
@@ -1734,6 +1907,7 @@ async def _local_to_remote_forward(reactor, config, connect_ep, on_listen, on_me
         if not config.listen_policy.can_listen(ep):
             raise ValueError('Policy doesn\'t allow listening on "{}"'.format(ep._port))
 
+    #XXX okay so this is "LocalServer for a local listener" ....
     listener_id = b16encode(os.urandom(3)).decode("ascii")
     factory = Factory.forProtocol(LocalServer)
     factory.config = config
@@ -1746,14 +1920,52 @@ async def _local_to_remote_forward(reactor, config, connect_ep, on_listen, on_me
     on_message(Listening(listener_id, cmd.listen, cmd.connect))
 
 
-async def _remote_to_local_forward(control_proto, cmd):
+_local_requests = dict()
+_create_request_id = count(1)
+
+
+class _SendFowlCommand(Protocol):
+
+    def __init__(self):
+        # can a "Protocol" be an attrs @define?
+        self._when_connected = When()
+        self._message = Next()
+
+    def when_connected(self):
+        return self._when_connected.when_triggered()
+
+    def connectionMade(self):
+        self._when_connected.trigger(self.factory._reactor, None)
+
+    def next_message(self):
+        return self._message.next_item()
+
+    def dataReceived(self, data):
+        self._message.trigger(self.factory._reactor, data)
+
+
+async def _remote_to_local_forward(reactor, dilated, cmd):
     """
     Ask the remote side to listen on a port, forwarding back here
     (where our Incoming subchannel will be told what to connect
     to).
     """
-    reply = await control_proto.request_forward(cmd)
-    return reply
+    ep = dilated.subprotocol_connector_for("fowl-commands")
+    fact = Factory.forProtocol(_SendFowlCommand)
+    fact._reactor = reactor
+    proto = await ep.connect(fact)
+    await proto.when_connected()
+    proto.transport.write(
+        _pack_netstring(
+                msgpack.packb({
+                    "kind": "remote-to-local",
+                    "listen-endpoint": cmd.listen,
+                    "connect-endpoint": cmd.connect,
+                })
+        )
+    )
+    msg = await proto.next_message()
+    print("ZASDF", msg)
 
 
 class ControlDemultiplex(Protocol):
@@ -1770,42 +1982,56 @@ class ControlDemultiplex(Protocol):
             print("no valid plugin found")
 
 
+class FowlCommandRequest(Protocol):
+    """
+    Send command to the other peer
+    """
+
+    def __init__(self, *args, **kw):
+        super().__init__(*args, **kw)
+        self._done = When()
+
+    def connectionMade(self):
+        self.transport.write(self.factory.command)
+
+    def when_done(self):
+        return self._done.when_triggered()
+
+    def dataReceived(self, data):
+        bsize = len(data)
+        assert bsize >= 2, "expected at least 2 bytes"
+        expected_size, = struct.unpack("!H", data[:2])
+        assert bsize == expected_size + 2, "data has more than the message: {} vs {}: {}".format(bsize, expected_size + 2, repr(data[:55]))
+        msg = msgpack.unpackb(data[2:])
+        print(msg)
+        if msg["kind"] == "listener-response":
+            if msg["listening"]:
+                d.callback(RemoteListeningSucceeded(msg.get("listener-id"), original_cmd.listen, original_cmd.connect))
+            else:
+                d.callback(RemoteListeningFailed(original_cmd.listen, msg.get("reason", "Missing reason")))
+
+        else:
+            self.factory.message_out(
+                WormholeError(
+                    "Unknown command response: {msg[kind]}",
+                )
+            )
+
+# When doesn't support this ...
+#    def connectionLost(self, reason):
+#        self._done.trigger(self.factory.reactor, None)
+
 
 class FowlCommands(Protocol):
     """
-    Listen for (and send) commands from the peer
+    Listen for commands from the peer
     """
 
     def __init__(self, *args, **kw):
         super().__init__(*args, **kw)
         self._ports = []
-        self._done = When()
         # outstanding requests, awaiting replies
         self._remote_requests = dict()
-        self._local_requests = dict()
-        self._create_request_id = count(1)
-
-    # def connectionMade(self):
-    #     self.transport.write("hello, my name is meejah!")
-
-    def request_forward(self, cmd):
-        rid = next(self._create_request_id)
-        d = Deferred()
-        self._local_requests[rid] = d, cmd
-        self.transport.write(
-            _pack_netstring(
-                msgpack.packb({
-                    "kind": "remote-to-local",
-                    "listen-endpoint": cmd.listen,
-                    "connect-endpoint": cmd.connect,
-                    "reply-id": rid,
-                })
-            )
-        )
-        return d
-
-    def when_done(self):
-        return self._done.when_triggered()
 
     def dataReceived(self, data):
         # XXX can we depend on data being "one message"? or do we need length-prefixed?
@@ -1814,44 +2040,34 @@ class FowlCommands(Protocol):
         expected_size, = struct.unpack("!H", data[:2])
         assert bsize == expected_size + 2, "data has more than the message: {} vs {}: {}".format(bsize, expected_size + 2, repr(data[:55]))
         msg = msgpack.unpackb(data[2:])
-        if msg["kind"] == "listener-response":
-            rid = int(msg["reply-id"])
-            d, original_cmd = self._local_requests[rid]
-            del self._local_requests[rid]
-
-            if msg["listening"]:
-                d.callback(RemoteListeningSucceeded(msg.get("listener-id"), original_cmd.listen, original_cmd.connect))
-            else:
-                d.callback(RemoteListeningFailed(original_cmd.listen, msg.get("reason", "Missing reason")))
-
-        elif msg["kind"] == "remote-to-local":
-            rid = int(msg["reply-id"])
-            assert rid >= 1 and rid < 2**53, "reply-id out of range"
-            self._remote_requests[rid] = None
-
+        print(msg)
+        if msg["kind"] == "remote-to-local":
             listen_ep = serverFromString(reactor, msg["listen-endpoint"])
 
             if self.factory.config.listen_policy is not None:
                 if not self.factory.config.listen_policy.can_listen(listen_ep):
-                    self._reply_negative(rid, "Against local policy")
+                    self._reply_negative("Against local policy")
                     self.transport.loseConnection()
                     return
 
             #XXX FIXME why did i have to add 'listener_id' code in two places??
             listener_id = b16encode(os.urandom(3)).decode("ascii")
-            factory = Factory.forProtocol(LocalServer)
+            #XXX and this is "LocalServer for a remote listener"
+            # how do we make up connect_ep ..?
+            factory = Factory.forProtocol(LocalServerFarSide)
             factory.config = self.factory.config
             factory.message_out = self.factory.message_out
             factory.connect_ep = self.factory.connect_ep
+            # XXX or something like?
+            #factory.connect_ep = self.factory.dilated.subprotocol_connector_for("fowl")
             factory.endpoint_str = msg["connect-endpoint"]
             factory.listener_id = listener_id
 
             # XXX this can fail (synchronously) if address in use (e.g.)
             d = listen_ep.listen(factory)
-            self._remote_requests[rid] = d
 
             def got_port(port):
-                self._reply_positive(rid, listener_id)
+                self._reply_positive(listener_id)
                 self.factory.message_out(
                     Listening(
                         listener_id,
@@ -1863,7 +2079,7 @@ class FowlCommands(Protocol):
                 return port
 
             def error(f):
-                self._reply_negative(rid, f.getErrorMessage())
+                self._reply_negative(f.getErrorMessage())
                 self.factory.message_out(
                     WormholeError(
                         'Failed to listen on "{}": {}'.format(
@@ -1882,41 +2098,34 @@ class FowlCommands(Protocol):
                 )
             )
 
-    def _reply_positive(self, rid, listener_id):
+    def _reply_positive(self, listener_id):
         """
         Send a positive reply to a remote request
         """
-        return self._reply_generic(rid, listening=True, listener_id=listener_id)
+        return self._reply_generic(listening=True, listener_id=listener_id)
 
-    def _reply_negative(self, rid, reason=None):
+    def _reply_negative(self, reason=None):
         """
         Send a negative reply to a remote request
         """
-        return self._reply_generic(rid, listening=False, reason=reason)
+        return self._reply_generic(listening=False, reason=reason)
 
-    def _reply_generic(self, rid, listening, reason=None, listener_id=None):
+    def _reply_generic(self, listening, reason=None, listener_id=None):
         """
         Send a positive or negative reply to a remote request
         """
-        if rid in self._remote_requests:
-            content = {
-                "kind": "listener-response",
-                "reply-id": rid,
-                "listener-id": listener_id,
-                "listening": bool(listening),
-            }
-            if reason is not None and not listening:
-                content["reason"] = str(reason)
-            self.transport.write(
-                _pack_netstring(
-                    msgpack.packb(content)
-                )
+        content = {
+            "kind": "listener-response",
+            "listener-id": listener_id,
+            "listening": bool(listening),
+        }
+        if reason is not None and not listening:
+            content["reason"] = str(reason)
+        self.transport.write(
+            _pack_netstring(
+                msgpack.packb(content)
             )
-            del self._remote_requests[rid]
-        else:
-            raise ValueError(
-                "Replied to '{}' but it is not outstanding".format(rid)
-            )
+        )
 
     async def _unregister_ports(self):
         unreg = self._ports
@@ -1935,7 +2144,6 @@ class FowlCommands(Protocol):
             self._done.trigger(self.factory.reactor, None)
 
 
-@implementer(ISubchannelListenFactory)
 class FowlCommandsListener(Factory):
     protocol = FowlCommands
 
@@ -1943,12 +2151,13 @@ class FowlCommandsListener(Factory):
         self.reactor = reactor
         self.config = config
         self.message_out = message_out
+        self.connect_ep = None  # set up later right after dilate() called
 
     def subprotocol_config_for(self, name):
         """
         :returns: the static configuration our peer needs to function
         """
-        assert name == "fowl-control", f"{name} is not fowl"
+        assert name == "fowl-commands", f"{name} is not fowl"
         # ISubchannelFactory
         # versions from https://en.wikipedia.org/wiki/List_of_chicken_breeds
         return {
