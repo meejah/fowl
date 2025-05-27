@@ -2052,12 +2052,11 @@ class FowlCommands(Protocol):
         if msg["kind"] == "request-listener":
             print("REQUEST LISTENER", msg)
             unique_name = msg["unique-name"]
-            config = msg.get("config", {})
             # XXX this is where we could accept a "port hint" from the
             # peer?  (we could also already have chosen our own port
             # .. or not, and so only in the "not" case would we even
             # want to consider the port-hint, right?)
-            desired_port = config.get("desired-port", None)
+            desired_port = msg.get("desired-port", None)
             listen_ep = self.factory.nest._endpoint_for_service(unique_name, desired_port=desired_port)
 
             print("EP", listen_ep)
