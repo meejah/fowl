@@ -21,6 +21,7 @@ Sound interesting? Read on!
    :maxdepth: 2
 
    README
+   api
    usage
    releases
    frontend-protocol

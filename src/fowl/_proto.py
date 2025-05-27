@@ -268,7 +268,7 @@ class Connection:
     endpoint: str
     i: int = 0
     o: int = 0
-    listener_id: str = "unknown"
+    unique_name: str = "unknown"
 
 
 async def frontend_accept_or_invite(reactor, config):
@@ -579,14 +579,13 @@ class FowlNearToFar(Protocol):
         self.transport.write(
             _pack_netstring(
                 msgpack.packb({
-                    "local-destination": self.factory.endpoint_str,
-                    "listener-id": self.factory.listener_id,
+                    "unique-name": self.factory.unique_name,
                 })
             )
         )
 
         self.factory.message_out(
-            OutgoingConnection(self.factory.conn_id, self.factory.endpoint_str, self.factory.listener_id)
+            OutgoingConnection(self.factory.conn_id, "fixme endpoint str", self.factory.unique_name)
         )
 
         # MUST wait for reply first -- queueing all data until
@@ -713,12 +712,10 @@ class LocalServer(Protocol):
         # XXX do we need registerProducer somewhere here?
         # XXX make a real Factory subclass instead
         factory = Factory.forProtocol(FowlNearToFar)
-        factory.subprotocol = "fowl"
         factory.other_proto = self
         factory.conn_id = self._conn_id
-        factory.listener_id = self.factory.listener_id
-        factory.endpoint_str = self.factory.endpoint_str
-        factory.config = self.factory.config
+        factory.unique_name = self.factory.unique_name
+        factory.nest = self.factory.nest
         factory.message_out = self.factory.message_out
         # Note: connect_ep here is the Wormhole provided
         # IClientEndpoint that lets us create new subchannels -- not
@@ -781,15 +778,15 @@ class LocalServerFarSide(Protocol):
         # XXX do we need registerProducer somewhere here?
         # XXX make a real Factory subclass instead
         factory = Factory.forProtocol(FowlNearToFar)
-        factory.subprotocol = "fowl"
         factory.other_proto = self
         factory.conn_id = self._conn_id
-        factory.listener_id = self.factory.listener_id
-        factory.endpoint_str = self.factory.endpoint_str
-        factory.config = self.factory.config
+        factory.unique_name = self.factory.unique_name
+        factory.nest = self.factory.nest
         factory.message_out = self.factory.message_out
 
-        d = self.factory.connect_ep.connect(factory)
+        connect_ep = self.factory.nest.subchannel_connector()
+#XXXX we want "a local connection" endpoint
+        d = ensureDeferred(connect_ep.connect(factory))
 
         def err(f):
             self.factory.message_out(
@@ -805,6 +802,7 @@ class LocalServerFarSide(Protocol):
         d.addCallback(got_proto)
         return d
 
+    #XXX this looks unused?
     def _maybe_drain_queue(self):
         while self.queue:
             msg = self.queue.pop(0)
@@ -825,9 +823,9 @@ class LocalServerFarSide(Protocol):
 
 class FowlSubprotocolListener(Factory):
 
-    def __init__(self, reactor, config, message_out):
+    def __init__(self, reactor, nest, message_out):
         self.reactor = reactor
-        self.config = config
+        self.nest = nest
         self.message_out = message_out
         super(FowlSubprotocolListener, self).__init__()
 
@@ -1057,7 +1055,7 @@ class FowlFarToNear(Protocol):
     @m.output()
     def emit_incoming_connection(self, msg):
         self.factory.message_out(
-            IncomingConnection(self._conn_id, msg["local-destination"], msg.get("listener-id", None))
+            IncomingConnection(self._conn_id, "nah", msg.get("unique-name", None))
         )
 
     @m.output()
@@ -1065,14 +1063,12 @@ class FowlFarToNear(Protocol):
         # note: do this policy check after the IncomingConnection
         # message is emitted (otherwise there will be cases where we
         # emit _just_ a IncomingLost which is confusing)
-        if self.factory.config.connect_policy is not None:
-            ep = clientFromString(reactor, msg["local-destination"])
-            if not self.factory.config.connect_policy.can_connect(ep):
-                # warning: synchronous state-machine use
-                self.policy_bad(msg)
-            else:
-                # warning: synchronous state-machine use
-                self.policy_ok(msg)
+
+        # XXX instead of a "policy check" we should just ask our Nest
+        # what port to use for this service-name -- either random or
+        # pre-defined or whatever
+        print("do_policy_check", msg)
+        self.policy_ok(msg)
 
     @m.output()
     def local_disconnect(self):
@@ -1084,7 +1080,7 @@ class FowlFarToNear(Protocol):
         self.factory.message_out(
             IncomingLost(
                 self._conn_id,
-                f"Incoming connection against local policy: {msg['local-destination']}"
+                f"Incoming connection against local policy: {msg['listener-id']}"
             )
         )
 
@@ -1093,11 +1089,14 @@ class FowlFarToNear(Protocol):
         """
         FIXME
         """
-        ep = clientFromString(reactor, msg["local-destination"])
+        ep = self.factory.nest.local_connect_endpoint(msg["unique-name"])
+        print("LOCALCONNECT", ep)
+        ##ep = self.factory.nest.connect_endpoint(msg["unique-name"])
+        ###ep = clientFromString(reactor, msg["local-destination"])
 
         factory = Factory.forProtocol(ConnectionForward)
         factory.other_proto = self
-        factory.config = self.factory.config
+        factory.nest = self.factory.nest
         factory.conn_id = self._conn_id
         factory.message_out = self.factory.message_out
 
@@ -1110,7 +1109,7 @@ class FowlFarToNear(Protocol):
             self.factory.message_out(
                 IncomingLost(
                     self._conn_id,
-                    f"{msg['local-destination']}: {fail.getErrorMessage()}",
+                    f"{fail.getErrorMessage()}",
                 )
             )
             reactor.callLater(0, lambda: self.connection_failed(fail.getErrorMessage()))
@@ -1556,17 +1555,26 @@ class FowlWormhole:
         #XXX okay, so maybe we could make these _functions_ that are
         #given the "api" that dilate() will return and must create a
         #factory ... or we do this dance
-        commands = FowlCommandsListener(self._reactor, self._config, self._daemon._message_out)
         subprotocols = {
-            "fowl": FowlSubprotocolListener(self._reactor, self._config, self._daemon._message_out),
-            "fowl-commands": commands,
+            "fowl": lambda _: FowlSubprotocolListener(self._reactor, self._config, self._daemon._message_out),
+            "fowl-commands": create_commands,
         }
 
+        def create_commands(dilated):
+            return FowlCommandsListener(
+                dilated,
+                self._reactor,
+                self._config,
+                self._daemon._message_out,
+            )
+
+        print("11111")
         self._dilated = self._wormhole.dilate(
             subprotocols,
             transit_relay_location="tcp:magic-wormhole-transit.debian.net:4001",
         )
-        commands.connect_ep = self._dilated.subprotocol_connector_for("fowl")
+        print("22222")
+        assert commands.connect_ep is not None
         d = ensureDeferred(self._post_dilation_setup())
         d.addErrback(self._handle_error)
         return d
@@ -1799,14 +1807,14 @@ def parse_fowld_output(json_str: str) -> FowlOutputMessage:
         "set-code": parser(SetCode, [("code", None)]),
         "code-allocated": parser(CodeAllocated, [("code", None)]),
         "peer-connected": parser(PeerConnected, [("verifier", binascii.unhexlify), ("versions", None)]),
-        "listening": parser(Listening, [("listener_id", None), ("listen", None), ("connect", None)]),
+        "listening": parser(Listening, [("unique_name", None), ("listen", None), ("connect", None)]),
         "remote-listening-failed": parser(RemoteListeningFailed, [("listen", None), ("reason", None)]),
-        "remote-listening-succeeded": parser(RemoteListeningSucceeded, [("listen", None), ("connect", None), ("listener_id", None)]),
+        "remote-listening-succeeded": parser(RemoteListeningSucceeded, [("listen", None), ("connect", None), ("unique_name", None)]),
         "remote-connect-failed": parser(RemoteConnectFailed, [("id", int), ("reason", None)]),
-        "outgoing-connection": parser(OutgoingConnection, [("id", int), ("endpoint", None), ("listener_id", None)]),
+        "outgoing-connection": parser(OutgoingConnection, [("id", int), ("endpoint", None), ("unique_name", None)]),
 ##        "outgoing-lost": parser(),
         "outgoing-done": parser(OutgoingDone, [("id", int)]),
-        "incoming-connection": parser(IncomingConnection, [("id", int), ("endpoint", None), ("listener_id", None)]),
+        "incoming-connection": parser(IncomingConnection, [("id", int), ("endpoint", None), ("unique_name", None)]),
         "incoming-lost": parser(IncomingLost, [("id", int), ("reason", None)]),
         "incoming-done": parser(IncomingDone, [("id", int)]),
         "bytes-in": parser(BytesIn, [("id", int), ("bytes", int)]),
@@ -1908,16 +1916,15 @@ async def _local_to_remote_forward(reactor, config, connect_ep, on_listen, on_me
             raise ValueError('Policy doesn\'t allow listening on "{}"'.format(ep._port))
 
     #XXX okay so this is "LocalServer for a local listener" ....
-    listener_id = b16encode(os.urandom(3)).decode("ascii")
+    unique_name = b16encode(os.urandom(3)).decode("ascii")
     factory = Factory.forProtocol(LocalServer)
     factory.config = config
-    factory.listener_id = listener_id
-    factory.endpoint_str = cmd.connect
+    factory.unique_name = unique_name
     factory.connect_ep = connect_ep
     factory.message_out = on_message
     port = await ep.listen(factory)
     on_listen(port)
-    on_message(Listening(listener_id, cmd.listen, cmd.connect))
+    on_message(Listening(unique_name, cmd.listen, cmd.connect))
 
 
 _local_requests = dict()
@@ -1955,6 +1962,7 @@ async def _remote_to_local_forward(reactor, dilated, cmd):
     fact._reactor = reactor
     proto = await ep.connect(fact)
     await proto.when_connected()
+    print("HIHI")
     proto.transport.write(
         _pack_netstring(
                 msgpack.packb({
@@ -2006,7 +2014,7 @@ class FowlCommandRequest(Protocol):
         print(msg)
         if msg["kind"] == "listener-response":
             if msg["listening"]:
-                d.callback(RemoteListeningSucceeded(msg.get("listener-id"), original_cmd.listen, original_cmd.connect))
+                d.callback(RemoteListeningSucceeded(msg.get("unique-name"), original_cmd.listen, original_cmd.connect))
             else:
                 d.callback(RemoteListeningFailed(original_cmd.listen, msg.get("reason", "Missing reason")))
 
@@ -2041,49 +2049,46 @@ class FowlCommands(Protocol):
         assert bsize == expected_size + 2, "data has more than the message: {} vs {}: {}".format(bsize, expected_size + 2, repr(data[:55]))
         msg = msgpack.unpackb(data[2:])
         print(msg)
-        if msg["kind"] == "remote-to-local":
-            listen_ep = serverFromString(reactor, msg["listen-endpoint"])
+        if msg["kind"] == "request-listener":
+            print("REQUEST LISTENER", msg)
+            unique_name = msg["unique-name"]
+            config = msg.get("config", {})
+            # XXX this is where we could accept a "port hint" from the
+            # peer?  (we could also already have chosen our own port
+            # .. or not, and so only in the "not" case would we even
+            # want to consider the port-hint, right?)
+            desired_port = config.get("desired-port", None)
+            listen_ep = self.factory.nest._endpoint_for_service(unique_name, desired_port=desired_port)
 
-            if self.factory.config.listen_policy is not None:
-                if not self.factory.config.listen_policy.can_listen(listen_ep):
-                    self._reply_negative("Against local policy")
-                    self.transport.loseConnection()
-                    return
-
-            #XXX FIXME why did i have to add 'listener_id' code in two places??
-            listener_id = b16encode(os.urandom(3)).decode("ascii")
-            #XXX and this is "LocalServer for a remote listener"
-            # how do we make up connect_ep ..?
+            print("EP", listen_ep)
             factory = Factory.forProtocol(LocalServerFarSide)
-            factory.config = self.factory.config
+            #factory.config = self.factory.config
+            factory.nest = self.factory.nest
             factory.message_out = self.factory.message_out
-            factory.connect_ep = self.factory.connect_ep
-            # XXX or something like?
-            #factory.connect_ep = self.factory.dilated.subprotocol_connector_for("fowl")
-            factory.endpoint_str = msg["connect-endpoint"]
-            factory.listener_id = listener_id
-
-            # XXX this can fail (synchronously) if address in use (e.g.)
-            d = listen_ep.listen(factory)
+            factory.unique_name = unique_name
+            # XXX this can fail (synchronously) if address in use, for example
+            d = ensureDeferred(listen_ep.listen(factory))
 
             def got_port(port):
-                self._reply_positive(listener_id)
+                self._reply_positive(unique_name)
+                print("GOTPORT", port, self.factory)
+                self.factory.nest._did_listen_locally(unique_name, port)
                 self.factory.message_out(
                     Listening(
-                        listener_id,
-                        msg["listen-endpoint"],
-                        msg["connect-endpoint"],
+                        unique_name,
+                        "fixme", #XXX listen_ep_str,
                     )
                 )
                 self._ports.append(port)
                 return port
 
             def error(f):
+                print("ERR", f)
                 self._reply_negative(f.getErrorMessage())
                 self.factory.message_out(
                     WormholeError(
                         'Failed to listen on "{}": {}'.format(
-                            msg["listen-endpoint"],
+                            unique_name,
                             f.value,
                         )
                     )
@@ -2098,11 +2103,11 @@ class FowlCommands(Protocol):
                 )
             )
 
-    def _reply_positive(self, listener_id):
+    def _reply_positive(self, unique_name):
         """
         Send a positive reply to a remote request
         """
-        return self._reply_generic(listening=True, listener_id=listener_id)
+        return self._reply_generic(listening=True, unique_name=unique_name)
 
     def _reply_negative(self, reason=None):
         """
@@ -2110,13 +2115,13 @@ class FowlCommands(Protocol):
         """
         return self._reply_generic(listening=False, reason=reason)
 
-    def _reply_generic(self, listening, reason=None, listener_id=None):
+    def _reply_generic(self, listening, reason=None, unique_name=None):
         """
         Send a positive or negative reply to a remote request
         """
         content = {
             "kind": "listener-response",
-            "listener-id": listener_id,
+            "unique-name": unique_name,
             "listening": bool(listening),
         }
         if reason is not None and not listening:
@@ -2147,11 +2152,10 @@ class FowlCommands(Protocol):
 class FowlCommandsListener(Factory):
     protocol = FowlCommands
 
-    def __init__(self, reactor, config, message_out):
+    def __init__(self, reactor, nest, message_out):
         self.reactor = reactor
-        self.config = config
+        self.nest = nest
         self.message_out = message_out
-        self.connect_ep = None  # set up later right after dilate() called
 
     def subprotocol_config_for(self, name):
         """

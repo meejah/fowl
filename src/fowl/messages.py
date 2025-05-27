@@ -129,7 +129,7 @@ class Listening(FowlOutputMessage):
     """
     listener_id: str  # random identifier
     listen: str  # Twisted server-type endpoint string
-    connect: str  # Twisted client-type endpoint string
+##    connect: str  # Twisted client-type endpoint string
 
 
 @frozen
