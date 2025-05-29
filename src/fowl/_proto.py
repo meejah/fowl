@@ -470,7 +470,7 @@ class FowlNearToFar(Protocol):
 
     @m.output()
     def emit_remote_failed(self, reason):
-        self.factory.message_out(
+        self.factory.nest.message_out(
             RemoteConnectFailed(self.factory.conn_id, reason)
         )
 
@@ -497,7 +497,7 @@ class FowlNearToFar(Protocol):
         while len(data):
             d = data[:max_noise]
             data = data[max_noise:]
-            self.factory.message_out(
+            self.factory.nest.message_out(
                 BytesOut(self.factory.conn_id, len(d))
             )
             self.factory.other_proto.transport.write(d)
@@ -505,7 +505,7 @@ class FowlNearToFar(Protocol):
 #    @m.output()
 #    def emit_incoming_lost(self):
 #        # do we need a like "OutgoingLost"?
-#        self.factory.message_out(IncomingLost(self.factory.conn_id, "Unknown"))
+#        self.factory.nest.message_out(IncomingLost(self.factory.conn_id, "Unknown"))
 
     await_confirmation.upon(
         no_confirmation,
@@ -584,7 +584,7 @@ class FowlNearToFar(Protocol):
             )
         )
 
-        self.factory.message_out(
+        self.factory.nest.message_out(
             OutgoingConnection(self.factory.conn_id, "fixme endpoint str", self.factory.unique_name)
         )
 
@@ -597,11 +597,11 @@ class FowlNearToFar(Protocol):
 
     def connectionLost(self, reason):
         if isinstance(reason, ConnectionDone):
-            self.factory.message_out(
+            self.factory.nest.message_out(
                 OutgoingDone(self.factory.conn_id)
             )
         else:
-            self.factory.message_out(
+            self.factory.nest.message_out(
                 OutgoingLost(self.factory.conn_id, str(reason))
             )
         self.subchannel_closed(str(reason))
@@ -652,7 +652,7 @@ class ConnectionForward(Protocol):
         while len(data):
             d = data[:max_noise]
             data = data[max_noise:]
-            self.factory.message_out(
+            self.factory.nest.message_out(
                 BytesIn(self.factory.conn_id, len(d))
             )
             self.factory.other_proto.transport.write(d)
@@ -668,11 +668,11 @@ class ConnectionForward(Protocol):
     @m.output()
     def emit_incoming_done(self, reason):
         if isinstance(reason.value, ConnectionDone):
-            self.factory.message_out(
+            self.factory.nest.message_out(
                 IncomingDone(self.factory.conn_id)
             )
         else:
-            self.factory.message_out(
+            self.factory.nest.message_out(
                 IncomingLost(self.factory.conn_id, str(reason))
             )
 
@@ -716,7 +716,6 @@ class LocalServer(Protocol):
         factory.conn_id = self._conn_id
         factory.unique_name = self.factory.unique_name
         factory.nest = self.factory.nest
-        factory.message_out = self.factory.message_out
         # Note: connect_ep here is the Wormhole provided
         # IClientEndpoint that lets us create new subchannels -- not
         # to be confused with the endpoint created from the "local
@@ -738,7 +737,7 @@ class LocalServer(Protocol):
 # that our factory wants
 
         def err(f):
-            self.factory.message_out(
+            self.factory.nest.message_out(
                 WormholeError(
                     str(f.value),
                     # extra={"id": self._conn_id}
@@ -759,7 +758,7 @@ class LocalServer(Protocol):
             self.remote.transport.loseConnection()
 
     def dataReceived(self, data):
-        self.factory.message_out(
+        self.factory.nest.message_out(
             BytesIn(self._conn_id, len(data))
         )
         self.remote.transport.write(data)
@@ -782,14 +781,13 @@ class LocalServerFarSide(Protocol):
         factory.conn_id = self._conn_id
         factory.unique_name = self.factory.unique_name
         factory.nest = self.factory.nest
-        factory.message_out = self.factory.message_out
 
         connect_ep = self.factory.nest.subchannel_connector()
 #XXXX we want "a local connection" endpoint
         d = ensureDeferred(connect_ep.connect(factory))
 
         def err(f):
-            self.factory.message_out(
+            self.factory.nest.message_out(
                 WormholeError(
                     str(f.value),
                     # extra={"id": self._conn_id}
@@ -815,7 +813,7 @@ class LocalServerFarSide(Protocol):
             self.remote.transport.loseConnection()
 
     def dataReceived(self, data):
-        self.factory.message_out(
+        self.factory.nest.message_out(
             BytesIn(self._conn_id, len(data))
         )
         self.remote.transport.write(data)
@@ -823,10 +821,9 @@ class LocalServerFarSide(Protocol):
 
 class FowlSubprotocolListener(Factory):
 
-    def __init__(self, reactor, nest, message_out):
+    def __init__(self, reactor, nest):
         self.reactor = reactor
         self.nest = nest
-        self.message_out = message_out
         super(FowlSubprotocolListener, self).__init__()
 
     def subprotocol_config_for(self, name):
@@ -995,7 +992,7 @@ class FowlFarToNear(Protocol):
         assert self._buffer is None, "Internal error: still buffering"
         assert self._local_connection is not None, "expected local connection by now"
         self._local_connection.transport.write(data)
-        self.factory.message_out(
+        self.factory.nest.message_out(
             BytesOut(self._conn_id, len(data))
         )
 
@@ -1054,7 +1051,7 @@ class FowlFarToNear(Protocol):
 
     @m.output()
     def emit_incoming_connection(self, msg):
-        self.factory.message_out(
+        self.factory.nest.message_out(
             IncomingConnection(self._conn_id, "nah", msg.get("unique-name", None))
         )
 
@@ -1077,7 +1074,7 @@ class FowlFarToNear(Protocol):
 
     @m.output()
     def emit_incoming_lost(self, msg):
-        self.factory.message_out(
+        self.factory.nest.message_out(
             IncomingLost(
                 self._conn_id,
                 f"Incoming connection against local policy: {msg['listener-id']}"
@@ -1098,7 +1095,6 @@ class FowlFarToNear(Protocol):
         factory.other_proto = self
         factory.nest = self.factory.nest
         factory.conn_id = self._conn_id
-        factory.message_out = self.factory.message_out
 
 #emit was here
 
@@ -1106,7 +1102,7 @@ class FowlFarToNear(Protocol):
 
         def bad(fail):
             # ideally maybe want a @output method send_incoming_lost or so?
-            self.factory.message_out(
+            self.factory.nest.message_out(
                 IncomingLost(
                     self._conn_id,
                     f"{fail.getErrorMessage()}",
@@ -1218,7 +1214,7 @@ class FowlFarToNear(Protocol):
         """
         Twisted API
         """
-#        self.factory.message_out(
+#        self.factory.nest.message_out(
 #            IncomingLost(self._conn_id, reason)
 #        )
         self.subchannel_closed(reason)
@@ -1555,17 +1551,18 @@ class FowlWormhole:
         #XXX okay, so maybe we could make these _functions_ that are
         #given the "api" that dilate() will return and must create a
         #factory ... or we do this dance
+        print("_DO_DILATE")
         subprotocols = {
-            "fowl": lambda _: FowlSubprotocolListener(self._reactor, self._config, self._daemon._message_out),
+            "fowl": lambda _: FowlSubprotocolListener(self._reactor, self._config),
             "fowl-commands": create_commands,
         }
 
+        print("FIXMEFIXME")
         def create_commands(dilated):
             return FowlCommandsListener(
                 dilated,
                 self._reactor,
                 self._config,
-                self._daemon._message_out,
             )
 
         print("11111")
@@ -2019,7 +2016,7 @@ class FowlCommandRequest(Protocol):
                 d.callback(RemoteListeningFailed(original_cmd.listen, msg.get("reason", "Missing reason")))
 
         else:
-            self.factory.message_out(
+            self.factory.nest.message_out(
                 WormholeError(
                     "Unknown command response: {msg[kind]}",
                 )
@@ -2063,7 +2060,7 @@ class FowlCommands(Protocol):
             factory = Factory.forProtocol(LocalServerFarSide)
             #factory.config = self.factory.config
             factory.nest = self.factory.nest
-            factory.message_out = self.factory.message_out
+            factory.message_out = self.factory.nest.message_out
             factory.unique_name = unique_name
             # XXX this can fail (synchronously) if address in use, for example
             d = ensureDeferred(listen_ep.listen(factory))
@@ -2072,7 +2069,7 @@ class FowlCommands(Protocol):
                 self._reply_positive(unique_name)
                 print("GOTPORT", port, self.factory)
                 self.factory.nest._did_listen_locally(unique_name, port)
-                self.factory.message_out(
+                self.factory.nest.message_out(
                     Listening(
                         unique_name,
                         "fixme", #XXX listen_ep_str,
@@ -2084,7 +2081,7 @@ class FowlCommands(Protocol):
             def error(f):
                 print("ERR", f)
                 self._reply_negative(f.getErrorMessage())
-                self.factory.message_out(
+                self.factory.nest.message_out(
                     WormholeError(
                         'Failed to listen on "{}": {}'.format(
                             unique_name,
@@ -2096,7 +2093,7 @@ class FowlCommands(Protocol):
             d.addErrback(error)
             # XXX should await port.stopListening() somewhere...at the appropriate time
         else:
-            self.factory.message_out(
+            self.factory.nest.message_out(
                 WormholeError(
                     "Unknown control command: {msg[kind]}",
                 )
@@ -2151,10 +2148,9 @@ class FowlCommands(Protocol):
 class FowlCommandsListener(Factory):
     protocol = FowlCommands
 
-    def __init__(self, reactor, nest, message_out):
+    def __init__(self, reactor, nest):
         self.reactor = reactor
         self.nest = nest
-        self.message_out = message_out
 
     def subprotocol_config_for(self, name):
         """
