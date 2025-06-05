@@ -297,8 +297,8 @@ async def frontend_accept_or_invite(reactor, config):
     live = Live(get_renderable=render, console=console)
 
     def output_message(msg):
+        print("MSG", msg)
         status.on_message(msg)
-
 
     # XXX anything we care about from status should probably be wired
     # through fowl-daemon? (i.e. emitted as a FowlOutputMessage or so
@@ -826,17 +826,6 @@ class FowlSubprotocolListener(Factory):
         self.nest = nest
         super(FowlSubprotocolListener, self).__init__()
 
-    def subprotocol_config_for(self, name):
-        """
-        :returns: the static configuration our peer needs to function
-        """
-        assert name == "fowl", f"{name} is not fowl"
-        # ISubchannelFactory
-        # versions from https://en.wikipedia.org/wiki/List_of_chicken_breeds
-        return {
-            "versions": ["chantecler"]
-        }
-
     def buildProtocol(self, addr):
         # 'addr' is a SubchannelAddress
         assert addr.subprotocol == "fowl", f"unknown subprotocol name: {addr}"
@@ -1064,6 +1053,7 @@ class FowlFarToNear(Protocol):
         # XXX instead of a "policy check" we should just ask our Nest
         # what port to use for this service-name -- either random or
         # pre-defined or whatever
+        # (nah, we want to check if any FowlNest has a "roost" for this service name?)
         print("do_policy_check", msg)
         self.policy_ok(msg)
 
@@ -1548,33 +1538,8 @@ class FowlWormhole:
         return self._connected.when_triggered()
 
     def _do_dilate(self):
-        #XXX okay, so maybe we could make these _functions_ that are
-        #given the "api" that dilate() will return and must create a
-        #factory ... or we do this dance
-        print("_DO_DILATE")
-        subprotocols = {
-            "fowl": lambda _: FowlSubprotocolListener(self._reactor, self._config),
-            "fowl-commands": create_commands,
-        }
-
-        print("FIXMEFIXME")
-        def create_commands(dilated):
-            return FowlCommandsListener(
-                dilated,
-                self._reactor,
-                self._config,
-            )
-
-        print("11111")
-        self._dilated = self._wormhole.dilate(
-            subprotocols,
-            transit_relay_location="tcp:magic-wormhole-transit.debian.net:4001",
-        )
-        print("22222")
-        assert commands.connect_ep is not None
-        d = ensureDeferred(self._post_dilation_setup())
-        d.addErrback(self._handle_error)
-        return d
+        #XXX FIXME we need this to use build_nests() or something right?
+        print("FIXME use build_nests")
 
     def _handle_error(self, f):
         # hmm, basically any of the "wormhole callbacks" we asked for
@@ -2053,7 +2018,8 @@ class FowlCommands(Protocol):
             # peer?  (we could also already have chosen our own port
             # .. or not, and so only in the "not" case would we even
             # want to consider the port-hint, right?)
-            desired_port = msg.get("desired-port", None)
+            desired_port = msg.get("listen-port", None)
+            # XXX ask the factory for WHICH NEST this is for --- and then also the name
             listen_ep = self.factory.nest._endpoint_for_service(unique_name, desired_port=desired_port)
 
             print("EP", listen_ep)
@@ -2148,20 +2114,10 @@ class FowlCommands(Protocol):
 class FowlCommandsListener(Factory):
     protocol = FowlCommands
 
+    # XXX for now there's only one nest, period -- have to reconcile this
     def __init__(self, reactor, nest):
         self.reactor = reactor
         self.nest = nest
-
-    def subprotocol_config_for(self, name):
-        """
-        :returns: the static configuration our peer needs to function
-        """
-        assert name == "fowl-commands", f"{name} is not fowl"
-        # ISubchannelFactory
-        # versions from https://en.wikipedia.org/wiki/List_of_chicken_breeds
-        return {
-            "features": ["chantecler"]
-        }
 
 
 class LocalCommandDispatch(LineReceiver):

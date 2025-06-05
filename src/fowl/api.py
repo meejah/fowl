@@ -5,7 +5,7 @@ from attr import define
 from typing import Optional, Callable, Any
 
 import msgpack
-from twisted.internet.interfaces import IStreamClientEndpoint, IStreamServerEndpoint, IListeningPort, IReactorSocket
+from twisted.internet.interfaces import IStreamClientEndpoint, IStreamServerEndpoint, IListeningPort, IReactorSocket, IReactorCore
 from twisted.internet.endpoints import TCP4ServerEndpoint, TCP6ServerEndpoint
 from twisted.internet.endpoints import TCP4ClientEndpoint, TCP6ClientEndpoint
 from twisted.internet.endpoints import AdoptedStreamServerEndpoint
@@ -65,7 +65,14 @@ class _LocalListeningEndpoint:
         self._desired_port = desired_port
 
     def _set_desired_port(self, value):
-        # XXX validate value somewhere (higher than here probably)
+        """
+        Internal helper. If not already set, request a specific port.
+        """
+        value = int(value)
+        if value < 1 or value > 65535:
+            raise ValueError(
+                f"Port {value} is out of range"
+            )
         if self._desired_port is None:
             self._desired_port = value
 
@@ -110,10 +117,10 @@ class _LocalListeningEndpoint:
             if portnum is None:
                 # Get a random port number and fall through.  This is
                 # necessary on Windows where Twisted doesn't offer
-                # IReactorSocket.  This approach is error prone as it is
-                # inherently a race: _right now_ we know that this port
-                # isn't used, however something may listen on it before
-                # the calling code gets around to doing that.
+                # IReactorSocket.  This approach is error prone as it
+                # is inherently a race: between when we set "portnum"
+                # and when we call ".listen()", something else
+                # (e.g. another process) could use this port.
                 portnum = allocate_tcp_port()
             endpoint = TCP4ServerEndpoint(self._reactor, portnum, interface="localhost")
         port = await endpoint.listen(factory)
@@ -169,6 +176,7 @@ class FowlNest:
         self._when_roosted = dict()  # maps "unique-name" to When() instances
         self._message_out = message_out
 
+    # XXX for now, should be able to get rid of this from the API
     def message_out(self, msg):
         if self._message_out is not None:
             self._message_out(msg)
@@ -176,6 +184,7 @@ class FowlNest:
     def roost(
             self,
             unique_name: str,
+            # XXX maybe just: local_listen_port: Optional[int]=None ???
             local_endpoint: Optional[IStreamServerEndpoint]=None,
     ) -> FowlChannelDaemonHere:
         """
@@ -199,17 +208,101 @@ class FowlNest:
         """
         Succeeds when the named service is listening.
 
-        This only happens if our peer asks for this service-name (so
-        it may never happen).
+        This only happens if our peer asks for this service-name via a
+        call to `fledge` on their side -- so it may never happen.
 
         Usually you would only call this after a `roost()` call with the same `unique_name`.
 
-        This method wil only succeed after this peer has called
-        `roost("foo")` and the other peer calls `fledge("foo")`.
+        This method will only succeed after two things:
+          - this peer has called `roost("foo")`;
+          - and the other peer has called `fledge("foo")`
         """
         when = self._get_when_roosted(unique_name)
         value = await when.when_triggered()
         return value
+
+    async def fledge(
+            self,
+            unique_name: str,
+            local_listen_port: Optional[int]=None,
+            desired_remote_port: Optional[int]=None,
+    ) -> FowlChannelDaemonHere:
+        """
+        Thinking about networking as 'server' or 'client', this method
+        creates a listener on the far side, which will forward to the
+        identical service on this side -- so the 'server'-style
+        software runs on _this_ peer.
+
+        :param unique_name: must be unique across this Fowl session
+
+        :param local_listen_port: where our Daemon will be
+            listening. If not provided, an unused port will be found.
+
+        :param desired_remote_port: for some protocols, it matters
+            what port the far-side is actually listening on (e.g. for
+            Web endpoints). If this is provided, it requests this port
+            on the peer. Only use this if your protocol really does
+            require a particular listening port on the far-side peer
+            -- that is, if one selected by the other peer cannot work
+            for some reason.
+        """
+        print("FLEDGE", unique_name)
+        if local_listen_port is None:
+            local_listen_port = allocate_tcp_port()
+        ep = self._dilated.subprotocol_connector_for("fowl-commands")
+        fact = Factory.forProtocol(_SendFowlCommand)
+        fact._reactor = self._reactor
+        proto = await ep.connect(fact)
+        await proto.when_connected()
+
+        #XXX should be method on _SendFowlCommand
+        proto.transport.write(
+            _pack_netstring(
+                    msgpack.packb({
+                        "kind": "request-listener",
+                        "unique-name": unique_name,
+                        "listen-port": desired_remote_port,
+                    })
+            )
+        )
+
+        reply = await proto.next_message()
+        print("REPLY to fledge()", reply)
+        # okay, so _we_ know where we want this to connect back to, so
+        # remember it in our services
+        if unique_name in self._services:
+            raise ValueError(
+                f'Supposedly unique "{unique_name}" already in our services'
+            )
+        self._services[unique_name] = FowlChannelDaemonHere(
+            unique_name,
+            endpoint=TCP4ClientEndpoint(self._reactor, "localhost", local_listen_port),
+        )
+        return self._services[unique_name]
+
+    def subchannel_connector(self):
+        return self._dilated.subprotocol_connector_for('fowl')
+
+    def local_connect_endpoint(self, unique_name: str) -> IStreamClientEndpoint:
+        """
+        returns an endpoint that can be used to initiate a stream for the
+        indicated service-name.
+        """
+        print("connect_endpoint", sorted(self._services.keys()))
+        ch = self._services[unique_name]
+        print("channel", ch)
+        return ch.endpoint
+
+    def listen_endpoint(self, name: str) -> IStreamServerEndpoint:
+        """
+        returns an endpoint upon which a local daemon can run. If you are
+        running EXTERNAL daemon software (e.g. spawning a subprocess)
+        you likely want "listen_port" -- or extract the port yourself.
+        """
+        # for this to work, either THIS side had to cal "fledge(name,
+        # ..)" or the OTHER side had to call "roost(name, ...)"
+
+    # helper methods follow (not public API)
 
     def _endpoint_for_service(self, unique_name, desired_port: Optional[int]=None):
         try:
@@ -249,114 +342,7 @@ class FowlNest:
             when = self._when_roosted[unique_name] = When()
         return when
 
-
-# XXX this is built around "something else is listening" -- but what
-# if we want some Twisted code to listen? Is there a kind of endpoint
-# we can pass directly here?
-    async def fledge(
-            self,
-            unique_name: Optional[str]=None,
-            local_listen_port: Optional[int]=None,
-            desired_remote_port: Optional[int]=None,
-    ) -> FowlChannelDaemonHere:
-        """
-        Thinking about networking as 'server' or 'client', this method
-        creates a listener on the far side, which will forward to the
-        identical service on this side -- so the 'server'-style
-        software runs on _this_ peer.
-
-        :param unique_name: must be unique across this Fowl session (if
-            not provided, a random 6-letter identifier will be created)
-
-        :param local_listen_port: where our Daemon will be
-            listening. If not provided, an unused port will be found.
-
-        :param desired_remote_port: optional hint for the other side's
-            listen port.
-        """
-        print("FLEDGE", unique_name)
-        if unique_name is None:
-            unique_name = self._unique_service_name()
-        if local_listen_port is None:
-            local_listen_port = allocate_tcp_port()
-        ep = self._dilated.subprotocol_connector_for("fowl-commands")
-        fact = Factory.forProtocol(_SendFowlCommand)
-        fact._reactor = self._reactor
-        proto = await ep.connect(fact)
-        await proto.when_connected()
-
-        #XXX should be method on _SendFowlCommand
-        proto.transport.write(
-            _pack_netstring(
-                    msgpack.packb({
-                        "kind": "request-listener",
-                        "unique-name": unique_name,
-                        "desired-port": desired_remote_port,
-                    })
-            )
-        )
-
-        reply = await proto.next_message()
-        print("REPLY to fledge()", reply)
-        # okay, so _we_ know where we want this to connect back to, so
-        # remember it in our services
-        if unique_name in self._services:
-            raise ValueError(
-                f'Supposedly unique "{unique_name}" already in our services'
-            )
-        if unique_name in self._remotes:
-            raise ValueError(
-                f'Cannot use "{unique_name}" for both local and remote service'
-            )
-        self._services[unique_name] = FowlChannelDaemonHere(
-            unique_name,
-            endpoint=TCP4ClientEndpoint(self._reactor, "localhost", local_listen_port),
-        )
-        return self._services[unique_name]
-
-    def subchannel_connector(self):
-        return self._dilated.subprotocol_connector_for('fowl')
-
-    def local_connect_endpoint(self, unique_name: str) -> IStreamClientEndpoint:
-        """
-        returns an endpoint that can be used to initiate a stream for the
-        indicated service-name.
-        """
-        print("connect_endpoint", sorted(self._services.keys()))
-        ch = self._services[unique_name]
-        print("channel", ch)
-        return ch.endpoint
-
-    def listen_endpoint(self, name: str) -> IStreamServerEndpoint:
-        """
-        returns an endpoint upon which a local daemon can run. If you are
-        running EXTERNAL daemon software (e.g. spawning a subprocess)
-        you likely want "listen_port" -- or extract the port yourself.
-        """
-        # for this to work, either THIS side had to cal "fledge(name,
-        # ..)" or the OTHER side had to call "roost(name, ...)"
-
-    # only ONE side calls "fledge()" or "roost()" with the same name.
-    # how to detect errors:
-    # peer0:fledge('foo') and peer0:roost('foo'): lookup in services/remotes
-    # peer0:fledge('foo') and peer1:fledge('foo'): far side checks, returns error?
-
-    #XXX what if two things want to do this? maybe we want a like
-    #"build_protocols()" that returns _our_ protocols, and then a
-    #"dilated()" called with the dilation API?
-
-    #XXX where does permission come in?
-
-    def build_subprotocols(self):
-        #XXX how do these play together, with multiple FowlNests?
-        # (i think these need to be singletons, actually? i.e. ONE
-        # "FowlCommands" per wormhole...
-        return {
-            "fowl": FowlSubprotocolListener(self._reactor, self),
-            "fowl-commands": FowlCommandsListener(self._reactor, self),
-        }
-
-    def dilated(self, dilation: DilatedWormhole) -> None:
+    def _set_dilated(self, dilation: DilatedWormhole) -> None:
         """
         calls the underlying 'wormhole.dilate' with the passed-through
         args, and passes through the return API -- after adding
@@ -370,11 +356,21 @@ class FowlNest:
         self._when_dilated.trigger(self._reactor, self._dilated)
 
 
+# temp: just a singleton for now
+# ...maybe we need a "Coop" that contains "Nests"?
+# ...or maybe the whole Nest thing is just dumb?
+
+_nest = None
+
 def create(reactor):
-    return FowlNest(reactor)
+    global _nest
+    if _nest is None:
+        _nest = FowlNest(reactor)
+    return _nest
 
 
 def build_nests(
+        reactor: IReactorCore,
         wormhole: IDeferredWormhole,
         nests: list[FowlNest],
         extra_subprotocols: Optional[dict]=None,
@@ -386,16 +382,26 @@ def build_nests(
     along with any extra subprotocols (e.g. not using Fowl) that your
     application may require.
     """
-    subprotocols = extra_subprotocols if extra_subprotocols else {}
+    subprotocols = dict()
+    if extra_subprotocols:
+        subprotocols.update(extra_subprotocols)
+
     # XXX bug: we're overwriting some Nest's subprotocol -- need singleton
-    for nest in nests:
-        sub = nest.build_subprotocols()
-        subprotocols.update(sub)
+
+    # XXX double-check all the reactors in all the nests match this
+    # reactor? or magically get it out of those?
+    subprotocols["fowl"] = FowlSubprotocolListener(reactor, nests[0])
+    subprotocols["fowl-commands"] = FowlCommandsListener(reactor, nests[0])
+
+    # so we need ONE of each kind of listener, tied back to ... the
+    # services that each Nest has requested? so instead of
+    # "build_subprotocols()" we need to give "the" command listener
+    # all FowlNest instances?
 
     dilated = wormhole.dilate(subprotocols, **kwargs)
 
     for nest in nests:
-        nest.dilated(dilated)
+        nest._set_dilated(dilated)
 
     # "dilated" is a DilatedWormhole instance
     return dilated
