@@ -43,23 +43,27 @@ class FowlChannelDaemonThere:
         elif isinstance(self.endpoint, TCP6ServerEndpoint):
             return self.endpoint._port
         raise ValueError(
-            ".listener endpint is neither TCP4 nor TCP6 server"
+            ".listener endpoint is neither TCP4 nor TCP6 server"
         )
-
-
-# XXX
-# okay, so one side has to do .roost("name0", ...) and the other side
-# has to do .fledge("name0", ...) with compatible args .. right?
-
-
-def _create_local_listening_endpoint(reactor):
-    """
-    """
-    return _LocalListeningEndpoint(reactor, None)
 
 
 @implementer(IStreamServerEndpoint)
 class _LocalListeningEndpoint:
+    """
+    Listen on a local port.
+
+    When `desired_port` is `None`, and on systems that support it
+    (POSIX- adjacent), we ask the OS to choose an unused port and then
+    adopt that filedescriptor. This has no 'race' opportunity.
+
+    Otherwise, we choose a _currently_ unused port, and then listen on
+    it (e.g. Windows). This (short, but non-zero) time interval allows
+    the opportunity for the chosen port to become used before we get
+    around to it; this will result in an error.
+
+    If `desired_port` is set, we use that. It is an error if the port
+    is already used by the time we try to listen.
+    """
     def __init__(self, reactor, desired_port):
         self._reactor = reactor
         self._desired_port = desired_port
@@ -127,9 +131,9 @@ class _LocalListeningEndpoint:
         return port
 
 
-class FowlNest:
+class FowlCoop:
     """
-    A chicken factory is a nest, right?
+    Chickens live in coops.
 
     Set up mappings for Fowl endpoints on either peer.
 
@@ -165,11 +169,12 @@ class FowlNest:
     examples: git-withme and term-withme
     """
 
-    def __init__(self, reactor, message_out=None):
+    def __init__(self, reactor, wormhole, message_out=None):
         self._reactor = reactor
-        self._services = dict()  # fledge() services.
+        self._wormhole = wormhole
 
-        self._roosts = dict()  # name -> IStreamServerEndpoint
+        self._services = dict()  # name -> FowlChannelDaemonHere: fledge() services.
+        self._roosts = dict()  # name -> FowlChannelDaemonThere: permitted / listening services
 
         self._dilated = None  # DilatedWormhole once we're dilated
         self._when_dilated = When()
@@ -180,6 +185,27 @@ class FowlNest:
     def message_out(self, msg):
         if self._message_out is not None:
             self._message_out(msg)
+
+    def dilate(self, subprotocols, *args, **kwargs):
+        """
+        Must be called precisely once.
+
+        Calls through to our wormhole's `dilate()` method after
+        injecting our required subprotocol objects. Accepts all
+        arguments and kwargs that `_DeferredWormhole.dilate()` takes.
+        """
+        final_subprotocols = dict()
+        if subprotocols:
+            final_subprotocols.update(extra_subprotocols)
+
+        final_subprotocols["fowl"] = FowlSubprotocolListener(self._reactor, self)
+        final_subprotocols["fowl-commands"] = FowlCommandsListener(self._reactor, self)
+
+        dilated = self._wormhole.dilate(final_subprotocols, **kwargs)
+        self._set_dilated(dilated)
+
+        # "dilated" is a DilatedWormhole instance
+        return dilated
 
     def roost(
             self,
@@ -196,13 +222,18 @@ class FowlNest:
         'fledge'.
 
         To wait until a service is in use (which is possibly never, as
-        we can't control what our peer decides to do) use the
-        `when_roosted()` method.
+        we can't control what our peer decides to do) await the
+        `when_roosted()` method for the same `unique_name`.
         """
         # XXX IPv4 vs IPv6?
         if local_endpoint is None:
-            local_endpoint = _create_local_listening_endpoint(self._reactor)
-        self._roosts[unique_name] = local_endpoint
+            local_endpoint = _LocalListeningEndpoint(reactor, None)
+        channel = FowlChannelDaemonThere(
+            unique_name,
+            local_endpoint,
+        )
+        self._roosts[unique_name] = channel
+        return channel
 
     async def when_roosted(self, unique_name):
         """
@@ -231,7 +262,7 @@ class FowlNest:
         Thinking about networking as 'server' or 'client', this method
         creates a listener on the far side, which will forward to the
         identical service on this side -- so the 'server'-style
-        software runs on _this_ peer.
+        software runs on **this**_ peer.
 
         :param unique_name: must be unique across this Fowl session
 
@@ -246,6 +277,10 @@ class FowlNest:
             -- that is, if one selected by the other peer cannot work
             for some reason.
         """
+        if unique_name in self._roosts:
+            raise ValueError(
+                f"fledge({unique_name}) when we already have a roost for that name"
+            )
         print("FLEDGE", unique_name)
         if local_listen_port is None:
             local_listen_port = allocate_tcp_port()
@@ -306,7 +341,7 @@ class FowlNest:
 
     def _endpoint_for_service(self, unique_name, desired_port: Optional[int]=None):
         try:
-            ep = self._roosts[unique_name]
+            ep = self._roosts[unique_name].endpoint
             # if "ep" is whatever we create for 'delayed choose random
             # port' endpoint, then we can pass it the "port_hint"
             # somehow, and it can use that as the first guess
@@ -359,52 +394,13 @@ class FowlNest:
 # temp: just a singleton for now
 # ...maybe we need a "Coop" that contains "Nests"?
 # ...or maybe the whole Nest thing is just dumb?
+#
+# not a singleton -- but we want "one thing per wormhole", basically
 
-_nest = None
-
-def create(reactor):
-    global _nest
-    if _nest is None:
-        _nest = FowlNest(reactor)
-    return _nest
-
-
-def build_nests(
-        reactor: IReactorCore,
-        wormhole: IDeferredWormhole,
-        nests: list[FowlNest],
-        extra_subprotocols: Optional[dict]=None,
-        **kwargs,  # everything dilate() accepts
-) -> DilatedWormhole:
-    """
-    Friendly helper to inject one or more FowlNests (e.g. from several
-    Fowl-using plugins) into a wormhole dilate() call properly --
-    along with any extra subprotocols (e.g. not using Fowl) that your
-    application may require.
-    """
-    subprotocols = dict()
-    if extra_subprotocols:
-        subprotocols.update(extra_subprotocols)
-
-    # XXX bug: we're overwriting some Nest's subprotocol -- need singleton
-
-    # XXX double-check all the reactors in all the nests match this
-    # reactor? or magically get it out of those?
-    subprotocols["fowl"] = FowlSubprotocolListener(reactor, nests[0])
-    subprotocols["fowl-commands"] = FowlCommandsListener(reactor, nests[0])
-
-    # so we need ONE of each kind of listener, tied back to ... the
-    # services that each Nest has requested? so instead of
-    # "build_subprotocols()" we need to give "the" command listener
-    # all FowlNest instances?
-
-    dilated = wormhole.dilate(subprotocols, **kwargs)
-
-    for nest in nests:
-        nest._set_dilated(dilated)
-
-    # "dilated" is a DilatedWormhole instance
-    return dilated
+def create_coop(reactor, wormhole):
+    # it is "FowlCoop.dilate()" that does the magic -- inject our
+    # subprotocols etc
+    return FowlCoop(reactor, wormhole)
 
 
 # originally from Tahoe-LAFS
