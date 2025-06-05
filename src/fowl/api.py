@@ -31,20 +31,42 @@ class FowlChannelDaemonHere:
     unique_name: str  # (must be UNIQUE across all of this Fowl session)
     endpoint: IStreamClientEndpoint  # how to connect to our daemon
 
+    @property
+    def listen_port(self):
+        if isinstance(self.endpoint, TCP4ClientEndpoint):
+            return self.endpoint._port
+        elif isinstance(self.endpoint, TCP6ClientEndpoint):
+            return self.endpoint._port
+        raise ValueError(
+            ".endpoint is neither TCP4 nor TCP6 server"
+        )
+
+
 
 @define
 class FowlChannelDaemonThere:
     unique_name: str  # (must be UNIQUE across all of this Fowl session)
     endpoint: IStreamServerEndpoint  # where we're listening locally
+    port: Any = None
 
-    def get_listen_port(self) -> int:
+    @property
+    def connect_port(self) -> int:
         if isinstance(self.endpoint, TCP4ServerEndpoint):
             return self.endpoint._port
         elif isinstance(self.endpoint, TCP6ServerEndpoint):
             return self.endpoint._port
+        elif self.port is not None:
+            return self.port._realPortNumber
         raise ValueError(
-            ".listener endpoint is neither TCP4 nor TCP6 server"
+            ".listener endpoint is neither TCP4 nor TCP6 server, and we have no port"
         )
+
+    def _is_listening(self, port):
+        """
+        Internal helper. Called when we learn our port, after listening is
+        complete locally.
+        """
+        self.port = port
 
 
 @implementer(IStreamServerEndpoint)
@@ -137,12 +159,11 @@ class FowlCoop:
 
     Set up mappings for Fowl endpoints on either peer.
 
-    Somewhat like the 'Builder' pattern, nothing will happen until
-    some time after 'dilate()' is called. This method must be called
-    exactly once.
+    This acts somewhat like the 'Builder' pattern: you arrange for
+    local or remote forwarding, and then sometime after the `dilate()`
+    call, those things happen.
 
-    Unlike the Builder pattern, you can call the other methods either
-    before or after 'dilate()'.
+    You can also add configuration after the `dilate()` call.
 
     Fowl is built around the assumption that we are doing classic
     "server / client" networking -- but between two peers. The
@@ -157,16 +178,48 @@ class FowlCoop:
     "client"-style peers to connect (e.g. multiple peers watching the
     shared screen, or cloning the hosted Git repository).
 
-    `near_daemon()` is called when _this_ peer wishes to host the
-    "daemon-style" software -- or the other peer could call
-    `far_daemon()` from its side.
+    The API methods `fledge()` and `roost()` are a pair. They both
+    take a "unique_name" argument, and for any particular
+    `unique_name`, the peer that calls `fledge(name)` runs the server
+    / deamon style networking while the peer that calls `roost(name)`
+    runs the client style networking.
 
-    Conversely, `far_daemon()` is called when the _other_ peer should
-    host the "daemon-style" softare -- or that peer could arrange to
-    call `near_daemon()` on its side.
+    Technically speaking, what is happening here is that the "real"
+    application -provided daemon/server software listens on the peer
+    that calls `fledge("foo")`. Calling this method causes Fowl to
+    send a _request_ to the other peer to forward the service named
+    "foo"; if that peer has called `roost("foo")` -- giving permission
+    -- then a Fowl-provided listener is set up on that peer. Any
+    connections to this Fowl-provided listener cause a subchannel to
+    be opened over the Wormhole, and a corresponding "connect()" call
+    happens on the `fledge()` peer.
 
-    This amount of "symmetry" can be confusing. Please see the
-    examples: git-withme and term-withme
+    Consider the "hello world" of networking software: chat. The
+    "host" or server-side uses "netcat" while the "client" peer uses
+    "telnet". So, we have to decide which peer is "the Host" and which
+    peer is "the Guest".
+
+    The initiating peer is "the Host": this peer sets up a wormhole
+    connection, allocates and creates a magic code (printing it out),
+    calls `fledge("chat")` and waits.
+
+    It is waiting for the peer: the humans exchange the magic code,
+    and "the Guest" peer: sets up a wormhole connection, uses the
+    already-created magic code (completing the wormhole), and calls
+    `roost("chat")`. It waits by calling `when_roosted("chat")`.
+
+    If all goes well, the wormhole is completed, Dilation succeeds,
+    and both peers proceed.  When `fledge("chat")` returns, "the Host"
+    peer now has a `FowlChannelDaemonHere` instance. When
+    `when_roosted("chat")` returns, "the Guest" peer now has a
+    `FowlChannelDaemonThere` instance.
+
+    Both peers can learn their appropriate ports: the Host peer runs
+    `nc -l <port>` and the Guest peer runs `telnet localhost
+    <port>`. Without having passed more arguments, these ports will be
+    randomly assigned. They can be recovered from the
+    `FowlChannelDaemonThere.connect_port` property on the Guest, and
+    the `FowlChannelDaemonHere.listen_port` on the Host.
     """
 
     def __init__(self, reactor, wormhole, message_out=None):
@@ -186,7 +239,7 @@ class FowlCoop:
         if self._message_out is not None:
             self._message_out(msg)
 
-    def dilate(self, subprotocols, *args, **kwargs):
+    def dilate(self, subprotocols={}, *args, **kwargs):
         """
         Must be called precisely once.
 
@@ -201,7 +254,7 @@ class FowlCoop:
         final_subprotocols["fowl"] = FowlSubprotocolListener(self._reactor, self)
         final_subprotocols["fowl-commands"] = FowlCommandsListener(self._reactor, self)
 
-        dilated = self._wormhole.dilate(final_subprotocols, **kwargs)
+        dilated = self._wormhole.dilate(final_subprotocols, *args, **kwargs)
         self._set_dilated(dilated)
 
         # "dilated" is a DilatedWormhole instance
@@ -227,7 +280,7 @@ class FowlCoop:
         """
         # XXX IPv4 vs IPv6?
         if local_endpoint is None:
-            local_endpoint = _LocalListeningEndpoint(reactor, None)
+            local_endpoint = _LocalListeningEndpoint(self._reactor, None)
         channel = FowlChannelDaemonThere(
             unique_name,
             local_endpoint,
@@ -362,7 +415,9 @@ class FowlCoop:
 
     def _did_listen_locally(self, unique_name, port):
         when = self._get_when_roosted(unique_name)
-        when.trigger(self._reactor, port)
+        channel = self._roosts[unique_name]
+        channel._is_listening(port)
+        when.trigger(self._reactor, channel)
 
     def _get_when_roosted(self, unique_name):
         """
