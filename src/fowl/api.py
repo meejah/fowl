@@ -42,9 +42,13 @@ class FowlChannelDaemonHere:
         )
 
 
-
 @define
 class FowlChannelDaemonThere:
+    """
+    Represents the state of a channel permitted by 'roost()' on this
+    side (which will only exist after the other peer calls 'fledge()'
+    on their side)
+    """
     unique_name: str  # (must be UNIQUE across all of this Fowl session)
     endpoint: IStreamServerEndpoint  # where we're listening locally
     port: Any = None
@@ -239,25 +243,24 @@ class FowlCoop:
         if self._message_out is not None:
             self._message_out(msg)
 
-    def dilate(self, subprotocols={}, *args, **kwargs):
+    def dilate(self, **kwargs):
         """
         Must be called precisely once.
 
         Calls through to our wormhole's `dilate()` method after
-        injecting our required subprotocol objects. Accepts all
-        arguments and kwargs that `_DeferredWormhole.dilate()` takes.
+        injecting our required subprotocol objects. Accepts all kwargs
+        that `_DeferredWormhole.dilate()` takes.
         """
-        final_subprotocols = dict()
-        if subprotocols:
-            final_subprotocols.update(extra_subprotocols)
-
-        final_subprotocols["fowl"] = FowlSubprotocolListener(self._reactor, self)
-        final_subprotocols["fowl-commands"] = FowlCommandsListener(self._reactor, self)
-
-        dilated = self._wormhole.dilate(final_subprotocols, *args, **kwargs)
+        dilated = self._wormhole.dilate(**kwargs)
         self._set_dilated(dilated)
-
         # "dilated" is a DilatedWormhole instance
+
+        dilated.listener_for("fowl").listen(
+            FowlSubprotocolListener(self._reactor, self)
+        )
+        dilated.listener_for("fowl-commands").listen(
+            FowlCommandsListener(self._reactor, self)
+        )
         return dilated
 
     def roost(
@@ -265,7 +268,7 @@ class FowlCoop:
             unique_name: str,
             # XXX maybe just: local_listen_port: Optional[int]=None ???
             local_endpoint: Optional[IStreamServerEndpoint]=None,
-    ) -> FowlChannelDaemonHere:
+    ) -> FowlChannelDaemonThere:
         """
         This adds a named service that is permitted here.
 
@@ -337,7 +340,7 @@ class FowlCoop:
         print("FLEDGE", unique_name)
         if local_listen_port is None:
             local_listen_port = allocate_tcp_port()
-        ep = self._dilated.subprotocol_connector_for("fowl-commands")
+        ep = self._dilated.connector_for("fowl-commands")
         fact = Factory.forProtocol(_SendFowlCommand)
         fact._reactor = self._reactor
         proto = await ep.connect(fact)
@@ -369,7 +372,7 @@ class FowlCoop:
         return self._services[unique_name]
 
     def subchannel_connector(self):
-        return self._dilated.subprotocol_connector_for('fowl')
+        return self._dilated.connector_for('fowl')
 
     def local_connect_endpoint(self, unique_name: str) -> IStreamClientEndpoint:
         """
