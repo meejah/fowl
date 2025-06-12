@@ -116,8 +116,6 @@ class _Config:
     create_stdio: Callable = None  # returns a StandardIO work-alike, for testing
     debug_file: IO = None  # for state-machine transitions
     commands: list[FowlCommandMessage] = AttrFactory(list)
-    connect_policy: IClientConnectPolicy = None
-    listen_policy: IClientListenPolicy = None
     output_debug_messages: TextIO = None  # Option<Writable>
 
 
@@ -330,8 +328,40 @@ async def frontend_accept_or_invite(reactor, config):
             AllocateCode(config.code_length)
         )
 
+    # XXX need to unify a bunch of this ... but for now, steal the
+    # wormhole out of FowlWormhole
+    from .api import _LocalListeningEndpoint
+    await fowl_wh.when_connected()
+    coop = fowl_wh._coop
+    assert coop is not None, "wat"
+
+    services = []
     for command in config.commands:
-        fowl_wh.command(command)
+        print("CMD", command)
+        if isinstance(command, RemoteListener):
+            services.append(
+                ensureDeferred(
+                    coop.fledge(command.name, command.listen_port, command.connect_port)
+                )
+            )
+        elif isinstance(command, LocalListener):
+            # note, we CANNOT specify remote port -- what would that
+            # even mean, and how to express?
+            coop.roost(command.name, _LocalListeningEndpoint(reactor, command.listen_port))
+            services.append(
+                ensureDeferred(coop.when_roosted(command.name))
+            )
+    print(f"awaiting {len(services)} services")
+    from .api import FowlChannelDaemonThere
+    results = await DeferredList(services)
+    for ok, result in results:
+        if ok:
+            if isinstance(result, FowlChannelDaemonThere):
+                print(f"service started on other side, connect here: {result.connect_port}")
+            else:
+                print(f"Start daemon here, on port: {result.listen_port}")
+        else:
+            print(f"service failed: {result}")
 
     done_d = fowl_wh.when_done()
 
@@ -470,7 +500,7 @@ class FowlNearToFar(Protocol):
 
     @m.output()
     def emit_remote_failed(self, reason):
-        self.factory.nest.message_out(
+        self.factory.coop.message_out(
             RemoteConnectFailed(self.factory.conn_id, reason)
         )
 
@@ -497,7 +527,7 @@ class FowlNearToFar(Protocol):
         while len(data):
             d = data[:max_noise]
             data = data[max_noise:]
-            self.factory.nest.message_out(
+            self.factory.coop.message_out(
                 BytesOut(self.factory.conn_id, len(d))
             )
             self.factory.other_proto.transport.write(d)
@@ -505,7 +535,7 @@ class FowlNearToFar(Protocol):
 #    @m.output()
 #    def emit_incoming_lost(self):
 #        # do we need a like "OutgoingLost"?
-#        self.factory.nest.message_out(IncomingLost(self.factory.conn_id, "Unknown"))
+#        self.factory.coop.message_out(IncomingLost(self.factory.conn_id, "Unknown"))
 
     await_confirmation.upon(
         no_confirmation,
@@ -584,7 +614,7 @@ class FowlNearToFar(Protocol):
             )
         )
 
-        self.factory.nest.message_out(
+        self.factory.coop.message_out(
             OutgoingConnection(self.factory.conn_id, "fixme endpoint str", self.factory.unique_name)
         )
 
@@ -597,11 +627,11 @@ class FowlNearToFar(Protocol):
 
     def connectionLost(self, reason):
         if isinstance(reason, ConnectionDone):
-            self.factory.nest.message_out(
+            self.factory.coop.message_out(
                 OutgoingDone(self.factory.conn_id)
             )
         else:
-            self.factory.nest.message_out(
+            self.factory.coop.message_out(
                 OutgoingLost(self.factory.conn_id, str(reason))
             )
         self.subchannel_closed(str(reason))
@@ -652,7 +682,7 @@ class ConnectionForward(Protocol):
         while len(data):
             d = data[:max_noise]
             data = data[max_noise:]
-            self.factory.nest.message_out(
+            self.factory.coop.message_out(
                 BytesIn(self.factory.conn_id, len(d))
             )
             self.factory.other_proto.transport.write(d)
@@ -668,11 +698,11 @@ class ConnectionForward(Protocol):
     @m.output()
     def emit_incoming_done(self, reason):
         if isinstance(reason.value, ConnectionDone):
-            self.factory.nest.message_out(
+            self.factory.coop.message_out(
                 IncomingDone(self.factory.conn_id)
             )
         else:
-            self.factory.nest.message_out(
+            self.factory.coop.message_out(
                 IncomingLost(self.factory.conn_id, str(reason))
             )
 
@@ -715,29 +745,16 @@ class LocalServer(Protocol):
         factory.other_proto = self
         factory.conn_id = self._conn_id
         factory.unique_name = self.factory.unique_name
-        factory.nest = self.factory.nest
+        factory.coop = self.factory.coop
+        factory.message_out = self.factory.message_out
         # Note: connect_ep here is the Wormhole provided
         # IClientEndpoint that lets us create new subchannels -- not
         # to be confused with the endpoint created from the "local
         # endpoint string"
         d = self.factory.connect_ep.connect(factory)
 
-
-# XXXX epiphany on the way home: we need some "space" between
-# "versions" and "what subprotocols can we speak?" .. maybe .. and so
-# we put the subprotocols={} in dilate() not wormhole.create()?
-#
-# ...but then it CAN'T go in "version" (although app can put whatever
-# it likes in app_versions={}) ... so how do we know 'what can it speak'?
-# maybe we just "don't care" and go with IETF "try it and see"?
-#
-# ...but "our side" magic-wormhole still knows which Factories it
-# has. We make those "functions that return a factory", taking
-# "DilatedWormhole" as an arg .. and then we can create the connect_ep
-# that our factory wants
-
         def err(f):
-            self.factory.nest.message_out(
+            self.factory.message_out(
                 WormholeError(
                     str(f.value),
                     # extra={"id": self._conn_id}
@@ -758,7 +775,7 @@ class LocalServer(Protocol):
             self.remote.transport.loseConnection()
 
     def dataReceived(self, data):
-        self.factory.nest.message_out(
+        self.factory.message_out(
             BytesIn(self._conn_id, len(data))
         )
         self.remote.transport.write(data)
@@ -780,14 +797,15 @@ class LocalServerFarSide(Protocol):
         factory.other_proto = self
         factory.conn_id = self._conn_id
         factory.unique_name = self.factory.unique_name
-        factory.nest = self.factory.nest
+        factory.coop = self.factory.coop
+        factory.message_out = self.factory.message_out
 
-        connect_ep = self.factory.nest.subchannel_connector()
+        connect_ep = self.factory.coop.subchannel_connector()
 #XXXX we want "a local connection" endpoint
         d = ensureDeferred(connect_ep.connect(factory))
 
         def err(f):
-            self.factory.nest.message_out(
+            self.factory.message_out(
                 WormholeError(
                     str(f.value),
                     # extra={"id": self._conn_id}
@@ -813,7 +831,7 @@ class LocalServerFarSide(Protocol):
             self.remote.transport.loseConnection()
 
     def dataReceived(self, data):
-        self.factory.nest.message_out(
+        self.factory.message_out(
             BytesIn(self._conn_id, len(data))
         )
         self.remote.transport.write(data)
@@ -821,9 +839,9 @@ class LocalServerFarSide(Protocol):
 
 class FowlSubprotocolListener(Factory):
 
-    def __init__(self, reactor, nest):
+    def __init__(self, reactor, coop):
         self.reactor = reactor
-        self.nest = nest
+        self.coop = coop
         super(FowlSubprotocolListener, self).__init__()
 
     def buildProtocol(self, addr):
@@ -981,7 +999,7 @@ class FowlFarToNear(Protocol):
         assert self._buffer is None, "Internal error: still buffering"
         assert self._local_connection is not None, "expected local connection by now"
         self._local_connection.transport.write(data)
-        self.factory.nest.message_out(
+        self.factory.message_out(
             BytesOut(self._conn_id, len(data))
         )
 
@@ -1040,7 +1058,7 @@ class FowlFarToNear(Protocol):
 
     @m.output()
     def emit_incoming_connection(self, msg):
-        self.factory.nest.message_out(
+        self.factory.message_out(
             IncomingConnection(self._conn_id, "nah", msg.get("unique-name", None))
         )
 
@@ -1050,10 +1068,10 @@ class FowlFarToNear(Protocol):
         # message is emitted (otherwise there will be cases where we
         # emit _just_ a IncomingLost which is confusing)
 
-        # XXX instead of a "policy check" we should just ask our Nest
+        # XXX instead of a "policy check" we should just ask our Coop
         # what port to use for this service-name -- either random or
         # pre-defined or whatever
-        # (nah, we want to check if any FowlNest has a "roost" for this service name?)
+        # (nah, we want to check if any FowlCoop has a "roost" for this service name?)
         print("do_policy_check", msg)
         self.policy_ok(msg)
 
@@ -1064,7 +1082,7 @@ class FowlFarToNear(Protocol):
 
     @m.output()
     def emit_incoming_lost(self, msg):
-        self.factory.nest.message_out(
+        self.factory.message_out(
             IncomingLost(
                 self._conn_id,
                 f"Incoming connection against local policy: {msg['listener-id']}"
@@ -1076,14 +1094,15 @@ class FowlFarToNear(Protocol):
         """
         FIXME
         """
-        ep = self.factory.nest.local_connect_endpoint(msg["unique-name"])
+        ep = self.factory.coop.local_connect_endpoint(msg["unique-name"])
         print("LOCALCONNECT", ep)
-        ##ep = self.factory.nest.connect_endpoint(msg["unique-name"])
+        ##ep = self.factory.coop.connect_endpoint(msg["unique-name"])
         ###ep = clientFromString(reactor, msg["local-destination"])
 
         factory = Factory.forProtocol(ConnectionForward)
         factory.other_proto = self
-        factory.nest = self.factory.nest
+        factory.coop = self.factory.coop
+        factory.message_out = self.factory.message_out
         factory.conn_id = self._conn_id
 
 #emit was here
@@ -1092,7 +1111,7 @@ class FowlFarToNear(Protocol):
 
         def bad(fail):
             # ideally maybe want a @output method send_incoming_lost or so?
-            self.factory.nest.message_out(
+            self.factory.message_out(
                 IncomingLost(
                     self._conn_id,
                     f"{fail.getErrorMessage()}",
@@ -1204,7 +1223,7 @@ class FowlFarToNear(Protocol):
         """
         Twisted API
         """
-#        self.factory.nest.message_out(
+#        self.factory.message_out(
 #            IncomingLost(self._conn_id, reason)
 #        )
         self.subchannel_closed(reason)
@@ -1240,12 +1259,12 @@ class FowlWormhole:
         self._done = When() # we have shut down completely
         self._connected = When()  # our Peer has connected
         self._got_welcome = When()  # we received the Welcome from the server
-        self.connect_ep = None
 
         self._we_sent_closing = False
         self._got_closing_from_peer_d = Deferred()
         self._peer_connected = False
         self._dilated = None  # DilatedWormhole instance from wh.dilate()
+        self._coop = None
 
     # XXX wants to be an IService?
     async def stop(self):
@@ -1298,15 +1317,12 @@ class FowlWormhole:
                     return
             verifier = results[0][1]
             versions = results[1][1]
-            ###print(f"versions: {versions}")
-            # XXX should "do stuff" with this, e.g. per
-            # https://github.com/meejah/fowl/issues/45 at least "we
-            # speak Fowl Application Protocol" or so
 
-            d = self._do_dilate()
+            d = ensureDeferred(self._do_dilate())
 
             @d.addCallback
             def did_dilate(arg):
+                print("did dilate")
                 self._daemon.peer_connected(verifier, versions)
                 self._peer_connected = True
                 return arg
@@ -1467,9 +1483,11 @@ class FowlWormhole:
 
         @cmd.register(LocalListener)
         async def _(msg):
+            print("OHAI", msg)
             await self.when_connected()
-            assert self.connect_ep is not None, "need connect ep"
-            await _local_to_remote_forward(self._reactor, self._config, self.connect_ep, self._listening_ports.append, self._daemon._message_out, msg)
+            connect_ep = self._dilated.connector_for("fowl")
+            print("connected", connect_ep)
+            await _local_to_remote_forward(self._reactor, self._config, connect_ep, self._listening_ports.append, self._daemon._message_out, msg)
             # XXX cheating? private access (_daemon._message_out)
 
         @cmd.register(RemoteListener)
@@ -1479,28 +1497,6 @@ class FowlWormhole:
             msg = await _remote_to_local_forward(self._reactor, self._dilated, msg)
             self._daemon._message_out(msg)
             # XXX cheating? private access (_daemon._message_out)
-
-        @cmd.register(GrantPermission)
-        async def _(msg):
-            self._config.connect_policy.ports.extend(msg.connect)
-            self._config.listen_policy.ports.extend(msg.listen)
-            print(
-                "Permission granted. Listen={}, Connect={}".format(
-                    self._config.listen_policy,
-                    self._config.connect_policy,
-                ),
-                file=self._config.stderr,
-                flush=True,
-            )
-
-        @cmd.register(DangerDisablePermissionCheck)
-        async def _(msg):
-            try:
-                self._config.connect_policy = AnyConnectPolicy()
-                self._config.listen_policy = AnyListenPolicy()
-                print("DANGER. All connect / listen endpoints allowed.", file=self._config.stderr, flush=True)
-            except Exception as e:
-                print("BAD", type(e))
 
         @cmd.register(Ping)
         async def _(msg):
@@ -1537,9 +1533,21 @@ class FowlWormhole:
         """
         return self._connected.when_triggered()
 
-    def _do_dilate(self):
-        #XXX FIXME we need this to use build_nests() or something right?
-        print("FIXME use build_nests")
+    async def _do_dilate(self):
+        # XXX move FowlWormhole do its own module so imports aren't broken
+        from .api import create_coop
+        self._coop = create_coop(reactor, self._wormhole)
+        dilated = self._dilated = await self._coop.dilate()
+        # the "FowlCoop.dilate" method already listens for commands,
+        # incoming connections
+
+        await self._wormhole.get_unverified_key()
+        verifier_bytes = await self._wormhole.get_verifier()  # might WrongPasswordError
+
+        await self._dilated.when_dilated()
+        self._connected.trigger(self._reactor, verifier_bytes)
+        print("done _do_dilate")
+        return None
 
     def _handle_error(self, f):
         # hmm, basically any of the "wormhole callbacks" we asked for
@@ -1556,24 +1564,6 @@ class FowlWormhole:
         self._daemon._message_out(
             WormholeError(str(e))
         )
-
-    async def _post_dilation_setup(self):
-        await self._wormhole.get_unverified_key()
-        verifier_bytes = await self._wormhole.get_verifier()  # might WrongPasswordError
-        self._connected.trigger(self._reactor, verifier_bytes)
-
-        # we're already _listening_ for remote-listen requests as
-        # "fowl-commands" subprotocol via create() .. so if we have
-        # any such requests to make, we create a connector for that
-        # and fire them off -- our protocol does one request per
-        # subchannel. the way the 'listen' side is written we could do
-        # multiple requests per subchannel, but subchannels are fairly
-        # cheap to set up (one round-trip *** can/do we pipeline
-        # immediately-available data? is that possible? ***)
-        #
-        # ...a series of RemoteListeners will be emitted for every
-        # command-line option, so we'll call
-        # _remote_to_local_forward() for each of those
 
 
 # FowlDaemon is the state-machine
@@ -1869,24 +1859,18 @@ async def _local_to_remote_forward(reactor, config, connect_ep, on_listen, on_me
     Listen locally, and for each local connection create an Outgoing
     subchannel which will connect on the other end.
     """
-    # XXX these lines are "uncovered" but we clearly run them ... so
-    # something wrong with subprocess coverage?? again???
-    ep = serverFromString(reactor, cmd.listen)
-
-    if config.listen_policy is not None:
-        if not config.listen_policy.can_listen(ep):
-            raise ValueError('Policy doesn\'t allow listening on "{}"'.format(ep._port))
-
     #XXX okay so this is "LocalServer for a local listener" ....
-    unique_name = b16encode(os.urandom(3)).decode("ascii")
     factory = Factory.forProtocol(LocalServer)
     factory.config = config
-    factory.unique_name = unique_name
+    factory.unique_name = cmd.name
     factory.connect_ep = connect_ep
     factory.message_out = on_message
+    from .api import _LocalListeningEndpoint
+    ep = _LocalListeningEndpoint(reactor, cmd.listening_port)
     port = await ep.listen(factory)
+    print("PORT", port, dir(port))
     on_listen(port)
-    on_message(Listening(unique_name, cmd.listen, cmd.connect))
+    on_message(Listening(unique_name, port._realPort))
 
 
 _local_requests = dict()
@@ -1928,7 +1912,7 @@ async def _remote_to_local_forward(reactor, dilated, cmd):
     proto.transport.write(
         _pack_netstring(
                 msgpack.packb({
-                    "kind": "remote-to-local",
+                    "kind": "request-listener",
                     "listen-endpoint": cmd.listen,
                     "connect-endpoint": cmd.connect,
                 })
@@ -1981,7 +1965,7 @@ class FowlCommandRequest(Protocol):
                 d.callback(RemoteListeningFailed(original_cmd.listen, msg.get("reason", "Missing reason")))
 
         else:
-            self.factory.nest.message_out(
+            self.factory.message_out(
                 WormholeError(
                     "Unknown command response: {msg[kind]}",
                 )
@@ -2012,33 +1996,26 @@ class FowlCommands(Protocol):
         msg = msgpack.unpackb(data[2:])
         print(msg)
         if msg["kind"] == "request-listener":
-            print("REQUEST LISTENER", msg)
+            print("REQUEST", msg)
             unique_name = msg["unique-name"]
-            # XXX this is where we could accept a "port hint" from the
-            # peer?  (we could also already have chosen our own port
-            # .. or not, and so only in the "not" case would we even
-            # want to consider the port-hint, right?)
             desired_port = msg.get("listen-port", None)
-            # XXX ask the factory for WHICH NEST this is for --- and then also the name
-            listen_ep = self.factory.nest._endpoint_for_service(unique_name, desired_port=desired_port)
+            listen_ep = self.factory.coop._endpoint_for_service(unique_name, desired_port=desired_port)
 
             print("EP", listen_ep)
             factory = Factory.forProtocol(LocalServerFarSide)
-            #factory.config = self.factory.config
-            factory.nest = self.factory.nest
-            factory.message_out = self.factory.nest.message_out
+            factory.coop = self.factory.coop
+            factory.message_out = self.factory.message_out
             factory.unique_name = unique_name
             # XXX this can fail (synchronously) if address in use, for example
             d = ensureDeferred(listen_ep.listen(factory))
 
             def got_port(port):
                 self._reply_positive(unique_name)
-                print("GOTPORT", port, self.factory)
-                self.factory.nest._did_listen_locally(unique_name, port)
-                self.factory.nest.message_out(
+                channel = self.factory.coop._did_listen_locally(unique_name, port)
+                self.factory.message_out(
                     Listening(
                         unique_name,
-                        "fixme", #XXX listen_ep_str,
+                        channel.connect_port,
                     )
                 )
                 self._ports.append(port)
@@ -2047,7 +2024,7 @@ class FowlCommands(Protocol):
             def error(f):
                 print("ERR", f)
                 self._reply_negative(f.getErrorMessage())
-                self.factory.nest.message_out(
+                self.factory.message_out(
                     WormholeError(
                         'Failed to listen on "{}": {}'.format(
                             unique_name,
@@ -2059,7 +2036,7 @@ class FowlCommands(Protocol):
             d.addErrback(error)
             # XXX should await port.stopListening() somewhere...at the appropriate time
         else:
-            self.factory.nest.message_out(
+            self.factory.message_out(
                 WormholeError(
                     "Unknown control command: {msg[kind]}",
                 )
@@ -2112,12 +2089,17 @@ class FowlCommands(Protocol):
 
 
 class FowlCommandsListener(Factory):
+    """
+    The subprotocol registered under the name 'fowl-commands'.
+    """
     protocol = FowlCommands
 
-    # XXX for now there's only one nest, period -- have to reconcile this
-    def __init__(self, reactor, nest):
+    def __init__(self, reactor, coop):
         self.reactor = reactor
-        self.nest = nest
+        self.coop = coop
+
+    def message_out(self, msg):
+        print("NO MESSAGE OUT", msg)
 
 
 class LocalCommandDispatch(LineReceiver):

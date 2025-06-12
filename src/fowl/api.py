@@ -12,6 +12,8 @@ from twisted.internet.endpoints import AdoptedStreamServerEndpoint
 from twisted.internet.protocol import Factory
 from twisted.python.reflect import requireModule
 from twisted.python.runtime import platformType
+# not available on Windows
+fcntl = requireModule("fcntl")
 
 from zope.interface import implementer
 
@@ -22,8 +24,10 @@ from .observer import When
 from ._proto import FowlSubprotocolListener, FowlCommandsListener, _SendFowlCommand, _pack_netstring, FowlNearToFar, LocalServer
 
 
-# not available on Windows
-fcntl = requireModule("fcntl")
+def create_coop(reactor, wormhole):
+    # it is "_FowlCoop.dilate()" that does the magic -- inject our
+    # subprotocols etc
+    return _FowlCoop(reactor, wormhole)
 
 
 @define
@@ -143,7 +147,6 @@ class _LocalListeningEndpoint:
 
         if endpoint is None:
             portnum = self._desired_port
-            print("WE GOT PORTNUM", portnum)
             if portnum is None:
                 # Get a random port number and fall through.  This is
                 # necessary on Windows where Twisted doesn't offer
@@ -157,7 +160,7 @@ class _LocalListeningEndpoint:
         return port
 
 
-class FowlCoop:
+class _FowlCoop:
     """
     Chickens live in coops.
 
@@ -226,7 +229,7 @@ class FowlCoop:
     the `FowlChannelDaemonHere.listen_port` on the Host.
     """
 
-    def __init__(self, reactor, wormhole, message_out=None):
+    def __init__(self, reactor, wormhole):
         self._reactor = reactor
         self._wormhole = wormhole
 
@@ -236,14 +239,8 @@ class FowlCoop:
         self._dilated = None  # DilatedWormhole once we're dilated
         self._when_dilated = When()
         self._when_roosted = dict()  # maps "unique-name" to When() instances
-        self._message_out = message_out
 
-    # XXX for now, should be able to get rid of this from the API
-    def message_out(self, msg):
-        if self._message_out is not None:
-            self._message_out(msg)
-
-    def dilate(self, **kwargs):
+    async def dilate(self, **kwargs):
         """
         Must be called precisely once.
 
@@ -255,10 +252,10 @@ class FowlCoop:
         self._set_dilated(dilated)
         # "dilated" is a DilatedWormhole instance
 
-        dilated.listener_for("fowl").listen(
+        await dilated.listener_for("fowl").listen(
             FowlSubprotocolListener(self._reactor, self)
         )
-        dilated.listener_for("fowl-commands").listen(
+        await dilated.listener_for("fowl-commands").listen(
             FowlCommandsListener(self._reactor, self)
         )
         return dilated
@@ -281,6 +278,8 @@ class FowlCoop:
         we can't control what our peer decides to do) await the
         `when_roosted()` method for the same `unique_name`.
         """
+        # XXX okay so if we care what the 'other side' listens on, it HAS to be started from there?
+        # (why might we? what would that even ... mean / do?)
         # XXX IPv4 vs IPv6?
         if local_endpoint is None:
             local_endpoint = _LocalListeningEndpoint(self._reactor, None)
@@ -337,15 +336,18 @@ class FowlCoop:
             raise ValueError(
                 f"fledge({unique_name}) when we already have a roost for that name"
             )
-        print("FLEDGE", unique_name)
         if local_listen_port is None:
             local_listen_port = allocate_tcp_port()
+        print("awaiting dilation", local_listen_port)
+        await self._when_dilated.when_triggered()
+        print("ready to fledge")
         ep = self._dilated.connector_for("fowl-commands")
         fact = Factory.forProtocol(_SendFowlCommand)
         fact._reactor = self._reactor
         proto = await ep.connect(fact)
         await proto.when_connected()
 
+        print("doing it", unique_name, desired_remote_port)
         #XXX should be method on _SendFowlCommand
         proto.transport.write(
             _pack_netstring(
@@ -358,7 +360,6 @@ class FowlCoop:
         )
 
         reply = await proto.next_message()
-        print("REPLY to fledge()", reply)
         # okay, so _we_ know where we want this to connect back to, so
         # remember it in our services
         if unique_name in self._services:
@@ -379,9 +380,7 @@ class FowlCoop:
         returns an endpoint that can be used to initiate a stream for the
         indicated service-name.
         """
-        print("connect_endpoint", sorted(self._services.keys()))
         ch = self._services[unique_name]
-        print("channel", ch)
         return ch.endpoint
 
     def listen_endpoint(self, name: str) -> IStreamServerEndpoint:
@@ -398,22 +397,19 @@ class FowlCoop:
     def _endpoint_for_service(self, unique_name, desired_port: Optional[int]=None):
         try:
             ep = self._roosts[unique_name].endpoint
-            # if "ep" is whatever we create for 'delayed choose random
-            # port' endpoint, then we can pass it the "port_hint"
-            # somehow, and it can use that as the first guess
-            if desired_port is not None:
-                if isinstance(ep, _LocalListeningEndpoint):
-                    print("SETTING DESIRED PORT", desired_port)
-                    ep._set_desired_port(desired_port)
 
-            # XXX for Web stuff we might want 'force_hint=True' or
-            # something to say it's not a 'desired' port, it's a
-            # requirement?  (Or maybe we just make the argument itself
-            # that -- if provided, it's required)
         except KeyError:
             raise RuntimeError(
                 f"No service permitted for name: {unique_name}"
             )
+
+        # the contract here is that if the other side asks for a port,
+        # it must be for a good reason (e.g. "it's Web stuff") and so
+        # we use that port directly (and error out if we can't listen)
+        if desired_port is not None:
+            if isinstance(ep, _LocalListeningEndpoint):
+                ep._set_desired_port(desired_port)
+
         return ep
 
     def _did_listen_locally(self, unique_name, port):
@@ -421,6 +417,7 @@ class FowlCoop:
         channel = self._roosts[unique_name]
         channel._is_listening(port)
         when.trigger(self._reactor, channel)
+        return channel
 
     def _get_when_roosted(self, unique_name):
         """
@@ -449,18 +446,6 @@ class FowlCoop:
         self._when_dilated.trigger(self._reactor, self._dilated)
 
 
-# temp: just a singleton for now
-# ...maybe we need a "Coop" that contains "Nests"?
-# ...or maybe the whole Nest thing is just dumb?
-#
-# not a singleton -- but we want "one thing per wormhole", basically
-
-def create_coop(reactor, wormhole):
-    # it is "FowlCoop.dilate()" that does the magic -- inject our
-    # subprotocols etc
-    return FowlCoop(reactor, wormhole)
-
-
 # originally from Tahoe-LAFS
 @implementer(IStreamServerEndpoint)
 @define
@@ -484,7 +469,6 @@ class CleanupEndpoint:
 
     def listen(self, protocolFactory):
         self._listened = True
-        print("LISTEN", self._wrapped, protocolFactory)
         return self._wrapped.listen(protocolFactory)
 
     def __del__(self):

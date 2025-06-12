@@ -99,8 +99,9 @@ class LocalListener(FowlCommandMessage):
     """
     We wish to open a local listener.
     """
-    listen: str  # Twisted server-type endpoint string
-    connect: str  # Twisted client-type endpoint string
+    # XXX roost()
+    name: str  # unique name for this service
+    listen_port: Optional[int] = None  # port to listen locally (or select randomly)
 
 
 @frozen
@@ -108,8 +109,10 @@ class RemoteListener(FowlCommandMessage):
     """
     We wish to open a listener on the peer.
     """
-    listen: str  # Twisted server-type endpoint string
-    connect: str  # Twisted client-type endpoint string
+    # XXX fledge()
+    name: str  # Unique name for this service
+    listen_port: Optional[int] = None  # port to listen on (or let peer select)
+    connect_port: Optional[int] = None  # port to connect here on
 
 
 @frozen
@@ -123,13 +126,14 @@ class Listening(FowlOutputMessage):
     We have opened a local listener.
 
     Any connections to this listener will result in a subchannel and a
-    connect on the other side (to "connected_endpoint"). This message
-    may result from a LocalListener or a RemoteListener command. This
-    message will always appear on the side that's actually listening.
+    connect on the other side. This message may result from a
+    LocalListener or a RemoteListener command.
+
+    This message will always appear on the side that's actually
+    listening.
     """
-    listener_id: str  # random identifier
-    listen: str  # Twisted server-type endpoint string
-##    connect: str  # Twisted client-type endpoint string
+    name: str  # unique name for this service
+    listening_port: int
 
 
 @frozen
@@ -146,9 +150,8 @@ class RemoteListeningSucceeded(FowlOutputMessage):
     """
     The remote peer suceeded at fulfilling our listen request.
     """
-    listener_id: str  # arbitrary identifier
-    listen: str  # Twisted server-type endpoint string
-    connect: str  # Twisted client-type endpoint string
+    name: str  # unique name for this service
+    local_port: int  # where we connect locally
 
 
 @frozen
