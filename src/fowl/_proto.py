@@ -69,8 +69,9 @@ from .messages import (
     PleaseCloseWormhole,
 )
 from .policy import IClientListenPolicy, IClientConnectPolicy, AnyConnectPolicy, AnyListenPolicy
-from .status import FowlStatus
+from .status import _StatusTracker
 from .visual import render_status
+
 
 
 APPID = u"meejah.ca/wormhole/forward"
@@ -119,7 +120,7 @@ class _Config:
     output_debug_messages: TextIO = None  # Option<Writable>
 
 
-async def wormhole_from_config(reactor, config, on_status, message_out, wormhole_create=None):
+async def wormhole_from_config(reactor, config, on_status, wormhole_create=None):
     """
     Create a suitable wormhole for the given configuration.
 
@@ -284,27 +285,17 @@ async def frontend_accept_or_invite(reactor, config):
         - forward traffic until one side closes
     """
 
-    status = FowlStatus()
+    status_tracker = _StatusTracker()
 
     def render():
-        return render_status(status)
+        return render_status(status_tracker.current_status)
 
     # XXX for testing .. maybe an option instead?
     from rich.console import Console
     console = Console(force_terminal=True)
     live = Live(get_renderable=render, console=console)
 
-    def output_message(msg):
-        print("MSG", msg)
-        status.on_message(msg)
-
-    # XXX anything we care about from status should probably be wired
-    # through fowl-daemon? (i.e. emitted as a FowlOutputMessage or so
-    # from there)
-    def on_status(st):
-        status.mailbox_connection = st.mailbox_connection
-
-    fowl_wh = await create_fowl(config, output_message, on_status)
+    fowl_wh = await create_fowl(config, status_tracker)
     fowl_wh.start()
 
     ##@daemon.set_trace
@@ -316,7 +307,8 @@ async def frontend_accept_or_invite(reactor, config):
 
     def we_are_closing():  # can't assign in a lambda
         print("Closing...")
-        status.we_closing = True
+        # XXX FIXME no...method on status or something else
+        status_tracker._we_closing = True
     reactor.addSystemEventTrigger("before", "shutdown", we_are_closing)
 
     if config.code is not None:
@@ -500,8 +492,10 @@ class FowlNearToFar(Protocol):
 
     @m.output()
     def emit_remote_failed(self, reason):
-        self.factory.coop.message_out(
-            RemoteConnectFailed(self.factory.conn_id, reason)
+        print("bad", reason)
+        self.factory.coop._status_tracker.outgoing_lost(
+            self.factory.conn_id,
+            reason,
         )
 
     @m.output()
@@ -527,15 +521,16 @@ class FowlNearToFar(Protocol):
         while len(data):
             d = data[:max_noise]
             data = data[max_noise:]
-            self.factory.coop.message_out(
-                BytesOut(self.factory.conn_id, len(d))
+            self.factory.coop._status_tracker.bytes_out(
+                self.factory.conn_id,
+                len(d),
             )
             self.factory.other_proto.transport.write(d)
 
 #    @m.output()
 #    def emit_incoming_lost(self):
 #        # do we need a like "OutgoingLost"?
-#        self.factory.coop.message_out(IncomingLost(self.factory.conn_id, "Unknown"))
+#        self.factory.message_out(IncomingLost(self.factory.conn_id, "Unknown"))
 
     await_confirmation.upon(
         no_confirmation,
@@ -614,8 +609,9 @@ class FowlNearToFar(Protocol):
             )
         )
 
-        self.factory.coop.message_out(
-            OutgoingConnection(self.factory.conn_id, "fixme endpoint str", self.factory.unique_name)
+        self.factory.coop._status_tracker.outgoing_connection(
+            self.factory.unique_name,
+            self.factory.conn_id,
         )
 
         # MUST wait for reply first -- queueing all data until
@@ -626,17 +622,18 @@ class FowlNearToFar(Protocol):
         self.got_bytes(data)
 
     def connectionLost(self, reason):
-        if isinstance(reason, ConnectionDone):
-            self.factory.coop.message_out(
-                OutgoingDone(self.factory.conn_id)
-            )
-        else:
-            self.factory.coop.message_out(
-                OutgoingLost(self.factory.conn_id, str(reason))
-            )
         self.subchannel_closed(str(reason))
         if self.factory.other_proto:
             self.factory.other_proto.transport.loseConnection()
+        if isinstance(reason, ConnectionDone):
+            self.factory.coop._status_tracker.outgoing_done(
+                self.factory.conn_id,
+            )
+        else:
+            self.factory.coop._status_tracker.outgoing_lost(
+                self.factory.conn_id,
+                str(reason),
+            )
 
 
 class ConnectionForward(Protocol):
@@ -682,8 +679,9 @@ class ConnectionForward(Protocol):
         while len(data):
             d = data[:max_noise]
             data = data[max_noise:]
-            self.factory.coop.message_out(
-                BytesIn(self.factory.conn_id, len(d))
+            self.factory.coop._status_tracker.bytes_in(
+                self.factory.conn_id,
+                len(d),
             )
             self.factory.other_proto.transport.write(d)
 
@@ -698,12 +696,13 @@ class ConnectionForward(Protocol):
     @m.output()
     def emit_incoming_done(self, reason):
         if isinstance(reason.value, ConnectionDone):
-            self.factory.coop.message_out(
-                IncomingDone(self.factory.conn_id)
+            self.factory.coop._status_tracker.incoming_done(
+                self.factory.conn_id,
             )
         else:
-            self.factory.coop.message_out(
-                IncomingLost(self.factory.conn_id, str(reason))
+            self.factory.coop._status_tracker.incoming_lost(
+                self.factory.conn_id,
+                str(reason),
             )
 
     forwarding_bytes.upon(
@@ -737,16 +736,15 @@ class LocalServer(Protocol):
     def connectionMade(self):
         self.queue = []
         self.remote = None
-        self._conn_id = allocate_connection_id()
+        self.conn_id = allocate_connection_id()
 
         # XXX do we need registerProducer somewhere here?
         # XXX make a real Factory subclass instead
         factory = Factory.forProtocol(FowlNearToFar)
         factory.other_proto = self
-        factory.conn_id = self._conn_id
+        factory.conn_id = self.conn_id
         factory.unique_name = self.factory.unique_name
         factory.coop = self.factory.coop
-        factory.message_out = self.factory.message_out
         # Note: connect_ep here is the Wormhole provided
         # IClientEndpoint that lets us create new subchannels -- not
         # to be confused with the endpoint created from the "local
@@ -754,12 +752,7 @@ class LocalServer(Protocol):
         d = self.factory.connect_ep.connect(factory)
 
         def err(f):
-            self.factory.message_out(
-                WormholeError(
-                    str(f.value),
-                    # extra={"id": self._conn_id}
-                )
-            )
+            self.factory.coop._status_tracker.error(str(f.value))
         d.addErrback(err)
         return d
 
@@ -775,8 +768,9 @@ class LocalServer(Protocol):
             self.remote.transport.loseConnection()
 
     def dataReceived(self, data):
-        self.factory.message_out(
-            BytesIn(self._conn_id, len(data))
+        self.factory.coop._status_tracker.bytes_in(
+            self.conn_id,
+            len(data),
         )
         self.remote.transport.write(data)
 
@@ -788,28 +782,24 @@ class LocalServerFarSide(Protocol):
     def connectionMade(self):
         self.queue = []
         self.remote = None
-        self._conn_id = allocate_connection_id()
-        print("CONN MADE", self._conn_id, self.factory)
+        self.conn_id = allocate_connection_id()
+        print("CONN MADE", self.conn_id, self.factory)
 
         # XXX do we need registerProducer somewhere here?
         # XXX make a real Factory subclass instead
         factory = Factory.forProtocol(FowlNearToFar)
         factory.other_proto = self
-        factory.conn_id = self._conn_id
+        factory.conn_id = self.conn_id
         factory.unique_name = self.factory.unique_name
         factory.coop = self.factory.coop
-        factory.message_out = self.factory.message_out
 
         connect_ep = self.factory.coop.subchannel_connector()
 #XXXX we want "a local connection" endpoint
         d = ensureDeferred(connect_ep.connect(factory))
 
         def err(f):
-            self.factory.message_out(
-                WormholeError(
-                    str(f.value),
-                    # extra={"id": self._conn_id}
-                )
+            self.factory.coop._status_tracker.error(
+                str(f.value),
             )
         d.addErrback(err)
 
@@ -831,17 +821,19 @@ class LocalServerFarSide(Protocol):
             self.remote.transport.loseConnection()
 
     def dataReceived(self, data):
-        self.factory.message_out(
-            BytesIn(self._conn_id, len(data))
+        self.factory.coop._status_tracker.bytes_in(
+            self.conn_id,
+            len(data),
         )
         self.remote.transport.write(data)
 
 
 class FowlSubprotocolListener(Factory):
 
-    def __init__(self, reactor, coop):
+    def __init__(self, reactor, coop, status):
         self.reactor = reactor
         self.coop = coop
+        self.status = status
         super(FowlSubprotocolListener, self).__init__()
 
     def buildProtocol(self, addr):
@@ -999,8 +991,9 @@ class FowlFarToNear(Protocol):
         assert self._buffer is None, "Internal error: still buffering"
         assert self._local_connection is not None, "expected local connection by now"
         self._local_connection.transport.write(data)
-        self.factory.message_out(
-            BytesOut(self._conn_id, len(data))
+        self.factory.coop._status_tracker.bytes_out(
+            self.conn_id,
+            len(data),
         )
 
     @m.output()
@@ -1031,8 +1024,13 @@ class FowlFarToNear(Protocol):
         Tell our peer why we're closing them
         """
         self._negative(reason)
+        self.factory.coop._status_tracker.incoming_lost(
+            self.conn_id,
+            reason,
+        )
 
     def _negative(self, reason):
+        print("negative", reason)
         self.transport.write(
             _pack_netstring(
                 msgpack.packb({
@@ -1058,8 +1056,9 @@ class FowlFarToNear(Protocol):
 
     @m.output()
     def emit_incoming_connection(self, msg):
-        self.factory.message_out(
-            IncomingConnection(self._conn_id, "nah", msg.get("unique-name", None))
+        self.factory.coop._status_tracker.incoming_connection(
+            msg.get("unique-name", None),
+            self.conn_id,
         )
 
     @m.output()
@@ -1082,11 +1081,9 @@ class FowlFarToNear(Protocol):
 
     @m.output()
     def emit_incoming_lost(self, msg):
-        self.factory.message_out(
-            IncomingLost(
-                self._conn_id,
-                f"Incoming connection against local policy: {msg['listener-id']}"
-            )
+        self.factory.coop._status_tracker.incoming_lost(
+            self.conn_id,
+            f"Incoming connection against local policy: {msg['listener-id']}",
         )
 
     @m.output()
@@ -1102,21 +1099,14 @@ class FowlFarToNear(Protocol):
         factory = Factory.forProtocol(ConnectionForward)
         factory.other_proto = self
         factory.coop = self.factory.coop
-        factory.message_out = self.factory.message_out
-        factory.conn_id = self._conn_id
+        factory.conn_id = self.conn_id
 
 #emit was here
 
         d = ep.connect(factory)
 
         def bad(fail):
-            # ideally maybe want a @output method send_incoming_lost or so?
-            self.factory.message_out(
-                IncomingLost(
-                    self._conn_id,
-                    f"{fail.getErrorMessage()}",
-                )
-            )
+            message = fail.getErrorMessage()
             reactor.callLater(0, lambda: self.connection_failed(fail.getErrorMessage()))
             return None
 
@@ -1210,7 +1200,7 @@ class FowlFarToNear(Protocol):
         """
         Twisted API
         """
-        self._conn_id = allocate_connection_id()
+        self.conn_id = allocate_connection_id()
         # XXX first message should tell us where to connect, locally
         # (want some kind of opt-in on this side, probably)
         self._buffer = b""
@@ -1405,6 +1395,8 @@ class FowlWormhole:
             # any new channels.
             self._peer_connected = False  # XXX double-duty as "we are shutting down" bool?
             await self._stop_listening()
+            # XXX probably do this via req/resp .. or at least don't
+            # plumb it through FowlDaemon
             self._wormhole.send_message(json.dumps({
                 "closing": self._wormhole._boss._next_tx_phase,
             }).encode("utf8"))
@@ -1487,8 +1479,7 @@ class FowlWormhole:
             await self.when_connected()
             connect_ep = self._dilated.connector_for("fowl")
             print("connected", connect_ep)
-            await _local_to_remote_forward(self._reactor, self._config, connect_ep, self._listening_ports.append, self._daemon._message_out, msg)
-            # XXX cheating? private access (_daemon._message_out)
+            await _local_to_remote_forward(self._reactor, self._config, connect_ep, self._listening_ports.append, msg, self._coop)
 
         @cmd.register(RemoteListener)
         async def _(msg):
@@ -1504,6 +1495,7 @@ class FowlWormhole:
                 if hasattr(self._wormhole._boss, "_D"):
                     if self._wormhole._boss._D._manager is not None:
                         def got_pong(round_trip):
+                            #XXX FIXME TODO
                             self._daemon._message_out(Pong(msg.ping_id, round_trip))
                         self._wormhole._boss._D._manager.send_ping(msg.ping_id, got_pong)
                     else:
@@ -1561,9 +1553,7 @@ class FowlWormhole:
             self._report_error(f.value)
 
     def _report_error(self, e):
-        self._daemon._message_out(
-            WormholeError(str(e))
-        )
+        self._coop._status_tracker.error(str(e))
 
 
 # FowlDaemon is the state-machine
@@ -1778,7 +1768,7 @@ def parse_fowld_output(json_str: str) -> FowlOutputMessage:
     return kind_to_message[kind](cmd)
 
 
-async def create_fowl(config, output_fowl_message, on_status):
+async def create_fowl(config, fowl_status_tracker):
 
     start_time = reactor.seconds()
     if config.output_debug_messages:
@@ -1793,8 +1783,6 @@ async def create_fowl(config, output_fowl_message, on_status):
             except Exception as e:
                 print(e)
             return output_fowl_message(msg)
-    else:
-        output_wrapper = output_fowl_message
 
     if config.debug_file:
         kind = "invite" if config.code is None else "accept"
@@ -1807,10 +1795,12 @@ async def create_fowl(config, output_fowl_message, on_status):
         else:
             print(msg)
 
-    sm = FowlDaemon(config, output_wrapper, command_message)
-    w = await wormhole_from_config(reactor, config, on_status, sm._message_out)
+    # XXX FIXME hook in "output_wrapper" as a listener on the status_tracker
 
-#    @sm.set_trace
+    sm = FowlDaemon(config, fowl_status_tracker, command_message)
+    w = await wormhole_from_config(reactor, config, fowl_status_tracker.dilation_status)
+
+    @sm.set_trace
     def _(start, edge, end):
         print(f"trace: {start} --[ {edge} ]--> {end}")
     fowl = FowlWormhole(reactor, w, sm, config)
@@ -1837,10 +1827,7 @@ async def forward(reactor, config):
             flush=True,
         )
 
-    def on_status(status):
-        pass
-
-    fowl = await create_fowl(config, output_fowl_message, on_status)
+    fowl = await create_fowl(config, output_fowl_message)
     fowl.start()
 
     # arrange to read incoming commands from stdin
@@ -1854,23 +1841,26 @@ async def forward(reactor, config):
         await fowl.stop()
 
 
-async def _local_to_remote_forward(reactor, config, connect_ep, on_listen, on_message, cmd):
+async def _local_to_remote_forward(reactor, config, connect_ep, on_listen, on_message, cmd, coop):
     """
     Listen locally, and for each local connection create an Outgoing
-    subchannel which will connect on the other end.
+    subchannel which will connect on the other end. So the daemon is
+    running on the other side.
     """
     #XXX okay so this is "LocalServer for a local listener" ....
     factory = Factory.forProtocol(LocalServer)
     factory.config = config
     factory.unique_name = cmd.name
     factory.connect_ep = connect_ep
-    factory.message_out = on_message
     from .api import _LocalListeningEndpoint
     ep = _LocalListeningEndpoint(reactor, cmd.listening_port)
     port = await ep.listen(factory)
     print("PORT", port, dir(port))
     on_listen(port)
-    on_message(Listening(unique_name, port._realPort))
+    coop._status_tracker.add_remote_service(
+        unique_name,
+        port._realPort,
+    )
 
 
 _local_requests = dict()
@@ -1903,6 +1893,8 @@ async def _remote_to_local_forward(reactor, dilated, cmd):
     (where our Incoming subchannel will be told what to connect
     to).
     """
+    # XXX if still used, should just call .fledge()
+    print("DINGDING")
     ep = dilated.subprotocol_connector_for("fowl-commands")
     fact = Factory.forProtocol(_SendFowlCommand)
     fact._reactor = reactor
@@ -1965,10 +1957,8 @@ class FowlCommandRequest(Protocol):
                 d.callback(RemoteListeningFailed(original_cmd.listen, msg.get("reason", "Missing reason")))
 
         else:
-            self.factory.message_out(
-                WormholeError(
-                    "Unknown command response: {msg[kind]}",
-                )
+            self.factory.coop._status_tracker.error(
+                f"Unknown command response: {msg[kind]}",
             )
 
 # When doesn't support this ...
@@ -2004,7 +1994,6 @@ class FowlCommands(Protocol):
             print("EP", listen_ep)
             factory = Factory.forProtocol(LocalServerFarSide)
             factory.coop = self.factory.coop
-            factory.message_out = self.factory.message_out
             factory.unique_name = unique_name
             # XXX this can fail (synchronously) if address in use, for example
             d = ensureDeferred(listen_ep.listen(factory))
@@ -2012,11 +2001,9 @@ class FowlCommands(Protocol):
             def got_port(port):
                 self._reply_positive(unique_name)
                 channel = self.factory.coop._did_listen_locally(unique_name, port)
-                self.factory.message_out(
-                    Listening(
-                        unique_name,
-                        channel.connect_port,
-                    )
+                self.factory.coop._status_tracker.added_remote_service(
+                    unique_name,
+                    channel.connect_port,
                 )
                 self._ports.append(port)
                 return port
@@ -2024,22 +2011,15 @@ class FowlCommands(Protocol):
             def error(f):
                 print("ERR", f)
                 self._reply_negative(f.getErrorMessage())
-                self.factory.message_out(
-                    WormholeError(
-                        'Failed to listen on "{}": {}'.format(
-                            unique_name,
-                            f.value,
-                        )
-                    )
+                self.factory.coop._status_tracker.error(
+                    f'Failed to listen on "{unique_name}": {f.value}',
                 )
             d.addCallback(got_port)
             d.addErrback(error)
             # XXX should await port.stopListening() somewhere...at the appropriate time
         else:
-            self.factory.message_out(
-                WormholeError(
-                    "Unknown control command: {msg[kind]}",
-                )
+            self.factory.coop._status_tracker.error(
+                f"Unknown control command: {msg[kind]}",
             )
 
     def _reply_positive(self, unique_name):
@@ -2094,12 +2074,11 @@ class FowlCommandsListener(Factory):
     """
     protocol = FowlCommands
 
-    def __init__(self, reactor, coop):
+    def __init__(self, reactor, coop, status):
         self.reactor = reactor
         self.coop = coop
-
-    def message_out(self, msg):
-        print("NO MESSAGE OUT", msg)
+        self.status = status
+        super(FowlCommandsListener, self).__init__()
 
 
 class LocalCommandDispatch(LineReceiver):

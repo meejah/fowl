@@ -6,26 +6,28 @@ from typing import Dict, Optional, Callable
 import attrs
 
 from wormhole._status import ConnectionStatus
+from wormhole import DilationStatus, WormholeStatus
 
-from fowl.messages import BytesIn, BytesOut, OutgoingConnection, OutgoingDone, OutgoingLost, Listening, Welcome, PeerConnected, RemoteListeningSucceeded, WormholeClosed, CodeAllocated, IncomingConnection, IncomingDone, IncomingLost, GotMessageFromPeer, FowlOutputMessage
+from fowl.messages import BytesIn, BytesOut, OutgoingConnection, OutgoingDone, OutgoingLost, Listening, Welcome, PeerConnected, RemoteListeningSucceeded, WormholeClosed, CodeAllocated, IncomingConnection, IncomingDone, IncomingLost, GotMessageFromPeer, FowlOutputMessage, WormholeError
 
 
 @attrs.define
 class Subchannel:
-    endpoint: str
-    listener_id: str
+    service_name: str
+    channel_id: str
     i: list
     o: list
 
 
 @attrs.define
 class Listener:
-    listen: str
-    connect: str
+    service_name: str
+    local_port: int
     remote: bool
+    remote_port: Optional[int] = None
 
 
-@attrs.define
+@attrs.frozen
 class FowlStatus:
     url: Optional[str] = None
     mailbox_connection: Optional[ConnectionStatus] = None
@@ -35,85 +37,146 @@ class FowlStatus:
     closed: Optional[str] = None  # closed status, "happy", "lonely" etc
     subchannels: Dict[str, Subchannel] = {}
     listeners: Dict[str, Listener] = {}
-    time_provider: Callable[[], float] = time.time
-    on_message: Optional[Callable[[FowlOutputMessage], None]] = None
     peer_closing: bool = False
     we_closing: bool = False
 
-    def __attrs_post_init__(self):
-        @functools.singledispatch
-        def on_message(msg):
-            print(f"unhandled: {msg}")
 
-        @on_message.register(Welcome)
-        def _(msg):
-            self.url = msg.url
-            self.welcome = msg.welcome
-            self.closed = None
+@attrs.define
+class _StatusTracker:
+    """
+    Internal helper. Tracks current status and listeners and contains
+    tools for updating the current status.
+    """
 
-        @on_message.register(CodeAllocated)
-        def _(msg):
-            self.code = msg.code
+    _time_provider: Callable[[], float] = time.time
+    _listeners: list = attrs.Factory(list)  # receives FowlOutputMessage instances
+    _on_status_updates: list = attrs.Factory(list)
+    _current_status: FowlStatus = attrs.Factory(FowlStatus)
 
-        @on_message.register(PeerConnected)
-        def _(msg):
-            self.verifier = msg.verifier
+    def add_status_listener(self, listener: Callable[[FowlStatus], None]):
+        """
+        Add a listener function which receives the new FowlStatus every
+        time it is updated
+        """
+        self._on_status_updates.append(listener)
 
-        @on_message.register(GotMessageFromPeer)
-        def _(msg):
-            d = json.loads(msg.message)
-            print(f"peer: {d}")
-            if "closing" in d:
-                self.peer_closing = True
+    def add_listener(self, listener: Callable[[FowlOutputMessage], None]):
+        """
+        Add a listeners which receives FowlOutputMessage instances
+        (basically 'incremental' updates)
+        """
+        self._listeners.append(listener)
 
-        @on_message.register(WormholeClosed)
-        def _(msg):
-            self.closed = msg.result
+    def _emit(self, msg):
+        for target in self._listeners:
+            target(msg)
 
-        @on_message.register(Listening)
-        def _(msg):
-            self.listeners[msg.listener_id] = Listener(msg.listen, msg.connect, False)
+    def _modify_status(self, **kwargs):
+        status = attrs.evolve(self._current_status, **kwargs)
+        self._current_status = status
+        for target in self._on_status_updates:
+            target(self._current_status)
 
-        @on_message.register(RemoteListeningSucceeded)
-        def _(msg):
-            self.listeners[msg.listener_id] = Listener(msg.listen, msg.connect, True)
+    @property
+    def current_status(self):
+        return self._current_status
 
-        @on_message.register(BytesIn)
-        def _(msg):
-            self.subchannels[msg.id].i.insert(0, (msg.bytes, self.time_provider()))
+    def dilation_status(self, st: WormholeStatus):
+        """
+        Hooked into our wormhole.
+        """
+        self._modify_status(mailbox_connection=st.mailbox_connection)
+        # anything we care about from status should be wired through as a
+        # FowlOutputMessage or so externally.
 
-        @on_message.register(BytesOut)
-        def _(msg):
-            self.subchannels[msg.id].o.insert(0, (msg.bytes, self.time_provider()))
+    def welcomed(self, url, welcome):
+        self._modify_status(
+            url=url,
+            welcome=welcome,
+            closed=None
+        )
+        self._emit(Welcome(url, welcome))
 
-        @on_message.register(IncomingConnection)
-        def _(msg):
-            self.subchannels[msg.id] = Subchannel(msg.endpoint, msg.listener_id, [], [])
+    def code_allocated(self, code):
+        self._modify_status(code=code)
+        self._emit(CodeAllocated(code))
 
-        @on_message.register(IncomingDone)
-        def _(msg):
-            #out = humanize.naturalsize(sum([b for b, _ in subchannels[msg.id].o]))
-            #in_ = humanize.naturalsize(sum([b for b, _ in subchannels[msg.id].i]))
-            #print(f"{msg.id} closed: {out} out, {in_} in")
-            del self.subchannels[msg.id]
+    def peer_connected(self, verifier, features):
+        self._modify_status(verifier=verifier)
+        self._emit(PeerConnected(verifier, features))
 
-        @on_message.register(IncomingLost)
-        def _(msg):
-            del self.subchannels[msg.id]
+    def message_from_peer(self, message):
+        # XXX fixme todo can we just get rid of this hole message_to/from_peer via status entirely?
+        d = json.loads(message)
+        print(f"peer: {d}")
+        if "closing" in d:
+            self._modify_status(peer_closing=True)
+        self._emit(GotMessageFromPeer(message))
 
-        @on_message.register(OutgoingConnection)
-        def _(msg):
-            self.subchannels[msg.id] = Subchannel(msg.endpoint, msg.listener_id, [], [])
+    def wormhole_closed(self, result):
+        self._modify_status(closed=result)
+        self._emit(WormholeClosed(result))
 
-        @on_message.register(OutgoingDone)
-        def _(msg):
-            #out = humanize.naturalsize(sum([b for b, _ in subchannels[msg.id].o]))
-            #in_ = humanize.naturalsize(sum([b for b, _ in subchannels[msg.id].i]))
-            #print(f"{msg.id} closed: {out} out, {in_} in")
-            del self.subchannels[msg.id]
+    def error(self, message):
+        self._emit(
+            WormholeError(message)
+        )
 
-        @on_message.register(OutgoingLost)
-        def _(msg):
-            del self.subchannels[msg.id]
+    def added_local_service(self, name, listen_port, remote_connect_port):
+        self._current_status.listeners[name] = Listener(name, listen_port, False, remote_connect_port)
+        self._modify_status()
 
-        self.on_message = on_message
+    def added_remote_service(self, name, local_connect_port):
+        self._current_status.listeners[name] = Listener(name, local_connect_port, True)
+        self._modify_status()
+
+# channel-id is randomly/etc assigned
+# each channel-id is associated with precisely one 'service' (formerly "listener-id")
+    def bytes_in(self, channel_id, num):
+        self._current_status.subchannels[channel_id].i.insert(0, (num, self._time_provider()))
+        self._modify_status()
+        self._emit(BytesIn(channel_id, num))
+
+    def bytes_out(self, channel_id, num):
+        self._current_status.subchannels[channel_id].o.insert(0, (num, self._time_provider()))
+        self._modify_status()
+        self._emit(BytesOut(channel_id, num))
+
+    def incoming_connection(self, service_name, channel_id):
+        self._current_status.subchannels[channel_id] = Subchannel(service_name, channel_id, [], [])
+        self._modify_status()
+        self._emit(IncomingConnection(service_name, channel_id))
+
+    def incoming_done(self, channel_id):
+        #out = humanize.naturalsize(sum([b for b, _ in subchannels[msg.id].o]))
+        #in_ = humanize.naturalsize(sum([b for b, _ in subchannels[msg.id].i]))
+        #print(f"{msg.id} closed: {out} out, {in_} in")
+        del self._current_status.subchannels[channel_id]
+        self._modify_status()
+        self._emit(IncomingDone(channel_id))
+
+    def incoming_lost(self, channel_id, reason):
+        del self._current_status.subchannels[channel_id]
+        self._modify_status()
+        self._emit(IncomingLost(channel_id, reason))
+
+    def outgoing_connection(self, service_id, channel_id):
+        self._current_status.subchannels[channel_id] = Subchannel(service_id, channel_id, [], [])
+        self._modify_status()
+        self._emit(OutgoingConnection(service_id, channel_id))
+
+    def outgoing_done(self, channel_id):
+        # if there was an "other side initiated" error (e.g. "can't connect") then
+        #P we get both an "outgoing_lost()" and then an "outgoing_done()"...
+        try:
+            del self._current_status.subchannels[channel_id]
+        except KeyError:
+            pass
+        else:
+            self._modify_status()
+            self._emit(OutgoingDone(channel_id))
+
+    def outgoing_lost(self, channel_id, reason):
+        del self._current_status.subchannels[channel_id]
+        self._modify_status()
+        self._emit(OutgoingLost(channel_id, reason))

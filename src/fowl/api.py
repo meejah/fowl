@@ -22,6 +22,7 @@ from wormhole.wormhole import IDeferredWormhole
 
 from .observer import When
 from ._proto import FowlSubprotocolListener, FowlCommandsListener, _SendFowlCommand, _pack_netstring, FowlNearToFar, LocalServer
+from .status import _StatusTracker
 
 
 def create_coop(reactor, wormhole):
@@ -240,6 +241,21 @@ class _FowlCoop:
         self._when_dilated = When()
         self._when_roosted = dict()  # maps "unique-name" to When() instances
 
+        self._status_tracker = _StatusTracker()
+
+    # XXX status listeners? probably makes more sense from "python
+    # Twisted API" sense than the "Messages" objects -- although
+    # though are good for something still i think
+    #
+    # ...so then does "status" have "an api", and the result is that
+    # _it_ emits messages to listeners and updates "it's internal
+    # status"?
+    #
+    # like, really we'd like "the status" to be @frozen and some kind
+    # of like "status tracker" thing is what self._status is here and
+    # it "evolve()s the @frozen status" and then sends it out to
+    # listeners...
+
     async def dilate(self, **kwargs):
         """
         Must be called precisely once.
@@ -253,10 +269,10 @@ class _FowlCoop:
         # "dilated" is a DilatedWormhole instance
 
         await dilated.listener_for("fowl").listen(
-            FowlSubprotocolListener(self._reactor, self)
+            FowlSubprotocolListener(self._reactor, self, self._status_tracker)
         )
         await dilated.listener_for("fowl-commands").listen(
-            FowlCommandsListener(self._reactor, self)
+            FowlCommandsListener(self._reactor, self, self._status_tracker)
         )
         return dilated
 
@@ -339,6 +355,7 @@ class _FowlCoop:
         if local_listen_port is None:
             local_listen_port = allocate_tcp_port()
         print("awaiting dilation", local_listen_port)
+        self._status_tracker.added_local_service(unique_name, local_listen_port, desired_remote_port)
         await self._when_dilated.when_triggered()
         print("ready to fledge")
         ep = self._dilated.connector_for("fowl-commands")

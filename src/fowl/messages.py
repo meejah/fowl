@@ -169,9 +169,8 @@ class OutgoingConnection(FowlOutputMessage):
     Something has connected to one of our listeners (and we are making
     an outgoing subchannel to the other peer).
     """
-    id: int
-    endpoint: str  # connection to here on far side
-    listener_id: str  # which listener this is from
+    service_name: str
+    channel_id: str
 
 
 @frozen
@@ -179,7 +178,7 @@ class OutgoingLost(FowlOutputMessage):
     """
     We have lost one of our connections
     """
-    id: int
+    service_name: str
     reason: str
 
 
@@ -188,7 +187,7 @@ class OutgoingDone(FowlOutputMessage):
     """
     We have lost one of our connections
     """
-    id: int
+    service_name: str
 
 
 @frozen
@@ -196,9 +195,8 @@ class IncomingConnection(FowlOutputMessage):
     """
     The other side is requesting we open a connection
     """
-    id: int
-    endpoint: str
-    listener_id: str
+    service_name: str
+    channel_id: str
 
 
 @frozen

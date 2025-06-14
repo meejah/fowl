@@ -54,24 +54,13 @@ class FowlDaemon:
     m = automat.MethodicalMachine()
     set_trace = m._setTrace
 
-    def __init__(self, config, message_handler, command_handler):
+    def __init__(self, config, fowl_status_tracker, command_handler):
         self._config = config
         self._messages = []  # pending plaintext messages to peer
         self._verifier = None
         self._versions = None
-        self._message_out = message_handler
+        self._status_tracker = fowl_status_tracker
         self._command_out = command_handler
-
-    def _emit_message(self, msg):
-        """
-        Internal helper to pass a message to our external message handler
-        (and do something useful on error)
-        """
-        try:
-            self._message_out(msg)
-        except Exception as e:
-            print(f"Error in user code sending {msg}: {e}")
-            print(type(e), e)
 
     def _emit_command(self, msg):
         """
@@ -178,21 +167,22 @@ class FowlDaemon:
 
     @m.output()
     def emit_code_allocated(self, code):
-        self._emit_message(CodeAllocated(code))
+        self._status_tracker.code_allocated(code)
 
     @m.output()
     def emit_peer_connected(self, verifier, peer_features):
         """
         """
-        self._emit_message(
-            PeerConnected(
-                binascii.hexlify(verifier).decode("utf8"),
-                peer_features,
-            )
+        self._status_tracker.peer_connected(
+            binascii.hexlify(verifier).decode("utf8"),
+            peer_features,
         )
 
     @m.output()
     def emit_send_message(self, plaintext):
+        # this stuff feels weird and wrong, the way we've had to
+        # thread "send/got message" through a bunch of layers
+        print("FIXME send message")
         self._emit_message(
             SendMessageToPeer(
                 plaintext,
@@ -201,6 +191,7 @@ class FowlDaemon:
 
     @m.output()
     def emit_got_message(self, plaintext):
+        print("FIXME got message")
         self._emit_message(
             GotMessageFromPeer(
                 plaintext,
@@ -209,9 +200,7 @@ class FowlDaemon:
 
     @m.output()
     def emit_welcome(self, hello):
-        self._emit_message(
-            Welcome(self._config.relay_url, hello)
-        )
+        self._status_tracker.welcomed(self._config.relay_url, hello)
 
     @m.output()
     def verify_version(self, verifier, peer_features):

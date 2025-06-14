@@ -71,23 +71,30 @@ def render_status(st: FowlStatus) -> Table:  # Panel? seomthing else
         if data.remote:
             t.add_row(
                 Text(""),
-                Text("{} <--".format(data.connect.split(":")[2]), justify="right"),
-                Text("{} 🧙".format(data.listen.split(":")[1])),
+                Text("{} <--".format(data.service_name), justify="right"),
+                Text("{} 🧙".format(data.local_port)),
             )
         else:
             t.add_row(
-                Text("🧙 {}".format(data.listen.split(":")[1])),
-                Text("--> {}".format(data.connect.split(":")[2])),
+                Text("🧙 {}".format(data.local_port)),
+                Text("--> {}".format(data.service_name)),
                 Text(""),
             )
 
     for id_, data in st.subchannels.items():
-        if data.listener_id in st.listeners:
-            local = Text(st.listeners[data.listener_id].listen.split(":")[1] + "\nlisten")
-            remote = Text("connect\n" + str(data.endpoint.split(":")[-1]))
+        if data.service_name in st.listeners:
+            if st.listeners[data.service_name].remote:
+                local = Text("ᯤ")
+                remote = Text("")
+            else:
+                if st.listeners[data.service_name].remote_port:
+                    remote = Text("connect\n" + str(st.listeners[data.service_name].remote_port))
+                else:
+                    remote = Text("connect")
+                local = Text("ᯤ")
         else:
-            remote = Text("remote\npeer  🧙")
-            local = Text("connect\n" + str(data.endpoint.split(":")[-1]))
+            remote = local = Text("")
+            local = Text("ᯤ")
         bw = render_bw(data)
         t.add_row(local, bw, remote)
 
