@@ -239,6 +239,11 @@ class PleaseCloseWormhole(FowlInternalControl):
 
 
 @frozen
+class Ready(FowlInternalControl):
+    pass
+
+
+@frozen
 class Pong(FowlOutputMessage):
     ping_id: int
     time_of_flight: float

@@ -68,24 +68,17 @@ def render_status(st: FowlStatus) -> Table:  # Panel? seomthing else
         status_local.plain = random.choice(chicken.default)
 
     for id_, data in st.listeners.items():
-        if data.remote:
-            t.add_row(
-                Text(""),
-                Text("{} <--".format(data.service_name), justify="right"),
-                Text("{} 🧙".format(data.local_port)),
-            )
-        else:
-            t.add_row(
-                Text("🧙 {}".format(data.local_port)),
-                Text("--> {}".format(data.service_name)),
-                Text(""),
-            )
+        t.add_row(
+            Text("{} {}".format('🧙' if data.remote else ' ', data.local_port)),
+            Text("--> {}".format(data.service_name)),
+            Text("{}".format(' ' if data.remote else '🧙'), justify="center"),
+        )
 
     for id_, data in st.subchannels.items():
         if data.service_name in st.listeners:
             if st.listeners[data.service_name].remote:
-                local = Text("ᯤ", justify="center")
-                remote = Text("")
+                remote = Text("ᯤ", justify="center")
+                local = Text("")
             else:
                 if st.listeners[data.service_name].remote_port:
                     remote = Text("connect\n" + str(st.listeners[data.service_name].remote_port))

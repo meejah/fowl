@@ -148,18 +148,6 @@ class FowlDaemon:
         """
 
     @m.input()
-    def got_message(self, plaintext):
-        """
-        We received a message from our peer
-        """
-
-    @m.input()
-    def send_message(self, plaintext):
-        """
-        Pass a new message to our peer
-        """
-
-    @m.input()
     def shutdown(self, result):
         """
         The wormhole has closed
@@ -177,26 +165,8 @@ class FowlDaemon:
             binascii.hexlify(verifier).decode("utf8"),
             peer_features,
         )
-
-    @m.output()
-    def emit_send_message(self, plaintext):
-        # this stuff feels weird and wrong, the way we've had to
-        # thread "send/got message" through a bunch of layers
-        print("FIXME send message")
-        self._emit_message(
-            SendMessageToPeer(
-                plaintext,
-            )
-        )
-
-    @m.output()
-    def emit_got_message(self, plaintext):
-        print("FIXME got message")
-        self._emit_message(
-            GotMessageFromPeer(
-                plaintext,
-            )
-        )
+        from .messages import Ready
+        self._command_out(Ready())
 
     @m.output()
     def emit_welcome(self, hello):
@@ -212,27 +182,12 @@ class FowlDaemon:
         # or something and then trigger different behavior depending
         # what our peer supports .. for now there's only one thing,
         # and it MUST be supported
+        print("got features", features)
         from ._proto import SUPPORTED_FEATURES  # FIXME
         if set(features) == set(SUPPORTED_FEATURES):
             self.version_ok(verifier, peer_features)
         else:
             self.version_incompatible(verifier, peer_features)
-
-    @m.output()
-    def queue_message(self, plaintext):
-        self._message_queue.append(plaintext)
-
-    @m.output()
-    def send_queued_messages(self):
-        to_send, self._messages = self._messages, []
-        for m in to_send:
-            self.emit_send_message(m)
-
-    @m.output()
-    def emit_shutdown(self, result):
-        self._emit_message(
-            WormholeClosed(result)
-        )
 
     @m.output()
     def emit_close_wormhole(self):
@@ -246,11 +201,6 @@ class FowlDaemon:
         outputs=[emit_code_allocated],
     )
     waiting_code.upon(
-        send_message,
-        enter=waiting_code,
-        outputs=[queue_message]
-    )
-    waiting_code.upon(
         got_welcome,
         enter=waiting_code,
         outputs=[emit_welcome]
@@ -258,23 +208,13 @@ class FowlDaemon:
     waiting_code.upon(
         shutdown,
         enter=closed,
-        outputs=[emit_shutdown]
+        outputs=[]
     )
 
-    waiting_peer.upon(
-        send_message,
-        enter=waiting_peer,
-        outputs=[queue_message]
-    )
     waiting_peer.upon(
         got_welcome,
         enter=waiting_peer,
         outputs=[emit_welcome]
-    )
-    waiting_peer.upon(
-        got_message,
-        enter=waiting_peer,
-        outputs=[emit_got_message]
     )
     waiting_peer.upon(
         peer_connected,
@@ -284,7 +224,7 @@ class FowlDaemon:
     verifying_version.upon(
         version_ok,
         enter=connected,
-        outputs=[emit_peer_connected, send_queued_messages],
+        outputs=[emit_peer_connected],
     )
     verifying_version.upon(
         version_incompatible,
@@ -294,29 +234,28 @@ class FowlDaemon:
     waiting_peer.upon(
         shutdown,
         enter=closed,
-        outputs=[emit_shutdown]
+        outputs=[]
     )
 
-    connected.upon(
-        send_message,
-        enter=connected,
-        outputs=[emit_send_message]
-    )
-    connected.upon(
-        got_message,
-        enter=connected,
-        outputs=[emit_got_message]
-    )
     connected.upon(
         shutdown,
         enter=closed,
-        outputs=[emit_shutdown]
+        outputs=[]
     )
-
+    # XXX need to tie in "requests from peer" and "local requests" to
+    # the state-machine ... right? e.g. RemoteListener and
+    # LocalListener commands aren't used ... we queue them up until
+    # connected, then emit the right shit after connected + verified
+    # etc...
+    # connected.upon(
+    #     request_listener,
+    #     enter=connected,
+    #     outputs=[],
+    # )
     closing.upon(
         shutdown,
         enter=closed,
-        outputs=[emit_shutdown]
+        outputs=[]
     )
     # XXX there's no notification to go from "connected" to
     # "waiting_peer" -- because Dilation will silently "do the right

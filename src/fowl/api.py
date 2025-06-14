@@ -238,7 +238,7 @@ class _FowlCoop:
         self._roosts = dict()  # name -> FowlChannelDaemonThere: permitted / listening services
 
         self._dilated = None  # DilatedWormhole once we're dilated
-        self._when_dilated = When()
+        self._when_ready = When()
         self._when_roosted = dict()  # maps "unique-name" to When() instances
 
         self._status_tracker = _StatusTracker()
@@ -356,7 +356,8 @@ class _FowlCoop:
             local_listen_port = allocate_tcp_port()
         print("awaiting dilation", local_listen_port)
         self._status_tracker.added_local_service(unique_name, local_listen_port, desired_remote_port)
-        await self._when_dilated.when_triggered()
+        await self._when_ready.when_triggered()
+        # XXX needs to be AFTER verifying-versions ... e.g. tie into state-machine?
         print("ready to fledge")
         ep = self._dilated.connector_for("fowl-commands")
         fact = Factory.forProtocol(_SendFowlCommand)
@@ -460,7 +461,10 @@ class _FowlCoop:
                 "dilated() may only be called once per next"
             )
         self._dilated = dilation
-        self._when_dilated.trigger(self._reactor, self._dilated)
+
+    def _set_ready(self) -> None:
+        assert self._dilated is not None, "Internal error: _dilated must be available by now"
+        self._when_ready.trigger(self._reactor, self._dilated)
 
 
 # originally from Tahoe-LAFS

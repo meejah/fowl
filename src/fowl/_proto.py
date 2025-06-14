@@ -305,12 +305,6 @@ async def frontend_accept_or_invite(reactor, config):
     ### XXX use PleaseCloseWormhole, approximately
     reactor.addSystemEventTrigger("before", "shutdown", lambda: ensureDeferred(fowl_wh.disconnect_session()))
 
-    def we_are_closing():  # can't assign in a lambda
-        print("Closing...")
-        # XXX FIXME no...method on status or something else
-        status_tracker._we_closing = True
-    reactor.addSystemEventTrigger("before", "shutdown", we_are_closing)
-
     if config.code is not None:
         fowl_wh.command(
             SetCode(config.code)
@@ -328,6 +322,15 @@ async def frontend_accept_or_invite(reactor, config):
     assert coop is not None, "wat"
 
     services = []
+    # XXX no, tie this into the state-machine -- pass these commands
+    # into the state-machine, and then have them emit like
+    # "PleaseFledge" or similar at the right moment?
+    #
+    # OR have the state-machine "owned" by Coop and the "connected"
+    # signal only triggers once above conditions (so then it's like
+    # now, where you call "fledge()" whenever, but it does
+    # ._when_ready() interally so maybe all we need is that
+    # "._when_ready.trigger()" only happens via the Daemon machine?
     for command in config.commands:
         print("CMD", command)
         if isinstance(command, RemoteListener):
@@ -1253,6 +1256,7 @@ class FowlWormhole:
         self._got_welcome = When()  # we received the Welcome from the server
 
         self._we_sent_closing = False
+        self._did_disconnect = False
         self._got_closing_from_peer_d = Deferred()
         self._peer_connected = False
         self._dilated = None  # DilatedWormhole instance from wh.dilate()
@@ -1321,17 +1325,14 @@ class FowlWormhole:
                 self._peer_connected = True
                 return arg
 
-        # hook up "incoming message" to input
-        def got_message(plaintext):
-            # XXX should get rid of GotMessageFromPeer probably?
-            # user-code can't / shouldn't use that, it's only really
-            # for "closing" -- regardless, should *at least* "eat" the
-            # closing message here ...
+        # hook up "incoming message" to input; this is async
+        # tail-recursion basically -- we keep asking for "the next
+        # message" from the wormhole. These kinds of messages come via
+        # the Mailbox!
 
-            # XXX this all should maybe go in "daemon"..? the "user
-            # interaction" stuff is hard then -- but wouldn't we need
-            # to make some kind of API for that regardless? (e.g. if
-            # it was in magic-wormhole?)
+        # (this is basically a prototype of what "could / should" be
+        # in Wormhole itself for graceful shutdown)
+        def got_message(plaintext):
             try:
                 js = json.loads(plaintext)
                 if "closing" in js:
@@ -1339,9 +1340,9 @@ class FowlWormhole:
                     if not self._we_sent_closing:
                         d = ensureDeferred(self.disconnect_session())
                         d.addErrback(self._handle_error)
-            except Exception:
+            except Exception as e:
+                print("a bad thing?", e)
                 pass
-            self._daemon.got_message(plaintext)
             ensureDeferred(self._wormhole.get_message()).addCallback(
                 got_message,
             ).addErrback(self._handle_error)
@@ -1349,7 +1350,9 @@ class FowlWormhole:
             got_message,
         ).addErrback(self._handle_error)
 
-        # hook up wormhole closed to input
+        # hook up wormhole closed to input -- this can be for a
+        # variety of reasons (and note we're cheating a bit here and
+        # hooking this as both the callback and errback)
         def was_closed(why):
             if isinstance(why, str):
                 reason = why
@@ -1361,6 +1364,7 @@ class FowlWormhole:
                 reason = str(why)
             self._done.trigger(self._reactor, reason)
             self._daemon.shutdown(reason)
+            self._coop._status_tracker.wormhole_closed(reason)
         ensureDeferred(self._wormhole._closed_observer.when_fired()).addBoth(was_closed)
 
     # public API methods
@@ -1394,34 +1398,52 @@ class FowlWormhole:
         this is received, the wormhole may be closed and the program
         exits.
         """
-        if self._peer_connected:
-            # before we emit "closing", we must ensure we won't start
-            # any new channels.
-            self._peer_connected = False  # XXX double-duty as "we are shutting down" bool?
-            await self._stop_listening()
-            # XXX probably do this via req/resp .. or at least don't
-            # plumb it through FowlDaemon
-            self._wormhole.send_message(json.dumps({
-                "closing": self._wormhole._boss._next_tx_phase,
-            }).encode("utf8"))
-            self._we_sent_closing = True
+        # FIXME: all these messages should probably be via 'status' or
+        # similar, in case we're using all this as a library.
 
-            # this can take "forever" if the other side isn't
-            # responding at all, so we want to just hit the "race"
-            # codepath anyway
-            _ = ensureDeferred(self._close_active_connections())
+        if self._did_disconnect:
+            return
+        self._did_disconnect = True
 
-            async def wait_for_user():
+        # before we emit "closing", we must ensure we won't start
+        # any new channels.
+        await self._stop_listening()
+        # XXX probably do this via req/resp .. or at least don't
+        # plumb it through FowlDaemon
+        self._wormhole.send_message(json.dumps({
+            "closing": self._wormhole._boss._next_tx_phase,
+        }).encode("utf8"))
+        self._we_sent_closing = True
 
-                def user_got_bored_waiting(*args):
-                    # add back original handler, probably Twisted's
-                    signal.signal(signal.SIGINT, old_handler)
-                    self._got_closing_from_peer_d.callback(-1)
-                old_handler = signal.signal(signal.SIGINT, user_got_bored_waiting)
+        # this can take "forever" if the other side isn't
+        # responding at all, so we want to just hit the "race"
+        # codepath anyway
+        _ = ensureDeferred(self._close_active_connections())
 
-                start = self._reactor.seconds()
-                delay = 0.5
+        async def wait_for_user():
 
+            def user_got_bored_waiting(*args):
+                """
+                If the user presses ctrl-C again while we're waiting for the peer
+                message, we shut down right away.
+                """
+                # add back original handler, probably Twisted's
+                signal.signal(signal.SIGINT, old_handler)
+                self._got_closing_from_peer_d.callback(-1)
+            old_handler = signal.signal(signal.SIGINT, user_got_bored_waiting)
+
+            start = self._reactor.seconds()
+            delay = 0.5
+
+            # we have sent our 'closing' message. two cases:
+            #
+            # 1: if we never connected to our peer, there's no
+            # point waiting for them.
+            #
+            # 2: if we _did_ ever connect to our peer we wait for
+            # a return closing message, printing messages (should
+            # be via status?) so the user isn't bored.
+            if self._peer_connected:
                 while not self._got_closing_from_peer_d.called:
                     await deferLater(reactor, delay, lambda: None)
                     delay = delay * 2
@@ -1430,23 +1452,25 @@ class FowlWormhole:
                     delta = humanize.naturaldelta(reactor.seconds() - start)
                     print(f'Waited {delta} for "closing" message from peer')
 
-            which, result = await race([
-                self._got_closing_from_peer_d,
-                ensureDeferred(wait_for_user()),
-            ])
-            if which == 0:
-                if result >= 0:
-                    print(f"Clean close; peer saw phase={result}")
-                else:
-                    print("Never got closing message from peer")
+        which, result = await race([
+            self._got_closing_from_peer_d,
+            ensureDeferred(wait_for_user()),
+        ])
+        if which == 0:
+            # XXX result can be None here if we never hit 'ready'
+            # notification, needs proper test ..
+            if result is not None and result >= 0:
+                print(f"Clean close; peer saw phase={result}")
+            else:
+                print("Never got closing message from peer")
 
         try:
             await self.close_wormhole()
         except wormhole_errors.LonelyError:
             # maybe just say nothing? why does the user care about
             # this? (they probably hit ctrl-c anyway, how else can you get here?)
-            print("Wormhole closed without peer")
-        print("done")
+            print("Wormhole closed without peer.")
+        print("Done.")
 
     async def close_wormhole(self):
         """
@@ -1791,9 +1815,18 @@ async def create_fowl(config, fowl_status_tracker):
         w.debug_set_trace(kind, which="B N M S O K SK R RC L C T", file=config.debug_file)
 
     def command_message(msg):
+        # XXX so if we try to shut down due to incompatible versions,
+        # we hit this .. but this is insufficient, since now both
+        # sides will be "waiting for message from peer" since they DID
+        # connect via wormhole ... although maybe in this case we want
+        # to just unilaterally shut down? because who knows?
+        from .messages import Ready
         if isinstance(msg, PleaseCloseWormhole):
             d = ensureDeferred(fowl.close_wormhole())
             d.addErrback(lambda f: print(f"Error closing: {f.value}"))
+        elif isinstance(msg, Ready):
+            print("READY")
+            fowl._coop._set_ready()
         else:
             print(msg)
 
