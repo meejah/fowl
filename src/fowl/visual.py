@@ -84,17 +84,17 @@ def render_status(st: FowlStatus) -> Table:  # Panel? seomthing else
     for id_, data in st.subchannels.items():
         if data.service_name in st.listeners:
             if st.listeners[data.service_name].remote:
-                local = Text("ᯤ")
+                local = Text("ᯤ", justify="center")
                 remote = Text("")
             else:
                 if st.listeners[data.service_name].remote_port:
                     remote = Text("connect\n" + str(st.listeners[data.service_name].remote_port))
                 else:
                     remote = Text("connect")
-                local = Text("ᯤ")
+                local = Text("ᯤ", justify="center")
         else:
-            remote = local = Text("")
-            local = Text("ᯤ")
+            remote = local = Text("???", justify="center")
+            local = Text("???", justify="center")
         bw = render_bw(data)
         t.add_row(local, bw, remote)
 

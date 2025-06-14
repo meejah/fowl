@@ -323,7 +323,7 @@ async def frontend_accept_or_invite(reactor, config):
     # XXX need to unify a bunch of this ... but for now, steal the
     # wormhole out of FowlWormhole
     from .api import _LocalListeningEndpoint
-    await fowl_wh.when_connected()
+##    await fowl_wh.when_connected()
     coop = fowl_wh._coop
     assert coop is not None, "wat"
 
@@ -343,17 +343,19 @@ async def frontend_accept_or_invite(reactor, config):
             services.append(
                 ensureDeferred(coop.when_roosted(command.name))
             )
-    print(f"awaiting {len(services)} services")
-    from .api import FowlChannelDaemonThere
-    results = await DeferredList(services)
-    for ok, result in results:
-        if ok:
-            if isinstance(result, FowlChannelDaemonThere):
-                print(f"service started on other side, connect here: {result.connect_port}")
+
+    if False:
+        print(f"awaiting {len(services)} services")
+        from .api import FowlChannelDaemonThere
+        results = await DeferredList(services)
+        for ok, result in results:
+            if ok:
+                if isinstance(result, FowlChannelDaemonThere):
+                    print(f"service started on other side, connect here: {result.connect_port}")
+                else:
+                    print(f"Start daemon here, on port: {result.listen_port}")
             else:
-                print(f"Start daemon here, on port: {result.listen_port}")
-        else:
-            print(f"service failed: {result}")
+                print(f"service failed: {result}")
 
     done_d = fowl_wh.when_done()
 
@@ -1255,6 +1257,8 @@ class FowlWormhole:
         self._peer_connected = False
         self._dilated = None  # DilatedWormhole instance from wh.dilate()
         self._coop = None
+        from .api import create_coop
+        self._coop = create_coop(reactor, self._wormhole)
 
     # XXX wants to be an IService?
     async def stop(self):
@@ -1527,8 +1531,6 @@ class FowlWormhole:
 
     async def _do_dilate(self):
         # XXX move FowlWormhole do its own module so imports aren't broken
-        from .api import create_coop
-        self._coop = create_coop(reactor, self._wormhole)
         dilated = self._dilated = await self._coop.dilate()
         # the "FowlCoop.dilate" method already listens for commands,
         # incoming connections
