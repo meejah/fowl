@@ -1,5 +1,6 @@
 from typing import Optional
 from attrs import frozen
+from ipaddress import IPv4Address, IPv6Address
 
 
 class FowlOutputMessage:
@@ -97,22 +98,25 @@ class DangerDisablePermissionCheck(FowlCommandMessage):
 @frozen
 class LocalListener(FowlCommandMessage):
     """
-    We wish to open a local listener.
+    We wish to open a local listener. (That means the daemon-style
+    software is on the other side)
     """
-    # XXX roost()
     name: str  # unique name for this service
-    listen_port: Optional[int] = None  # port to listen locally (or select randomly)
+    local_listen_port: Optional[int] = None  # port to listen locally (or select randomly)
+    remote_connect_port: Optional[int] = None
+    bind_interface: Optional[IPv4Address | IPv6Address] = None
 
 
 @frozen
 class RemoteListener(FowlCommandMessage):
     """
-    We wish to open a listener on the peer.
+    We wish to open a listener on the peer. (That is, the daemon-style
+    software will run here)
     """
-    # XXX fledge()
     name: str  # Unique name for this service
-    listen_port: Optional[int] = None  # port to listen on (or let peer select)
-    connect_port: Optional[int] = None  # port to connect here on
+    remote_listen_port: Optional[int] = None  # port to listen on (or let peer select)
+    local_connect_port: Optional[int] = None  # port to connect here on
+    connect_address: Optional[IPv4Address|IPv6Address] = None
 
 
 @frozen

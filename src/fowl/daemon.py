@@ -54,8 +54,7 @@ class FowlDaemon:
     m = automat.MethodicalMachine()
     set_trace = m._setTrace
 
-    def __init__(self, config, fowl_status_tracker, command_handler):
-        self._config = config
+    def __init__(self, fowl_status_tracker, command_handler):
         self._messages = []  # pending plaintext messages to peer
         self._verifier = None
         self._versions = None
@@ -161,6 +160,7 @@ class FowlDaemon:
     def emit_peer_connected(self, verifier, peer_features):
         """
         """
+        print("emit peer conected", verifier)
         self._status_tracker.peer_connected(
             binascii.hexlify(verifier).decode("utf8"),
             peer_features,
@@ -170,7 +170,7 @@ class FowlDaemon:
 
     @m.output()
     def emit_welcome(self, hello):
-        self._status_tracker.welcomed(self._config.relay_url, hello)
+        self._status_tracker.welcomed(hello)
 
     @m.output()
     def verify_version(self, verifier, peer_features):

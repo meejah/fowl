@@ -5,6 +5,7 @@ from attr import define
 from typing import Optional, Callable, Any
 
 import msgpack
+from ipaddress import IPv4Address, IPv6Address
 from twisted.internet.interfaces import IStreamClientEndpoint, IStreamServerEndpoint, IListeningPort, IReactorSocket, IReactorCore
 from twisted.internet.endpoints import TCP4ServerEndpoint, TCP6ServerEndpoint
 from twisted.internet.endpoints import TCP4ClientEndpoint, TCP6ClientEndpoint
@@ -56,6 +57,7 @@ class FowlChannelDaemonThere:
     """
     unique_name: str  # (must be UNIQUE across all of this Fowl session)
     endpoint: IStreamServerEndpoint  # where we're listening locally
+    desired_local_port: Optional[int] = None
     port: Any = None
 
     @property
@@ -95,9 +97,10 @@ class _LocalListeningEndpoint:
     If `desired_port` is set, we use that. It is an error if the port
     is already used by the time we try to listen.
     """
-    def __init__(self, reactor, desired_port):
+    def __init__(self, reactor, desired_port, bind=None):
         self._reactor = reactor
         self._desired_port = desired_port
+        self._bind = bind
 
     def _set_desired_port(self, value):
         """
@@ -121,7 +124,7 @@ class _LocalListeningEndpoint:
                 # no longer subject to any future EADDRINUSE problems.
                 s = socket.socket()
                 try:
-                    s.bind(('', 0))
+                    s.bind(('' if self._bind is None else self._bind, 0))
                     portnum = s.getsockname()[1]
                     s.listen(1)
                     # File descriptors are a relatively scarce resource.  The
@@ -156,7 +159,11 @@ class _LocalListeningEndpoint:
                 # and when we call ".listen()", something else
                 # (e.g. another process) could use this port.
                 portnum = allocate_tcp_port()
-            endpoint = TCP4ServerEndpoint(self._reactor, portnum, interface="localhost")
+            endpoint = TCP4ServerEndpoint(
+                self._reactor,
+                portnum,
+                interface="localhost" if self._bind is None else self._bind,
+            )
         port = await endpoint.listen(factory)
         return port
 
@@ -297,6 +304,7 @@ class _FowlCoop:
         # XXX okay so if we care what the 'other side' listens on, it HAS to be started from there?
         # (why might we? what would that even ... mean / do?)
         # XXX IPv4 vs IPv6?
+        # XXX bind/connect addresses?
         if local_endpoint is None:
             local_endpoint = _LocalListeningEndpoint(self._reactor, None)
         channel = FowlChannelDaemonThere(
@@ -326,8 +334,9 @@ class _FowlCoop:
     async def fledge(
             self,
             unique_name: str,
-            local_listen_port: Optional[int]=None,
-            desired_remote_port: Optional[int]=None,
+            local_connect_port: Optional[int]=None,
+            remote_listen_port: Optional[int]=None,
+            local_connect_addr: Optional[IPv4Address | IPv6Address]=None,
     ) -> FowlChannelDaemonHere:
         """
         Thinking about networking as 'server' or 'client', this method
@@ -337,25 +346,34 @@ class _FowlCoop:
 
         :param unique_name: must be unique across this Fowl session
 
-        :param local_listen_port: where our Daemon will be
+        :param local_connect_port: where our Daemon will be
             listening. If not provided, an unused port will be found.
 
-        :param desired_remote_port: for some protocols, it matters
+        :param remote_listen_portport: for some protocols, it matters
             what port the far-side is actually listening on (e.g. for
             Web endpoints). If this is provided, it requests this port
             on the peer. Only use this if your protocol really does
             require a particular listening port on the far-side peer
             -- that is, if one selected by the other peer cannot work
             for some reason.
+
+        :param local_connect_addr: advanced use-cases my wish to
+            specify non-localhost addresses to connect to -- this
+            means we aren't _directly_ running the server-style
+            software, but we know where that is. For example, one
+            could use 192.168.2.3 or similar to function as a
+            "jumpbox", forwarding traffic to another local machine.
         """
         if unique_name in self._roosts:
             raise ValueError(
                 f"fledge({unique_name}) when we already have a roost for that name"
             )
-        if local_listen_port is None:
-            local_listen_port = allocate_tcp_port()
-        print("awaiting dilation", local_listen_port)
-        self._status_tracker.added_local_service(unique_name, local_listen_port, desired_remote_port)
+        if local_connect_port is None:
+            local_connect_port = allocate_tcp_port()
+        print("awaiting dilation", local_connect_port)
+        #XXX add connect address to added_local_service()
+        self._status_tracker.added_local_service(unique_name, local_connect_port, remote_listen_port)
+        print("waiting for when_ready")
         await self._when_ready.when_triggered()
         # XXX needs to be AFTER verifying-versions ... e.g. tie into state-machine?
         print("ready to fledge")
@@ -365,14 +383,14 @@ class _FowlCoop:
         proto = await ep.connect(fact)
         await proto.when_connected()
 
-        print("doing it", unique_name, desired_remote_port)
+        print("doing it", unique_name, remote_listen_port)
         #XXX should be method on _SendFowlCommand
         proto.transport.write(
             _pack_netstring(
                     msgpack.packb({
                         "kind": "request-listener",
                         "unique-name": unique_name,
-                        "listen-port": desired_remote_port,
+                        "listen-port": remote_listen_port,
                     })
             )
         )
@@ -386,8 +404,13 @@ class _FowlCoop:
             )
         self._services[unique_name] = FowlChannelDaemonHere(
             unique_name,
-            endpoint=TCP4ClientEndpoint(self._reactor, "localhost", local_listen_port),
+            endpoint=TCP4ClientEndpoint(
+                self._reactor,
+                "localhost" if local_connect_addr is None else local_connect_addr,
+                local_connect_port,
+            ),
         )
+        print("ZINGA", local_connect_port, local_connect_addr)
         return self._services[unique_name]
 
     def subchannel_connector(self):
@@ -399,6 +422,7 @@ class _FowlCoop:
         indicated service-name.
         """
         ch = self._services[unique_name]
+        print("localconnectendpoint", unique_name, ch.endpoint)
         return ch.endpoint
 
     def listen_endpoint(self, name: str) -> IStreamServerEndpoint:

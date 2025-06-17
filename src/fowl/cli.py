@@ -1,6 +1,10 @@
 
 import click
 import pkg_resources
+import attrs
+from typing import Optional
+
+from ipaddress import IPv4Address, IPv6Address
 
 from twisted.internet.task import react
 from twisted.internet.defer import ensureDeferred
@@ -107,27 +111,38 @@ def fowld(ctx, ip_privacy, mailbox, debug):
     help="Output wormhole state-machine transitions to the given file",
     type=click.File("w", encoding="utf8"),
 )
+#XXX big change, no longer supports https://github.com/meejah/fowl/issues/37
+# -> maybe keep these options, and do the 'name'-based ones as a new thing (--daemon-here or --daemon-there)
+# -> maybe do name-based still, but also allow interface (for forwarding...so only on the side that does connect)
+#
+# NOTE also original usage of "--local" was that the 'fake listener' was/is here!
+# (maybe alias --daemon-there / --daemon-here to --local / --remote? --daemon-there == --local (old-style usage))
 @click.option(
     "--local", "-L",
     multiple=True,
     help=(
-        "We will listen locally, so ask the remote peer to forward connections to us."
-        "The other peer must enable the same service-name. Ports must agree."
+        "We will listen locally, forwarding local connections to the other peer."
+        "That is, the other peer is running the daemon-style software."
+        "The other peer must enable the same service-name."
+        "If a \"remote=\" port is specified, the invocation on the other peer must agree."
         "Therefore, it is best to ONLY choose ports on your side, unless the protocol requires otherwise."
         "If you can avoid choosing at all, a random port is assigned -- this is the most likely to succeed."
+        "(Run a corresponding --remote with the same service-name on the other peer)"
     ),
-    metavar="service-name:[local-connect-port]:[remote-listen-port]",
+    metavar="service-name:[local-listen-port]:[remote-connect=port]:[bind=127.0.0.1]",
 )
 @click.option(
     "--remote", "-R",
     multiple=True,
     help=(
-        "Permit the other peer to listen, so we will forward connections from here."
-        "The other peer must enable the same service-name. Ports must agree."
+        "Listen on the other peer, so the server-style software runs here."
+        "The other peer must enable the same service-name."
+        "Ports must agree."
         "Therefore, it is best to ONLY choose ports on your side, unless the protocol requires otherwise."
         "If you can avoid choosing at all, a random port is assigned -- this is the most likely to succeed."
+       "(Run a corresponding --local with the same service-name on the other peer)"
         ),
-    metavar="service-name:[local-listen-port]:[remote-connect-port]",
+    metavar="service-name:[local-connect-port][:remote-listen=port][:connect=127.0.0.1]",
 )
 @click.option(
     "--code-length",
@@ -199,20 +214,20 @@ def fowl(ip_privacy, mailbox, debug, local, remote, code_length, code, readme, i
         return
 
     local_services = [
-        _specifier_to_tuples(cmd)
+        _parse_specifier(cmd)
         for cmd in local
     ]
     remote_services = [
-        _specifier_to_tuples(cmd)
+        _parse_specifier(cmd)
         for cmd in remote
     ]
 
     commands = [
-        RemoteListener(name, listen, connect)
-        for name, listen, connect in local_services
+        spec.to_local()
+        for spec in local_services
     ] + [
-        LocalListener(name, listen)
-        for name, listen, _ in remote_services
+        spec.to_remote()
+        for spec in remote_services
     ]
 
     if not commands:
@@ -245,41 +260,134 @@ def _to_port(arg):
     return arg
 
 
-# XXX FIXME use an @frozen attr, not tuple for returns
-def _specifier_to_tuples(cmd):
+@attrs.frozen
+class RemoteSpecifier:
+    # corresponds to roost()
+    name: str
+    local_connect_port: Optional[int] = None
+    remote_listen_port: Optional[int] = None
+    connect_address: Optional[IPv4Address|IPv6Address] = None
+
+    def to_remote(self):
+        return RemoteListener(
+            self.name,
+            self.local_connect_port,
+            self.remote_listen_port,
+            self.connect_address,
+        )
+
+@attrs.frozen
+class LocalSpecifier:
+    # corresponds to fledge()
+    name: str
+    local_listen_port: Optional[int] = None
+    remote_connect_port: Optional[int] = None
+    bind_interface: Optional[IPv4Address | IPv6Address] = None
+
+    def to_local(self):
+        return LocalListener(
+            self.name,
+            self.local_listen_port,
+            self.remote_connect_port,
+            self.bind_interface,
+        )
+
+@attrs.frozen
+class PlainSpecifier:
+    name: str
+    port: Optional[int] = None
+
+    def to_local(self):
+        return LocalListener(
+            self.name,
+            self.port,
+        )
+
+    def to_remote(self):
+        return RemoteListener(
+            self.name,
+            self.port,
+        )
+
+
+Specifier = LocalSpecifier | RemoteSpecifier | PlainSpecifier
+
+
+def _parse_specifier(cmd: str) -> Specifier:
     """
     Parse a local or remote listen/connect specifiers.
-
-    This always returns a 3-tuple of:
-      - service name
-      - local port (maybe None)
-      - remote port (maybe None)
     """
     if '[' in cmd or ']' in cmd:
         raise RuntimeError("Have not considered IPv6 parsing yet")
 
     colons = cmd.count(':')
-    if colons > 2:
+    if colons > 3:
         raise ValueError(
-            f"Too many colons: {colons} > 2"
+            f"Too many colons: {colons} > 3"
         )
     # we use "port0" and "port1" here because whether it's local /
     # remote and listen or connect depends on whether this was --local
     # or --remote originally -- i.e. only the caller knows
-    if colons == 2:
+    if colons == 3:
+        name, port0, port1, addr = cmd.split(':')
+        port0 = _to_port(port0)
+        if '=' not in port1:
+            raise click.UsageError(
+                'When providing 2nd port, use "remote-connect=" or "local-listen="'
+            )
+        if '=' not in addr:
+            raise click.UsageError(
+                'When providing address, use "bind=" or "connect="'
+            )
+        addrkind, addr = addr.split("=")
+        if not addr.startswith("bind="):
+            raise click.UsageError(
+                'Bind address must start with "bind="'
+            )
+        addr = ip_address(addr[len("bind="):])
+
+        kind, port1 = port1.split("=")
+        port1 = _to_port(port1)
+        if kind == "remote-connect":
+            if addrkind != "bind":
+                raise click.UsageError(
+                    f'"remote-connect=" goes with "bind=" not "{addrkind}="'
+                )
+            return LocalSpecifier(name, port0, port1, addr)
+        elif kind == "remote-listen":
+            if addrkind != "connect":
+                raise click.UsageError(
+                    f'"remote-listen=" goes with "connect=" not "{addrkind}="'
+                )
+            return RemoteSpecifier(name, port0, port1, addr)
+        else:
+            raise click.UsageError(
+                f'Unknown specifier "{kind}="'
+            )
+
+    elif colons == 2:
         name, port0, port1 = cmd.split(':')
         port0 = _to_port(port0)
+
+        kind, port1 = port1.split("=")
         port1 = _to_port(port1)
+        if kind == "remote-connect":
+            return LocalSpecifier(name, port0, port1)
+        elif kind == "remote-listen":
+            return RemoteSpecifier(name, port0, port1)
+        else:
+            raise click.UsageError(
+                f'Unknown specifier "{kind}="'
+            )
+
     elif colons == 1:
         name, port0 = cmd.split(':')
         port0 = _to_port(port0)
-        port1 = None
-    elif colons == 0:
-        name = cmd.strip()
-        port0 = port1 = None
+        return PlainSpecifier(name, port0)
 
-    # XXX ipv6?
-    return (name, port0, port1)
+    # colons == 0:
+    name = cmd.strip()
+    return PlainSpecifier(name)
 
 
 def tui(cfg):

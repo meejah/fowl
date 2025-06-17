@@ -270,6 +270,7 @@ class Connection:
     unique_name: str = "unknown"
 
 
+
 async def frontend_accept_or_invite(reactor, config):
     """
     This runs the core of the default 'fowl' behavior:
@@ -333,41 +334,40 @@ async def frontend_accept_or_invite(reactor, config):
     # "._when_ready.trigger()" only happens via the Daemon machine?
     for command in config.commands:
         print("CMD", command)
-        if isinstance(command, RemoteListener):
-            services.append(
-                ensureDeferred(
-                    coop.fledge(command.name, command.listen_port, command.connect_port)
-                )
+        if isinstance(command, LocalListener):
+            # ARG why do i keep getting this backwards?
+            coop.roost(
+                command.name,
+                _LocalListeningEndpoint(reactor, command.local_listen_port, command.bind_interface),
             )
-        elif isinstance(command, LocalListener):
-            # note, we CANNOT specify remote port -- what would that
-            # even mean, and how to express?
-            coop.roost(command.name, _LocalListeningEndpoint(reactor, command.listen_port))
             services.append(
                 ensureDeferred(coop.when_roosted(command.name))
             )
 
-    if False:
-        print(f"awaiting {len(services)} services")
-        from .api import FowlChannelDaemonThere
-        results = await DeferredList(services)
-        for ok, result in results:
-            if ok:
-                if isinstance(result, FowlChannelDaemonThere):
-                    print(f"service started on other side, connect here: {result.connect_port}")
-                else:
-                    print(f"Start daemon here, on port: {result.listen_port}")
-            else:
-                print(f"service failed: {result}")
+        elif isinstance(command, RemoteListener):
+            # if remote_connect_port is specified .. what does that even mean?
+            # (is this like "the only permission check we'll need?")
+            services.append(
+                ensureDeferred(
+                    coop.fledge(
+                        command.name,
+                        command.local_connect_port,
+                        command.remote_listen_port,
+                        command.connect_address,
+                    )
+                )
+            )
 
+    results = await DeferredList(services)
+    print(results)
     done_d = fowl_wh.when_done()
 
     # debugging: "rich" is decent at showing you stuff printed out,
     # but for reasons unknown to me it doesn't show "unhandled error"
     # from Twisted -- replace "with live:" here with "if 1:" to see
     # more error stuff (but of course no TUI)
-    #if 1:
-    with live:
+    if 1:
+    #with live:
         while not done_d.called:
             await deferLater(reactor, 0.25, lambda: None)
 
@@ -1097,7 +1097,6 @@ class FowlFarToNear(Protocol):
         FIXME
         """
         ep = self.factory.coop.local_connect_endpoint(msg["unique-name"])
-        print("LOCALCONNECT", ep)
         ##ep = self.factory.coop.connect_endpoint(msg["unique-name"])
         ###ep = clientFromString(reactor, msg["local-destination"])
 
@@ -1245,11 +1244,10 @@ class FowlWormhole:
     Co-ordinates between the wormhole, user I/O and the daemon state-machine.
     """
 
-    def __init__(self, reactor, wormhole, daemon, config):
+    def __init__(self, reactor, wormhole, daemon, coop):
         self._reactor = reactor
         self._listening_ports = []
         self._wormhole = wormhole
-        self._config = config
         self._daemon = daemon
         self._done = When() # we have shut down completely
         self._connected = When()  # our Peer has connected
@@ -1260,9 +1258,7 @@ class FowlWormhole:
         self._got_closing_from_peer_d = Deferred()
         self._peer_connected = False
         self._dilated = None  # DilatedWormhole instance from wh.dilate()
-        self._coop = None
-        from .api import create_coop
-        self._coop = create_coop(reactor, self._wormhole)
+        self._coop = coop
 
     # XXX wants to be an IService?
     async def stop(self):
@@ -1832,13 +1828,16 @@ async def create_fowl(config, fowl_status_tracker):
 
     # XXX FIXME hook in "output_wrapper" as a listener on the status_tracker
 
-    sm = FowlDaemon(config, fowl_status_tracker, command_message)
+    sm = FowlDaemon(fowl_status_tracker, command_message)
     w = await wormhole_from_config(reactor, config, fowl_status_tracker.dilation_status)
+
+    from .api import create_coop
+    coop = create_coop(reactor, w)
 
     @sm.set_trace
     def _(start, edge, end):
         print(f"trace: {start} --[ {edge} ]--> {end}")
-    fowl = FowlWormhole(reactor, w, sm, config)
+    fowl = FowlWormhole(reactor, w, sm, coop)
     return fowl
 
 
@@ -2023,6 +2022,7 @@ class FowlCommands(Protocol):
         if msg["kind"] == "request-listener":
             print("REQUEST", msg)
             unique_name = msg["unique-name"]
+            # XXX if _we_ specified a port we need to honour it here ...
             desired_port = msg.get("listen-port", None)
             listen_ep = self.factory.coop._endpoint_for_service(unique_name, desired_port=desired_port)
 
