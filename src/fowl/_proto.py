@@ -318,7 +318,6 @@ async def frontend_accept_or_invite(reactor, config):
 
     # XXX need to unify a bunch of this ... but for now, steal the
     # wormhole out of FowlWormhole
-    from .api import _LocalListeningEndpoint
     coop = fowl_wh._coop
     assert coop is not None, "wat"
 
@@ -1480,6 +1479,7 @@ class FowlWormhole:
         @cmd.register(LocalListener)
         async def _(msg):
             print("OHAI0", msg)
+            from .api import _LocalListeningEndpoint
             self._coop.roost(
                 msg.name,
                 _LocalListeningEndpoint(reactor, msg.local_listen_port, msg.bind_interface),
