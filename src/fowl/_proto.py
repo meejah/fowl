@@ -1069,7 +1069,7 @@ class FowlFarToNear(Protocol):
     def emit_incoming_lost(self, msg):
         self.factory.coop._status_tracker.incoming_lost(
             self.conn_id,
-            f"Incoming connection against local policy: {msg['listener-id']}",
+            f"Incoming connection against local policy: {msg}",
         )
 
     @m.output()
@@ -1479,12 +1479,14 @@ class FowlWormhole:
 
         @cmd.register(LocalListener)
         async def _(msg):
-            print("OHAI", msg)
-            coop.roost(
+            print("OHAI0", msg)
+            self._coop.roost(
                 msg.name,
                 _LocalListeningEndpoint(reactor, msg.local_listen_port, msg.bind_interface),
             )
-            await coop.when_roosted(msg.name)
+            print("OHAI1", msg)
+            await self._coop.when_roosted(msg.name)
+            print("OHAI2", msg)
 
         @cmd.register(RemoteListener)
         async def _(msg):
