@@ -82,6 +82,7 @@ def allocate_tcp_port():
                 raise
             # try again
 
+
 def _make_socket():
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     if platformType == "posix" and sys.platform != "cygwin":

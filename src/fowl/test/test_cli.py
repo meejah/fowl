@@ -15,7 +15,7 @@ import os
 import signal
 from fowl.observer import When, Framer
 from fowl.test.util import ServerFactory, ClientFactory
-from fowl.cli import _to_port, _specifier_to_tuples
+from fowl.cli import _to_port, _parse_specifier
 
 
 @implementer(IProcessProtocol)

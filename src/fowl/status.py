@@ -52,6 +52,7 @@ class _StatusTracker:
     _listeners: list = attrs.Factory(list)  # receives FowlOutputMessage instances
     _on_status_updates: list = attrs.Factory(list)
     _current_status: FowlStatus = attrs.Factory(FowlStatus)
+    # XXX pass in url we used? or wormhole instance so we can find it?
 
     def add_status_listener(self, listener: Callable[[FowlStatus], None]):
         """
@@ -68,6 +69,7 @@ class _StatusTracker:
         self._listeners.append(listener)
 
     def _emit(self, msg):
+        print("EMIT", msg)
         for target in self._listeners:
             target(msg)
 
@@ -89,13 +91,12 @@ class _StatusTracker:
         # anything we care about from status should be wired through as a
         # FowlOutputMessage or so externally.
 
-    def welcomed(self, url, welcome):
+    def welcomed(self, welcome):
         self._modify_status(
-            url=url,
             welcome=welcome,
             closed=None
         )
-        self._emit(Welcome(url, welcome))
+        self._emit(Welcome(welcome))
 
     def code_allocated(self, code):
         self._modify_status(code=code)

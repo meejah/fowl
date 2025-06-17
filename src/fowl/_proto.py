@@ -34,6 +34,7 @@ import wormhole.errors as wormhole_errors
 from wormhole import SubchannelAddress
 
 from .observer import When, Next
+from .tcp import allocate_tcp_port
 from .messages import (
     SetCode,
     AllocateCode,
@@ -318,48 +319,15 @@ async def frontend_accept_or_invite(reactor, config):
     # XXX need to unify a bunch of this ... but for now, steal the
     # wormhole out of FowlWormhole
     from .api import _LocalListeningEndpoint
-##    await fowl_wh.when_connected()
     coop = fowl_wh._coop
     assert coop is not None, "wat"
 
-    services = []
-    # XXX no, tie this into the state-machine -- pass these commands
-    # into the state-machine, and then have them emit like
-    # "PleaseFledge" or similar at the right moment?
-    #
-    # OR have the state-machine "owned" by Coop and the "connected"
-    # signal only triggers once above conditions (so then it's like
-    # now, where you call "fledge()" whenever, but it does
-    # ._when_ready() interally so maybe all we need is that
-    # "._when_ready.trigger()" only happens via the Daemon machine?
+    await fowl_wh.when_connected()
+    print("connected")
+
     for command in config.commands:
-        print("CMD", command)
-        if isinstance(command, LocalListener):
-            # ARG why do i keep getting this backwards?
-            coop.roost(
-                command.name,
-                _LocalListeningEndpoint(reactor, command.local_listen_port, command.bind_interface),
-            )
-            services.append(
-                ensureDeferred(coop.when_roosted(command.name))
-            )
+        fowl_wh.command(command)
 
-        elif isinstance(command, RemoteListener):
-            # if remote_connect_port is specified .. what does that even mean?
-            # (is this like "the only permission check we'll need?")
-            services.append(
-                ensureDeferred(
-                    coop.fledge(
-                        command.name,
-                        command.local_connect_port,
-                        command.remote_listen_port,
-                        command.connect_address,
-                    )
-                )
-            )
-
-    results = await DeferredList(services)
-    print(results)
     done_d = fowl_wh.when_done()
 
     # debugging: "rich" is decent at showing you stuff printed out,
@@ -1077,6 +1045,19 @@ class FowlFarToNear(Protocol):
         # pre-defined or whatever
         # (nah, we want to check if any FowlCoop has a "roost" for this service name?)
         print("do_policy_check", msg)
+        name = msg.get("unique-name", None)
+        if name is None or name not in self.factory.coop._roosts:
+            self.policy_bad(f'No roost for service {name}')
+            return
+        channel = self.factory.coop._rosts[name]
+        port = msg.get("listen-port", None)
+        if port is not None and channel.endpoint is not None:
+            # we could check if the endpoint is localhost and has the
+            # same port and allow that if it matches ...
+            self.policy_bad(
+                f'Remote specified {port} for service {name} but '
+                'we also have a local endpoint specified.')
+            return
         self.policy_ok(msg)
 
     @m.output()
@@ -1244,11 +1225,10 @@ class FowlWormhole:
     Co-ordinates between the wormhole, user I/O and the daemon state-machine.
     """
 
-    def __init__(self, reactor, wormhole, daemon, coop):
+    def __init__(self, reactor, wormhole, coop):
         self._reactor = reactor
         self._listening_ports = []
         self._wormhole = wormhole
-        self._daemon = daemon
         self._done = When() # we have shut down completely
         self._connected = When()  # our Peer has connected
         self._got_welcome = When()  # we received the Welcome from the server
@@ -1280,13 +1260,13 @@ class FowlWormhole:
 
         # tie "we got a code" into the state-machine
         ensureDeferred(self._wormhole.get_code()).addCallbacks(
-            self._daemon.code_allocated,
+            self._coop._status_tracker.code_allocated,
             self._handle_error,
         )
 
         # pass on the welcome message
         ensureDeferred(self._wormhole.get_welcome()).addCallbacks(
-            lambda hello: self._daemon.got_welcome(hello),
+            self._coop._status_tracker.welcomed,
             self._handle_error,
         )
 
@@ -1317,8 +1297,9 @@ class FowlWormhole:
             @d.addCallback
             def did_dilate(arg):
                 print("did dilate")
-                self._daemon.peer_connected(verifier, versions)
+                self._coop._status_tracker.peer_connected(verifier, versions)
                 self._peer_connected = True
+                self._coop._versions_verified()
                 return arg
 
         # hook up "incoming message" to input; this is async
@@ -1359,7 +1340,6 @@ class FowlWormhole:
             else:
                 reason = str(why)
             self._done.trigger(self._reactor, reason)
-            self._daemon.shutdown(reason)
             self._coop._status_tracker.wormhole_closed(reason)
         ensureDeferred(self._wormhole._closed_observer.when_fired()).addBoth(was_closed)
 
@@ -1500,18 +1480,24 @@ class FowlWormhole:
         @cmd.register(LocalListener)
         async def _(msg):
             print("OHAI", msg)
-            await self.when_connected()
-            connect_ep = self._dilated.connector_for("fowl")
-            print("connected", connect_ep)
-            await _local_to_remote_forward(self._reactor, self._config, connect_ep, self._listening_ports.append, msg, self._coop)
+            coop.roost(
+                msg.name,
+                _LocalListeningEndpoint(reactor, msg.local_listen_port, msg.bind_interface),
+            )
+            await coop.when_roosted(msg.name)
 
         @cmd.register(RemoteListener)
         async def _(msg):
-            await self.when_connected()
-            assert self._dilated is not None, "need self._dilated"
-            msg = await _remote_to_local_forward(self._reactor, self._dilated, msg)
-            self._daemon._message_out(msg)
-            # XXX cheating? private access (_daemon._message_out)
+            # if remote_connect_port is specified .. what does that even mean?
+            # (is this like "the only permission check we'll need?")
+            await ensureDeferred(
+                self._coop.fledge(
+                    msg.name,
+                    msg.local_connect_port,
+                    msg.remote_listen_port,
+                    msg.connect_address,
+                )
+            )
 
         @cmd.register(Ping)
         async def _(msg):
@@ -1576,19 +1562,6 @@ class FowlWormhole:
 
     def _report_error(self, e):
         self._coop._status_tracker.error(str(e))
-
-
-# FowlDaemon is the state-machine
-#  - ultimately, it goes some notifications from 'the wormhole' but only via the I/O thing
-#  - no "async def" / Deferred-returning methods
-#  - no I/O
-#
-# FowlWormhole is "the I/O thing"
-#  - can do async
-#  - can do I/O
-#  - proxies I/O and async'ly things
-
-from .daemon import FowlDaemon  # noqa: E402
 
 
 def maybe_int(i):
@@ -1792,6 +1765,7 @@ def parse_fowld_output(json_str: str) -> FowlOutputMessage:
 
 async def create_fowl(config, fowl_status_tracker):
 
+    # can we make this "a status listener" instead?
     start_time = reactor.seconds()
     if config.output_debug_messages:
         def output_wrapper(msg):
@@ -1828,16 +1802,15 @@ async def create_fowl(config, fowl_status_tracker):
 
     # XXX FIXME hook in "output_wrapper" as a listener on the status_tracker
 
-    sm = FowlDaemon(fowl_status_tracker, command_message)
     w = await wormhole_from_config(reactor, config, fowl_status_tracker.dilation_status)
 
     from .api import create_coop
     coop = create_coop(reactor, w)
 
-    @sm.set_trace
-    def _(start, edge, end):
-        print(f"trace: {start} --[ {edge} ]--> {end}")
-    fowl = FowlWormhole(reactor, w, sm, coop)
+#    @sm.set_trace
+#    def _(start, edge, end):
+#        print(f"trace: {start} --[ {edge} ]--> {end}")
+    fowl = FowlWormhole(reactor, w, coop)
     return fowl
 
 
@@ -1875,26 +1848,26 @@ async def forward(reactor, config):
         await fowl.stop()
 
 
-async def _local_to_remote_forward(reactor, config, connect_ep, on_listen, on_message, cmd, coop):
-    """
-    Listen locally, and for each local connection create an Outgoing
-    subchannel which will connect on the other end. So the daemon is
-    running on the other side.
-    """
-    #XXX okay so this is "LocalServer for a local listener" ....
-    factory = Factory.forProtocol(LocalServer)
-    factory.config = config
-    factory.unique_name = cmd.name
-    factory.connect_ep = connect_ep
-    from .api import _LocalListeningEndpoint
-    ep = _LocalListeningEndpoint(reactor, cmd.listening_port)
-    port = await ep.listen(factory)
-    print("PORT", port, dir(port))
-    on_listen(port)
-    coop._status_tracker.add_remote_service(
-        unique_name,
-        port._realPort,
-    )
+# async def _local_to_remote_forward(reactor, config, connect_ep, on_listen, on_message, cmd, coop):
+#     """
+#     Listen locally, and for each local connection create an Outgoing
+#     subchannel which will connect on the other end. So the daemon is
+#     running on the other side.
+#     """
+#     #XXX okay so this is "LocalServer for a local listener" ....
+#     factory = Factory.forProtocol(LocalServer)
+#     factory.config = config
+#     factory.unique_name = cmd.name
+#     factory.connect_ep = connect_ep
+#     from .api import _LocalListeningEndpoint
+#     ep = _LocalListeningEndpoint(reactor, cmd.listening_port)
+#     port = await ep.listen(factory)
+#     print("PORT", port, dir(port))
+#     on_listen(port)
+#     coop._status_tracker.add_remote_service(
+#         unique_name,
+#         port._realPort,
+#     )
 
 
 _local_requests = dict()
@@ -1921,31 +1894,31 @@ class _SendFowlCommand(Protocol):
         self._message.trigger(self.factory._reactor, data)
 
 
-async def _remote_to_local_forward(reactor, dilated, cmd):
-    """
-    Ask the remote side to listen on a port, forwarding back here
-    (where our Incoming subchannel will be told what to connect
-    to).
-    """
-    # XXX if still used, should just call .fledge()
-    print("DINGDING")
-    ep = dilated.subprotocol_connector_for("fowl-commands")
-    fact = Factory.forProtocol(_SendFowlCommand)
-    fact._reactor = reactor
-    proto = await ep.connect(fact)
-    await proto.when_connected()
-    print("HIHI")
-    proto.transport.write(
-        _pack_netstring(
-                msgpack.packb({
-                    "kind": "request-listener",
-                    "listen-endpoint": cmd.listen,
-                    "connect-endpoint": cmd.connect,
-                })
-        )
-    )
-    msg = await proto.next_message()
-    print("ZASDF", msg)
+# async def _remote_to_local_forward(reactor, dilated, cmd):
+#     """
+#     Ask the remote side to listen on a port, forwarding back here
+#     (where our Incoming subchannel will be told what to connect
+#     to).
+#     """
+#     # XXX if still used, should just call .fledge()
+#     print("DINGDING")
+#     ep = dilated.subprotocol_connector_for("fowl-commands")
+#     fact = Factory.forProtocol(_SendFowlCommand)
+#     fact._reactor = reactor
+#     proto = await ep.connect(fact)
+#     await proto.when_connected()
+#     print("HIHI")
+#     proto.transport.write(
+#         _pack_netstring(
+#                 msgpack.packb({
+#                     "kind": "request-listener",
+#                     "listen-endpoint": cmd.listen,
+#                     "connect-endpoint": cmd.connect,
+#                 })
+#         )
+#     )
+#     msg = await proto.next_message()
+#     print("ZASDF", msg)
 
 
 class ControlDemultiplex(Protocol):

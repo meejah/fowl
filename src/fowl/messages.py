@@ -30,7 +30,6 @@ class Welcome(FowlOutputMessage):
     We have connected to the Mailbox Server and received the
     Welcome message.
     """
-    url: str  # server address
     # open-ended information from the server
     welcome: dict
 
