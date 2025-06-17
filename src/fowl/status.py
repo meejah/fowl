@@ -126,10 +126,12 @@ class _StatusTracker:
     def added_local_service(self, name, listen_port, remote_connect_port):
         self._current_status.listeners[name] = Listener(name, listen_port, False, remote_connect_port)
         self._modify_status()
+        self._emit(Listening(name, listen_port))
 
     def added_remote_service(self, name, local_connect_port):
         self._current_status.listeners[name] = Listener(name, local_connect_port, True)
         self._modify_status()
+        self._emit(RemoteListeningSucceeded(name, local_connect_port))
 
 # channel-id is randomly/etc assigned
 # each channel-id is associated with precisely one 'service' (formerly "listener-id")
