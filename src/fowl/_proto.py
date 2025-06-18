@@ -2070,12 +2070,9 @@ class FowlCommands(Protocol):
         }
         if desired_port is not None:
             content["desired-port"] = desired_port,
-        if reason is not None:
-            content["reason"] = reason
-
-        print("REPLY", content)
         if reason is not None and not listening:
             content["reason"] = str(reason)
+        print("REPLY", content)
         self.transport.write(
             _pack_netstring(
                 msgpack.packb(content)
