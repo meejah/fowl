@@ -314,7 +314,7 @@ class RemoteSpecifier:
         return RemoteSpecifier(
             name, port0,
             remote_listen_port=_to_port(named["remote-listen"]),
-            connect_address=IPv4Address(named["connect"]),
+            connect_address=named["connect"],  # should be IPv{4,6}Address
         )
 
 
@@ -361,16 +361,16 @@ class LocalSpecifier:
             "bind": None,
         }
         for spec in specs:
-            name, value = spec.split('=')
-            named[name] = value
-            if name not in ["remote-connect", "bind"]:
+            n, v = spec.split('=')
+            named[n] = v
+            if n not in ["remote-connect", "bind"]:
                 raise click.UsageError(
                     "--local specifier accepts remote-connect= or bind= only"
                 )
         return LocalSpecifier(
             name, port0,
             remote_connect_port=_to_port(named["remote-connect"]),
-            bind_interface=IPv4Address(named["bind"]),
+            bind_interface=named["bind"],  # should be IPv{4,6}Address
         )
 
 

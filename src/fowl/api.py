@@ -446,6 +446,8 @@ class _FowlCoop:
             ep = self._roosts[unique_name].endpoint
 
         except KeyError:
+            print("ROOSTS", self._roosts)
+            print(self._services)
             raise RuntimeError(
                 f"No service permitted for name: {unique_name}"
             )
