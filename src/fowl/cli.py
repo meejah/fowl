@@ -124,12 +124,12 @@ def fowld(ctx, ip_privacy, mailbox, debug):
         "We will listen locally, forwarding local connections to the other peer."
         "That is, the other peer is running the daemon-style software."
         "The other peer must enable the same service-name."
-        "If a \"remote=\" port is specified, the invocation on the other peer must agree."
+##        "If a \"remote-connect=\" port is specified, the invocation on the other peer must agree."
         "Therefore, it is best to ONLY choose ports on your side, unless the protocol requires otherwise."
         "If you can avoid choosing at all, a random port is assigned -- this is the most likely to succeed."
         "(Run a corresponding --remote with the same service-name on the other peer)"
     ),
-    metavar="service-name:[local-listen-port]:[remote-connect=port]:[bind=127.0.0.1]",
+    metavar="service-name:[local-listen-port]:[bind=127.0.0.1]",
 )
 @click.option(
     "--remote", "-R",
@@ -214,11 +214,11 @@ def fowl(ip_privacy, mailbox, debug, local, remote, code_length, code, readme, i
         return
 
     local_services = [
-        _parse_specifier(cmd)
+        LocalSpecifier.parse(cmd)
         for cmd in local
     ]
     remote_services = [
-        _parse_specifier(cmd)
+        RemoteSpecifier.parse(cmd)
         for cmd in remote
     ]
 
@@ -252,6 +252,8 @@ def fowl(ip_privacy, mailbox, debug, local, remote, code_length, code, readme, i
 
 
 def _to_port(arg):
+    if arg is None:
+        return None  # facility defaults, for Specifier parsers
     arg = int(arg)
     if arg < 1 or arg >= 65536:
         raise click.UsageError(
@@ -276,6 +278,46 @@ class RemoteSpecifier:
             self.connect_address,
         )
 
+    @staticmethod
+    def parse(cmd: str):
+        if '[' in cmd or ']' in cmd:
+            raise RuntimeError("Have not considered IPv6 parsing yet")
+
+        colons = cmd.count(':')
+        if colons > 3:
+            raise ValueError(
+                f"Too many colons: {colons} > 3"
+            )
+
+        if colons == 0:
+            return RemoteSpecifier(cmd)
+
+        if colons == 1:
+            name, port0 = cmd.split(':')
+            return RemoteSpecifier(name, _to_port(port0))
+
+        specs = cmd.split(':')
+        name = specs.pop(0)
+        port0 = _to_port(specs.pop(0))
+
+        named = {
+            "remote-listen": None,
+            "connect": None,
+        }
+        for spec in specs:
+            name, value = spec.split('=')
+            named[name] = value
+            if name not in ["remote-listen", "connect"]:
+                raise click.UsageError(
+                    "--remote specifier accepts remote-listen= or connect= only"
+                )
+        return RemoteSpecifier(
+            name, port0,
+            remote_listen_port=_to_port(named["remote-listen"]),
+            connect_address=IPv4Address(named["connect"]),
+        )
+
+
 @attrs.frozen
 class LocalSpecifier:
     # corresponds to fledge()
@@ -292,102 +334,47 @@ class LocalSpecifier:
             self.bind_interface,
         )
 
-@attrs.frozen
-class PlainSpecifier:
-    name: str
-    port: Optional[int] = None
+    @staticmethod
+    def parse(cmd: str):
+        if '[' in cmd or ']' in cmd:
+            raise RuntimeError("Have not considered IPv6 parsing yet")
 
-    def to_local(self):
-        return LocalListener(
-            self.name,
-            self.port,
-        )
-
-    def to_remote(self):
-        return RemoteListener(
-            self.name,
-            self.port,
-        )
-
-
-Specifier = LocalSpecifier | RemoteSpecifier | PlainSpecifier
-
-
-def _parse_specifier(cmd: str) -> Specifier:
-    """
-    Parse a local or remote listen/connect specifiers.
-    """
-    if '[' in cmd or ']' in cmd:
-        raise RuntimeError("Have not considered IPv6 parsing yet")
-
-    colons = cmd.count(':')
-    if colons > 3:
-        raise ValueError(
-            f"Too many colons: {colons} > 3"
-        )
-    # we use "port0" and "port1" here because whether it's local /
-    # remote and listen or connect depends on whether this was --local
-    # or --remote originally -- i.e. only the caller knows
-    if colons == 3:
-        name, port0, port1, addr = cmd.split(':')
-        port0 = _to_port(port0)
-        if '=' not in port1:
-            raise click.UsageError(
-                'When providing 2nd port, use "remote-connect=" or "local-listen="'
+        colons = cmd.count(':')
+        if colons > 3:
+            raise ValueError(
+                f"Too many colons: {colons} > 3"
             )
-        if '=' not in addr:
-            raise click.UsageError(
-                'When providing address, use "bind=" or "connect="'
-            )
-        addrkind, addr = addr.split("=")
-        if not addr.startswith("bind="):
-            raise click.UsageError(
-                'Bind address must start with "bind="'
-            )
-        addr = ip_address(addr[len("bind="):])
 
-        kind, port1 = port1.split("=")
-        port1 = _to_port(port1)
-        if kind == "remote-connect":
-            if addrkind != "bind":
+        if colons == 0:
+            return LocalSpecifier(cmd)
+
+        if colons == 1:
+            name, port0 = cmd.split(':')
+            return LocalSpecifier(name, _to_port(port0))
+
+        specs = cmd.split(':')
+        name = specs.pop(0)
+        port0 = _to_port(specs.pop(0))
+
+        named = {
+            "remote-connect": None,
+            "bind": None,
+        }
+        for spec in specs:
+            name, value = spec.split('=')
+            named[name] = value
+            if name not in ["remote-connect", "bind"]:
                 raise click.UsageError(
-                    f'"remote-connect=" goes with "bind=" not "{addrkind}="'
+                    "--local specifier accepts remote-connect= or bind= only"
                 )
-            return LocalSpecifier(name, port0, port1, addr)
-        elif kind == "remote-listen":
-            if addrkind != "connect":
-                raise click.UsageError(
-                    f'"remote-listen=" goes with "connect=" not "{addrkind}="'
-                )
-            return RemoteSpecifier(name, port0, port1, addr)
-        else:
-            raise click.UsageError(
-                f'Unknown specifier "{kind}="'
-            )
+        return LocalSpecifier(
+            name, port0,
+            remote_connect_port=_to_port(named["remote-connect"]),
+            bind_interface=IPv4Address(named["bind"]),
+        )
 
-    elif colons == 2:
-        name, port0, port1 = cmd.split(':')
-        port0 = _to_port(port0)
 
-        kind, port1 = port1.split("=")
-        port1 = _to_port(port1)
-        if kind == "remote-connect":
-            return LocalSpecifier(name, port0, port1)
-        elif kind == "remote-listen":
-            return RemoteSpecifier(name, port0, port1)
-        else:
-            raise click.UsageError(
-                f'Unknown specifier "{kind}="'
-            )
-
-    elif colons == 1:
-        name, port0 = cmd.split(':')
-        port0 = _to_port(port0)
-        return PlainSpecifier(name, port0)
-
-    # colons == 0:
-    name = cmd.strip()
-    return PlainSpecifier(name)
+Specifier = LocalSpecifier | RemoteSpecifier
 
 
 def tui(cfg):
