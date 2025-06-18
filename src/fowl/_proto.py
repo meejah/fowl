@@ -1999,7 +1999,7 @@ class FowlCommands(Protocol):
             print("REQUEST", msg)
             unique_name = msg["unique-name"]
             # if _we_ cared about the port, it was via --local ...:remote-connect=...
-            print("REMOTE-CONNECT was", self.factory.coop._roosts[unique_name].remote_connect_port)
+            remote_connect_port = self.factory.coop._roosts[unique_name].remote_connect_port
             desired_port = msg.get("listen-port", None)
             listen_ep = self.factory.coop._endpoint_for_service(unique_name, desired_port=desired_port)
 
@@ -2011,7 +2011,7 @@ class FowlCommands(Protocol):
             d = ensureDeferred(listen_ep.listen(factory))
 
             def got_port(port):
-                self._reply_positive(unique_name, self.factory.coop._roosts[unique_name].remote_connect_port)
+                self._reply_positive(unique_name, remote_connect_port)
                 channel = self.factory.coop._did_listen_locally(unique_name, port)
                 self.factory.coop._status_tracker.added_remote_service(
                     unique_name,
@@ -2056,6 +2056,7 @@ class FowlCommands(Protocol):
             "listening": bool(listening),
             "desired-port": desired_port,
         }
+        print("REPLY", content)
         if reason is not None and not listening:
             content["reason"] = str(reason)
         self.transport.write(
