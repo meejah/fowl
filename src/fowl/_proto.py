@@ -2000,6 +2000,7 @@ class FowlCommands(Protocol):
             unique_name = msg["unique-name"]
             # if _we_ cared about the port, it was via --local ...:remote-connect=...
             remote_connect_port = self.factory.coop._roosts[unique_name].remote_connect_port
+            print("remote_connect_port", remote_connect_port)
             desired_port = msg.get("listen-port", None)
             listen_ep = self.factory.coop._endpoint_for_service(unique_name, desired_port=desired_port)
 
@@ -2011,6 +2012,7 @@ class FowlCommands(Protocol):
             d = ensureDeferred(listen_ep.listen(factory))
 
             def got_port(port):
+                print("remote_connect_port", remote_connect_port)
                 self._reply_positive(unique_name, remote_connect_port)
                 channel = self.factory.coop._did_listen_locally(unique_name, port)
                 self.factory.coop._status_tracker.added_remote_service(
@@ -2040,11 +2042,11 @@ class FowlCommands(Protocol):
         """
         return self._reply_generic(listening=True, unique_name=unique_name, desired_port=desired_port)
 
-    def _reply_negative(self, reason=None):
+    def _reply_negative(self, unique_name, reason=None):
         """
         Send a negative reply to a remote request
         """
-        return self._reply_generic(listening=False, reason=reason)
+        return self._reply_generic(listening=False, unique_name=unique_name, reason=reason)
 
     def _reply_generic(self, listening, reason=None, unique_name=None, desired_port=None):
         """
