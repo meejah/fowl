@@ -1484,6 +1484,7 @@ class FowlWormhole:
             self._coop.roost(
                 msg.name,
                 _LocalListeningEndpoint(reactor, msg.local_listen_port, msg.bind_interface),
+                msg.remote_connect_port,
             )
             print("OHAI1", msg)
             await self._coop.when_roosted(msg.name)
