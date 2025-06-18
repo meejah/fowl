@@ -124,12 +124,12 @@ def fowld(ctx, ip_privacy, mailbox, debug):
         "We will listen locally, forwarding local connections to the other peer."
         "That is, the other peer is running the daemon-style software."
         "The other peer must enable the same service-name."
-##        "If a \"remote-connect=\" port is specified, the invocation on the other peer must agree."
+        "If a \"remote-connect=\" port is specified, the invocation on the other peer must agree."
         "Therefore, it is best to ONLY choose ports on your side, unless the protocol requires otherwise."
         "If you can avoid choosing at all, a random port is assigned -- this is the most likely to succeed."
         "(Run a corresponding --remote with the same service-name on the other peer)"
     ),
-    metavar="service-name:[local-listen-port]:[bind=127.0.0.1]",
+    metavar="service-name:[local-listen-port]:[bind=127.0.0.1]:[remote-connect=port",
 )
 @click.option(
     "--remote", "-R",

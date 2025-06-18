@@ -1045,18 +1045,19 @@ class FowlFarToNear(Protocol):
         # (nah, we want to check if any FowlCoop has a "roost" for this service name?)
         print("do_policy_check", msg)
         name = msg.get("unique-name", None)
-        if name is None or name not in self.factory.coop._roosts:
-            self.policy_bad(f'No roost for service {name}')
+        if name is None or name not in self.factory.coop._services:
+            self.policy_bad(f'No service "{name}"')
             return
-        channel = self.factory.coop._rosts[name]
+        channel = self.factory.coop._services[name]
+        print("ZZZZ", channel)
         port = msg.get("listen-port", None)
-        if port is not None and channel.endpoint is not None:
-            # we could check if the endpoint is localhost and has the
-            # same port and allow that if it matches ...
-            self.policy_bad(
-                f'Remote specified {port} for service {name} but '
-                'we also have a local endpoint specified.')
-            return
+        if port is not None:
+            if channel.listen_port != port:
+                self.policy_bad(
+                    f'Remote specified {port} for service {name} but '
+                    'we have {channel.listen_port} here.'
+                )
+                return
         self.policy_ok(msg)
 
     @m.output()
@@ -1997,7 +1998,8 @@ class FowlCommands(Protocol):
         if msg["kind"] == "request-listener":
             print("REQUEST", msg)
             unique_name = msg["unique-name"]
-            # XXX if _we_ specified a port we need to honour it here ...
+            # if _we_ cared about the port, it was via --local ...:remote-connect=...
+            print("REMOTE-CONNECT was", self.factory.coop._roosts[unique_name].remote_connect_port)
             desired_port = msg.get("listen-port", None)
             listen_ep = self.factory.coop._endpoint_for_service(unique_name, desired_port=desired_port)
 
@@ -2009,7 +2011,7 @@ class FowlCommands(Protocol):
             d = ensureDeferred(listen_ep.listen(factory))
 
             def got_port(port):
-                self._reply_positive(unique_name)
+                self._reply_positive(unique_name, self.factory.coop._roosts[unique_name].remote_connect_port)
                 channel = self.factory.coop._did_listen_locally(unique_name, port)
                 self.factory.coop._status_tracker.added_remote_service(
                     unique_name,
@@ -2032,11 +2034,11 @@ class FowlCommands(Protocol):
                 f"Unknown control command: {msg[kind]}",
             )
 
-    def _reply_positive(self, unique_name):
+    def _reply_positive(self, unique_name, desired_port):
         """
         Send a positive reply to a remote request
         """
-        return self._reply_generic(listening=True, unique_name=unique_name)
+        return self._reply_generic(listening=True, unique_name=unique_name, desired_port=desired_port)
 
     def _reply_negative(self, reason=None):
         """
@@ -2044,7 +2046,7 @@ class FowlCommands(Protocol):
         """
         return self._reply_generic(listening=False, reason=reason)
 
-    def _reply_generic(self, listening, reason=None, unique_name=None):
+    def _reply_generic(self, listening, reason=None, unique_name=None, desired_port=None):
         """
         Send a positive or negative reply to a remote request
         """
@@ -2052,6 +2054,7 @@ class FowlCommands(Protocol):
             "kind": "listener-response",
             "unique-name": unique_name,
             "listening": bool(listening),
+            "desired-port": desired_port,
         }
         if reason is not None and not listening:
             content["reason"] = str(reason)

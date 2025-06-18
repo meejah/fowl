@@ -59,6 +59,7 @@ class FowlChannelDaemonThere:
     unique_name: str  # (must be UNIQUE across all of this Fowl session)
     endpoint: IStreamServerEndpoint  # where we're listening locally
     desired_local_port: Optional[int] = None
+    remote_connect_port: Optional[int] = None
     port: Any = None
 
     @property
@@ -291,8 +292,8 @@ class _FowlCoop:
     def roost(
             self,
             unique_name: str,
-            # XXX maybe just: local_listen_port: Optional[int]=None ???
             local_endpoint: Optional[IStreamServerEndpoint]=None,
+            remote_connect_port: Optional[int]=None,
     ) -> FowlChannelDaemonThere:
         """
         This adds a named service that is permitted here.
@@ -305,7 +306,7 @@ class _FowlCoop:
         To wait until a service is in use (which is possibly never, as
         we can't control what our peer decides to do) await the
         `when_roosted()` method for the same `unique_name`.
-        """
+       """
          # XXX okay so if we care what the 'other side' listens on, it HAS to be started from there?
         # (why might we? what would that even ... mean / do?)
         # XXX IPv4 vs IPv6?
@@ -315,6 +316,7 @@ class _FowlCoop:
         channel = FowlChannelDaemonThere(
             unique_name,
             local_endpoint,
+            remote_connect_port,
         )
         self._roosts[unique_name] = channel
         return channel
@@ -373,13 +375,14 @@ class _FowlCoop:
             raise ValueError(
                 f"fledge({unique_name}) when we already have a roost for that name"
             )
-        if local_connect_port is None:
-            local_connect_port = allocate_tcp_port()
-        print("awaiting dilation", local_connect_port)
-        #XXX add connect address to added_local_service()
-        self._status_tracker.added_local_service(unique_name, local_connect_port, remote_listen_port)
+        if unique_name in self._services:
+            raise ValueError(
+                f'Supposedly unique "{unique_name}" already in our services'
+            )
+
         print("waiting for when_ready")
         await self._when_ready.when_triggered()
+
         # XXX needs to be AFTER verifying-versions ... e.g. tie into state-machine?
         print("ready to fledge")
         ep = self._dilated.connector_for("fowl-commands")
@@ -401,12 +404,21 @@ class _FowlCoop:
         )
 
         reply = await proto.next_message()
+
+        print("GOT REPLY", reply)
+
+        if local_connect_port is None:
+            local_connect_port = allocate_tcp_port()
+        print("awaiting dilation", local_connect_port)
+        #XXX add connect address to added_local_service()
+        self._status_tracker.added_local_service(unique_name, local_connect_port, remote_listen_port)
+
+        # so if _we_ don't care about the listen-port, and the OTHER
+        # peer does, it can/will communicate back in the reply -- so
+        # we have to double-check if that's cool
+
         # okay, so _we_ know where we want this to connect back to, so
         # remember it in our services
-        if unique_name in self._services:
-            raise ValueError(
-                f'Supposedly unique "{unique_name}" already in our services'
-            )
         self._services[unique_name] = FowlChannelDaemonHere(
             unique_name,
             endpoint=TCP4ClientEndpoint(
@@ -446,8 +458,6 @@ class _FowlCoop:
             ep = self._roosts[unique_name].endpoint
 
         except KeyError:
-            print("ROOSTS", self._roosts)
-            print(self._services)
             raise RuntimeError(
                 f"No service permitted for name: {unique_name}"
             )
