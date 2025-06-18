@@ -59,7 +59,6 @@ class FowlChannelDaemonThere:
     """
     unique_name: str  # (must be UNIQUE across all of this Fowl session)
     endpoint: IStreamServerEndpoint  # where we're listening locally
-    desired_local_port: Optional[int] = None
     remote_connect_port: Optional[int] = None
     port: Any = None
 
