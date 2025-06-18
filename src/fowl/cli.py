@@ -142,7 +142,7 @@ def fowld(ctx, ip_privacy, mailbox, debug):
         "If you can avoid choosing at all, a random port is assigned -- this is the most likely to succeed."
        "(Run a corresponding --local with the same service-name on the other peer)"
         ),
-    metavar="service-name:[local-connect-port][:remote-listen=port][:connect=127.0.0.1]",
+    metavar="service-name:[local-connect-port][:local-listen=port][:connect=127.0.0.1]",
 )
 @click.option(
     "--code-length",
@@ -266,15 +266,15 @@ def _to_port(arg):
 class RemoteSpecifier:
     # corresponds to roost()
     name: str
-    local_connect_port: Optional[int] = None
-    remote_listen_port: Optional[int] = None
+    connect_port: Optional[int] = None
+    local_listen_port: Optional[int] = None
     connect_address: Optional[IPv4Address|IPv6Address] = None
 
     def to_remote(self):
         return RemoteListener(
             self.name,
-            self.local_connect_port,
-            self.remote_listen_port,
+            self.connect_port,
+            self.local_listen_port,
             self.connect_address,
         )
 
@@ -301,19 +301,19 @@ class RemoteSpecifier:
         port0 = _to_port(specs.pop(0))
 
         named = {
-            "remote-listen": None,
+            "local-listen": None,
             "connect": None,
         }
         for spec in specs:
             n, v = spec.split('=')
             named[n] = v
-            if n not in ["remote-listen", "connect"]:
+            if n not in ["local-listen", "connect"]:
                 raise click.UsageError(
-                    "--remote specifier accepts remote-listen= or connect= only"
+                    "--remote specifier accepts local-listen= or connect= only"
                 )
         return RemoteSpecifier(
             name, port0,
-            remote_listen_port=_to_port(named["remote-listen"]),
+            local_listen_port=_to_port(named["local-listen"]),
             connect_address=named["connect"],  # should be IPv{4,6}Address
         )
 
