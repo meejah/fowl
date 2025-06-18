@@ -2069,7 +2069,7 @@ class FowlCommands(Protocol):
             "listening": bool(listening),
         }
         if desired_port is not None:
-            content["desired-port"] = desired_port,
+            content["desired-port"] = desired_port
         if reason is not None and not listening:
             content["reason"] = str(reason)
         print("REPLY", content)
