@@ -305,9 +305,9 @@ class RemoteSpecifier:
             "connect": None,
         }
         for spec in specs:
-            name, value = spec.split('=')
-            named[name] = value
-            if name not in ["remote-listen", "connect"]:
+            n, v = spec.split('=')
+            named[n] = v
+            if n not in ["remote-listen", "connect"]:
                 raise click.UsageError(
                     "--remote specifier accepts remote-listen= or connect= only"
                 )
