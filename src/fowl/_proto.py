@@ -2009,7 +2009,7 @@ class FowlCommands(Protocol):
             try:
                 listen_ep = self.factory.coop._endpoint_for_service(unique_name, desired_port=desired_port)
             except RuntimeError as e:
-                self._reply_negative(str(e))
+                self._reply_negative(unique_name, str(e))
                 self.factory.coop._status_tracker.error(
                     f'Failed to listen on "{unique_name}": {e}',
                 )
@@ -2035,7 +2035,7 @@ class FowlCommands(Protocol):
 
             def error(f):
                 print("ERR", f)
-                self._reply_negative(f.getErrorMessage())
+                self._reply_negative(unique_name, f.getErrorMessage())
                 self.factory.coop._status_tracker.error(
                     f'Failed to listen on "{unique_name}": {f.value}',
                 )
@@ -2067,8 +2067,12 @@ class FowlCommands(Protocol):
             "kind": "listener-response",
             "unique-name": unique_name,
             "listening": bool(listening),
-            "desired-port": desired_port,
         }
+        if desired_port is not None:
+            content["desired-port"] = desired_port,
+        if reason is not None:
+            content["reason"] = reason
+
         print("REPLY", content)
         if reason is not None and not listening:
             content["reason"] = str(reason)

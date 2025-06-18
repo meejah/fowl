@@ -423,6 +423,10 @@ class _FowlCoop:
                 raise RuntimeError(
                     f"Reply asked for port {desired_port} but we specified {local_connect_port}"
                 )
+        if not reply.get(listening, None):
+            raise RuntimeError(
+                f"Failed to start remote listener: {msg}"
+)
 
         if local_connect_port is None:
             local_connect_port = allocate_tcp_port() if desired_port is None else desired_port
