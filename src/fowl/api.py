@@ -1,6 +1,7 @@
 import os
 import sys
 import socket
+import struct
 from attr import define
 from typing import Optional, Callable, Any
 
@@ -403,12 +404,24 @@ class _FowlCoop:
             )
         )
 
-        reply = await proto.next_message()
+        data = await proto.next_message()
+        bsize = len(data)
+        assert bsize >= 2, "expected at least 2 bytes"
+        expected_size, = struct.unpack("!H", data[:2])
+        assert bsize == expected_size + 2, "data has more than the message: {} vs {}: {}".format(bsize, expected_size + 2, repr(data[:55]))
+        reply = msgpack.unpackb(data[2:])
 
-        print("GOT REPLY", reply)
+        print("REPLY", reply)
+        desired_port = reply.get("desired-port", None)
+
+        if desired_port is not None:
+            if local_connect_port is not None and local_connect_port != desired_port:
+                raise RuntimeError(
+                    f"Reply asked for port {desired_port} but we specified {local_connect_port}"
+                )
 
         if local_connect_port is None:
-            local_connect_port = allocate_tcp_port()
+            local_connect_port = allocate_tcp_port() if desired_port is None else desired_port
         print("awaiting dilation", local_connect_port)
         #XXX add connect address to added_local_service()
         self._status_tracker.added_local_service(unique_name, local_connect_port, remote_listen_port)
