@@ -115,6 +115,11 @@ class _LocalListeningEndpoint:
             )
         if self._desired_port is None:
             self._desired_port = value
+        else:
+            if self._desired_port != value:
+                raise RuntimeError(
+                    f"Desired port {value} does not match {self._desired_port}"
+                )
 
     async def listen(self, factory):
         endpoint = None

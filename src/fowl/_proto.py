@@ -1999,11 +1999,21 @@ class FowlCommands(Protocol):
         if msg["kind"] == "request-listener":
             print("REQUEST", msg)
             unique_name = msg["unique-name"]
-            # if _we_ cared about the port, it was via --local ...:remote-connect=...
+            # if _we_ cared about the other peer's port, it was via --local ...:remote-connect=...
             remote_connect_port = self.factory.coop._roosts[unique_name].remote_connect_port
             print("remote_connect_port", remote_connect_port)
+
+            # okay, so our peer is possibly requesting a port --
+            # that's fine, but only if _we_ didn't already specify one
             desired_port = msg.get("listen-port", None)
-            listen_ep = self.factory.coop._endpoint_for_service(unique_name, desired_port=desired_port)
+            try:
+                listen_ep = self.factory.coop._endpoint_for_service(unique_name, desired_port=desired_port)
+            except RuntimeError as e:
+                self._reply_negative(str(e))
+                self.factory.coop._status_tracker.error(
+                    f'Failed to listen on "{unique_name}": {e}',
+                )
+                return
 
             print("EP", listen_ep)
             factory = Factory.forProtocol(LocalServerFarSide)
