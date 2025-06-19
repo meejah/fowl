@@ -274,8 +274,8 @@ class RemoteSpecifier:
     def to_remote(self):
         return RemoteListener(
             self.name,
-            self.connect_port,
             self.local_listen_port,
+            self.connect_port,
             self.connect_address,
         )
 
