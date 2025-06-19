@@ -87,7 +87,6 @@ class _StatusTracker:
         """
         Hooked into our wormhole.
         """
-        print("wormhole-status", st)
         self._modify_status(mailbox_connection=st.mailbox_connection)
         # anything we care about from status should be wired through as a
         # FowlOutputMessage or so externally.
@@ -96,7 +95,6 @@ class _StatusTracker:
         """
         Hooked into our wormhole.
         """
-        print("dilation-status", st)
         self.wormhole_status(st.mailbox)
         # anything we care about from status should be wired through as a
         # FowlOutputMessage or so externally.
