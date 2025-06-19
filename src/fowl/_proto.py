@@ -1808,7 +1808,7 @@ async def create_fowl(config, fowl_status_tracker):
 
     # XXX FIXME hook in "output_wrapper" as a listener on the status_tracker
 
-    w = await wormhole_from_config(reactor, config, fowl_status_tracker.dilation_status)
+    w = await wormhole_from_config(reactor, config, fowl_status_tracker.wormhole_status)
 
     from .api import create_coop
     coop = create_coop(reactor, w)

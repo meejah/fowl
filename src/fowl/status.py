@@ -83,11 +83,21 @@ class _StatusTracker:
     def current_status(self):
         return self._current_status
 
-    def dilation_status(self, st: WormholeStatus):
+    def wormhole_status(self, st: WormholeStatus):
         """
         Hooked into our wormhole.
         """
+        print("wormhole-status", st)
         self._modify_status(mailbox_connection=st.mailbox_connection)
+        # anything we care about from status should be wired through as a
+        # FowlOutputMessage or so externally.
+
+    def dilation_status(self, st: DilationStatus):
+        """
+        Hooked into our wormhole.
+        """
+        print("dilation-status", st)
+        self.wormhole_status(st.mailbox)
         # anything we care about from status should be wired through as a
         # FowlOutputMessage or so externally.
 

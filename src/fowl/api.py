@@ -278,6 +278,15 @@ class _FowlCoop:
         injecting our required subprotocol objects. Accepts all kwargs
         that `_DeferredWormhole.dilate()` takes.
         """
+        if "on_status_update" in kwargs:
+            # if upstream user sent a status_update we need a wrapper
+            def wrapper(st):
+                self._status_tracer.dilation_status(st)
+                return wrapper.upstream(st)
+            wrapper.upstream = kwargs["on_status_update"]
+            kwargs["on_status_update"] = wrapper
+        else:
+            kwargs["on_status_update"] = self._status_tracker.dilation_status
         dilated = self._wormhole.dilate(**kwargs)
         self._set_dilated(dilated)
         # "dilated" is a DilatedWormhole instance
