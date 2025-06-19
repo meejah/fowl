@@ -29,7 +29,7 @@ from twisted.internet.error import ConnectionDone
 from twisted.internet.stdio import StandardIO
 from twisted.protocols.basic import LineReceiver
 from zope.interface import directlyProvides, implementer
-from wormhole.cli.public_relay import RENDEZVOUS_RELAY as PUBLIC_MAILBOX_URL
+from wormhole.cli.public_relay import RENDEZVOUS_RELAY as PUBLIC_MAILBOX_URL, TRANSIT_RELAY
 import wormhole.errors as wormhole_errors
 from wormhole import SubchannelAddress
 
@@ -1541,7 +1541,9 @@ class FowlWormhole:
 
     async def _do_dilate(self):
         # XXX move FowlWormhole do its own module so imports aren't broken
-        dilated = self._dilated = await self._coop.dilate()
+        dilated = self._dilated = await self._coop.dilate(
+            transit_relay_location=TRANSIT_RELAY,
+        )
         # the "FowlCoop.dilate" method already listens for commands,
         # incoming connections
 

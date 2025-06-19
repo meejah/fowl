@@ -11,6 +11,7 @@ from twisted.internet.defer import ensureDeferred
 
 from wormhole.cli.public_relay import (
     RENDEZVOUS_RELAY as PUBLIC_MAILBOX_URL,
+    TRANSIT_RELAY,
 )
 
 from ._proto import (
