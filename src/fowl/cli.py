@@ -344,7 +344,6 @@ class LocalSpecifier:
     bind_interface: Optional[IPv4Address | IPv6Address] = None
 
     def to_local(self):
-        print("tolocal", self.remote_connect_port)
         return LocalListener(
             self.name,
             self.local_listen_port,
