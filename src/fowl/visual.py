@@ -54,6 +54,10 @@ def render_status(st: FowlStatus) -> Table:  # Panel? seomthing else
     if st.is_connecting:
         status_local.stylize("rgb(0,100,100) on rgb(100,255,200)")
 
+    if not st.peer_connected:
+        status_remote.stylize("rgb(100,255,0) on rgb(255,0,0)")
+
+
     # turn purple if we / they are closing
     if st.peer_closing:
         status_remote.stylize("rgb(0,100,100) on rgb(255,100,255)")

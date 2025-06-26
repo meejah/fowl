@@ -86,7 +86,7 @@ class _StatusTracker:
         """
         Hooked into our wormhole.
         """
-        # print(st)
+        ##print(st)
         kwargs = self._convert_wormhole_status(st)
         self._modify_status(**kwargs)
         # anything we care about from status should be wired through as a
@@ -113,10 +113,14 @@ class _StatusTracker:
         """
         Hooked into our wormhole.
         """
-        # print(st)
+        print(st)
         self.wormhole_status(st.mailbox)
-        # anything we care about from status should be wired through as a
-        # FowlOutputMessage or so externally.
+        kwargs = dict()
+        if isinstance(st.peer_connection, ConnectedPeer):
+            kwargs["peer_connected"] = True
+        else:
+            kwargs["peer_connected"] = False
+        self._modify_status(**kwargs)
 
     def welcomed(self, welcome):
         self._modify_status(

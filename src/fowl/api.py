@@ -393,18 +393,15 @@ class _FowlCoop:
                 f'Supposedly unique "{unique_name}" already in our services'
             )
 
-        print("waiting for when_ready")
         await self._when_ready.when_triggered()
 
         # XXX needs to be AFTER verifying-versions ... e.g. tie into state-machine?
-        print("ready to fledge")
         ep = self._dilated.connector_for("fowl-commands")
         fact = Factory.forProtocol(_SendFowlCommand)
         fact._reactor = self._reactor
         proto = await ep.connect(fact)
         await proto.when_connected()
 
-        print("doing it", unique_name, remote_listen_port)
         #XXX should be method on _SendFowlCommand
         proto.transport.write(
             _pack_netstring(
@@ -423,7 +420,6 @@ class _FowlCoop:
         assert bsize == expected_size + 2, "data has more than the message: {} vs {}: {}".format(bsize, expected_size + 2, repr(data[:55]))
         reply = msgpack.unpackb(data[2:])
 
-        print("REPLY", reply)
         desired_port = reply.get("desired-port", None)
 
         if desired_port is not None:
@@ -439,7 +435,6 @@ class _FowlCoop:
 
         if local_connect_port is None:
             local_connect_port = allocate_tcp_port() if desired_port is None else desired_port
-        print("awaiting dilation", local_connect_port)
         #XXX add connect address to added_local_service()
         self._status_tracker.added_local_service(unique_name, local_connect_port, remote_listen_port)
 
@@ -457,7 +452,6 @@ class _FowlCoop:
                 local_connect_port,
             ),
         )
-        print("ZINGA", local_connect_port, local_connect_addr)
         return self._services[unique_name]
 
     def subchannel_connector(self):
@@ -469,7 +463,6 @@ class _FowlCoop:
         indicated service-name.
         """
         ch = self._services[unique_name]
-        print("localconnectendpoint", unique_name, ch.endpoint)
         return ch.endpoint
 
     def listen_endpoint(self, name: str) -> IStreamServerEndpoint:

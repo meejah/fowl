@@ -318,7 +318,6 @@ async def frontend_accept_or_invite(reactor, config):
 
     async def issue_commands():
         await fowl_wh.when_connected()
-        print("connected, issuing commands")
         for command in config.commands:
             fowl_wh.command(command)
     d = ensureDeferred(issue_commands())
@@ -1550,7 +1549,6 @@ class FowlWormhole:
 
         await self._dilated.when_dilated()
         self._connected.trigger(self._reactor, verifier_bytes)
-        print("done _do_dilate")
         return None
 
     def _handle_error(self, f):
@@ -2021,11 +2019,9 @@ class FowlCommands(Protocol):
         msg = msgpack.unpackb(data[2:])
         print(msg)
         if msg["kind"] == "request-listener":
-            print("REQUEST", msg)
             unique_name = msg["unique-name"]
             # if _we_ cared about the other peer's port, it was via --local ...:remote-connect=...
             remote_connect_port = self.factory.coop._roosts[unique_name].remote_connect_port
-            print("remote_connect_port", remote_connect_port)
 
             # okay, so our peer is possibly requesting a port --
             # that's fine, but only if _we_ didn't already specify one
@@ -2039,7 +2035,6 @@ class FowlCommands(Protocol):
                 )
                 return
 
-            print("EP", listen_ep)
             factory = Factory.forProtocol(LocalServerFarSide)
             factory.coop = self.factory.coop
             factory.unique_name = unique_name
@@ -2047,7 +2042,6 @@ class FowlCommands(Protocol):
             d = ensureDeferred(listen_ep.listen(factory))
 
             def got_port(port):
-                print("remote_connect_port", remote_connect_port)
                 self._reply_positive(unique_name, remote_connect_port)
                 channel = self.factory.coop._did_listen_locally(unique_name, port)
                 self.factory.coop._status_tracker.added_remote_service(
@@ -2096,7 +2090,6 @@ class FowlCommands(Protocol):
             content["desired-port"] = desired_port
         if reason is not None and not listening:
             content["reason"] = str(reason)
-        print("REPLY", content)
         self.transport.write(
             _pack_netstring(
                 msgpack.packb(content)
