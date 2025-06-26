@@ -52,7 +52,6 @@ class _StatusTracker:
     _listeners: list = attrs.Factory(list)  # receives FowlOutputMessage instances
     _on_status_updates: list = attrs.Factory(list)
     _current_status: FowlStatus = attrs.Factory(FowlStatus)
-    # XXX pass in url we used? or wormhole instance so we can find it?
 
     def add_status_listener(self, listener: Callable[[FowlStatus], None]):
         """
@@ -116,7 +115,6 @@ class _StatusTracker:
     def message_from_peer(self, message):
         # XXX fixme todo can we just get rid of this hole message_to/from_peer via status entirely?
         d = json.loads(message)
-        print(f"peer: {d}")
         if "closing" in d:
             self._modify_status(peer_closing=True)
         self._emit(GotMessageFromPeer(message))

@@ -1479,16 +1479,13 @@ class FowlWormhole:
 
         @cmd.register(LocalListener)
         async def _(msg):
-            print("OHAI0", msg)
             from .api import _LocalListeningEndpoint
             self._coop.roost(
                 msg.name,
                 _LocalListeningEndpoint(reactor, msg.local_listen_port, msg.bind_interface),
                 msg.remote_connect_port,
             )
-            print("OHAI1", msg)
             await self._coop.when_roosted(msg.name)
-            print("OHAI2", msg)
 
         @cmd.register(RemoteListener)
         async def _(msg):

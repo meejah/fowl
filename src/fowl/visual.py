@@ -6,8 +6,6 @@ import random
 
 import humanize
 
-from wormhole._status import Connecting
-
 from .status import FowlStatus
 from fowl import chicken
 
@@ -53,10 +51,8 @@ def render_status(st: FowlStatus) -> Table:  # Panel? seomthing else
         status_remote.plain = chicken.peer[2]
         status_remote.stylize("rgb(0,100,0) on rgb(100,255,100)")
 
-    if isinstance(st.mailbox_connection, Connecting):
+    if st.is_connecting:
         status_local.stylize("rgb(0,100,100) on rgb(100,255,200)")
-    elif isinstance(st.mailbox_connection, Connecting):
-        status_local.stylize("rgb(0,100,100) on rgb(100,255,255)")
 
     # turn purple if we / they are closing
     if st.peer_closing:
@@ -139,6 +135,7 @@ def render_bw(sub):
     return rendered
 
 
+# XXX fixme, need to send in time here (or something) to fix --replay
 def render_bw_out(sub):
     start = time.time()
     if not sub.o:
