@@ -112,6 +112,17 @@ def fowld(ctx, ip_privacy, mailbox, debug):
     help="Output wormhole state-machine transitions to the given file",
     type=click.File("w", encoding="utf8"),
 )
+@click.option(
+    "--debug-status",
+    default=None,
+    help="Output the state of FowlStatus (for use with --replay)",
+    type=click.File("w", encoding="utf8", ),
+)
+@click.option(
+    "--replay",
+    help="Replay a series of events recorded with --debug-status",
+    type=click.File("r", encoding="utf8"),
+)
 #XXX big change, no longer supports https://github.com/meejah/fowl/issues/37
 # -> maybe keep these options, and do the 'name'-based ones as a new thing (--daemon-here or --daemon-there)
 # -> maybe do name-based still, but also allow interface (for forwarding...so only on the side that does connect)
@@ -162,7 +173,7 @@ def fowld(ctx, ip_privacy, mailbox, debug):
 )
 @click.argument("code", required=False)
 @click.command()
-def fowl(ip_privacy, mailbox, debug, local, remote, code_length, code, readme, interactive, debug_messages):
+def fowl(ip_privacy, mailbox, debug, local, remote, code_length, code, readme, interactive, debug_messages, debug_status, replay):
     """
     Forward Over Wormhole, Locally
 
@@ -210,6 +221,10 @@ def fowl(ip_privacy, mailbox, debug, local, remote, code_length, code, readme, i
     Note that this can fail for things like Web servers which include
     the port as part of the URI and the 'same-origin' check.
     """
+    if replay:
+        _replay_visuals(None, replay)
+        return
+
     if readme:
         display_readme()
         return
@@ -242,6 +257,7 @@ def fowl(ip_privacy, mailbox, debug, local, remote, code_length, code, readme, i
         code_length=code_length,
         commands=commands,
         output_debug_messages=debug_messages,
+        output_status=debug_status,
     )
 
     if interactive:
@@ -377,6 +393,63 @@ class LocalSpecifier:
 
 
 Specifier = LocalSpecifier | RemoteSpecifier
+
+
+def _replay_visuals(cfg, messages):
+    """
+    Replay a series of events output from --debug-messages
+
+    Such a file consists of one JSON message per line; the timestamp=
+    values are honoured, so the playback is real time.
+    """
+    from rich.live import Live
+    from .visual import render_status
+    from .status import _StatusTracker, FowlStatus, Listener, Subchannel
+    from .messages import Welcome
+    import time
+    import json
+
+    with messages as f:
+        messages = [
+            json.loads(line)
+            for line in f.readlines()
+        ]
+    print(messages)
+
+    status_tracker = _StatusTracker()
+
+    def render():
+        return render_status(status_tracker.current_status)
+    from rich.console import Console
+    console = Console(force_terminal=True)
+    live = Live(get_renderable=render, console=console)
+    where_are_we = messages[0]["timestamp"]
+
+    with live:
+        while messages:
+            data = messages.pop(0)
+            timestamp = data.pop("timestamp")
+            delay = timestamp - where_are_we
+            where_are_we = timestamp
+
+            msg = FowlStatus(**data)
+            msg = attrs.evolve(
+                msg,
+                listeners={
+                    kw["service_name"]: Listener(**kw)
+                    for kw in msg.listeners.values()
+                },
+                subchannels={
+                    kw["channel_id"]: Subchannel(**kw)
+                    for kw in msg.subchannels.values()
+                },
+            )
+            print(msg)
+            while delay > 0.25:
+                status_tracker._current_status = msg
+                time.sleep(0.25)
+                delay -= 0.25
+            time.sleep(delay)
 
 
 def tui(cfg):

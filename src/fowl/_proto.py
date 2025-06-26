@@ -118,6 +118,7 @@ class _Config:
     debug_file: IO = None  # for state-machine transitions
     commands: list[FowlCommandMessage] = AttrFactory(list)
     output_debug_messages: TextIO = None  # Option<Writable>
+    output_status: TextIO = None  # Option<Readable>
 
 
 async def wormhole_from_config(reactor, config, on_status, wormhole_create=None):
@@ -1765,7 +1766,7 @@ def parse_fowld_output(json_str: str) -> FowlOutputMessage:
         "pong": parser(Pong, [("ping_id", bytes), ("time_of_flight", float)]),
         "error": parser(WormholeError, [("message", str)]),
     }
-    return kind_to_message[kind](cmd)
+    return kind_to_message[kind](cmd), cmd.get("timestamp", None)
 
 
 async def create_fowl(config, fowl_status_tracker):
@@ -1773,7 +1774,7 @@ async def create_fowl(config, fowl_status_tracker):
     # can we make this "a status listener" instead?
     start_time = reactor.seconds()
     if config.output_debug_messages:
-        def output_wrapper(msg):
+        def debug_message(msg):
             try:
                 js = fowld_output_to_json(msg)
                 # don't leak our absolute time, more convenient anyway
@@ -1783,7 +1784,31 @@ async def create_fowl(config, fowl_status_tracker):
                 )
             except Exception as e:
                 print(e)
-            return output_fowl_message(msg)
+        fowl_status_tracker.add_listener(debug_message)
+
+    if config.output_status:
+        def status(st):
+            try:
+                js = asdict(st)
+                # don't leak our absolute time, more convenient anyway
+                js["timestamp"] = reactor.seconds() - start_time
+                # process the subchannel stuff so the visualizer works out
+                print("DING", js)
+                for sc in js["subchannels"].values():
+                    sc["i"] = [
+                        [d, ts - start_time]
+                        for d, ts in sc["i"]
+                    ]
+                    sc["o"] = [
+                        [d, ts - start_time]
+                        for d, ts in sc["o"]
+                    ]
+                config.output_status.write(
+                    json.dumps(js) + "\n"
+                )
+            except Exception as e:
+                print(e)
+        fowl_status_tracker.add_status_listener(status)
 
     if config.debug_file:
         kind = "invite" if config.code is None else "accept"
