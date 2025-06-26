@@ -7,7 +7,6 @@ import binascii
 import functools
 import struct
 import signal
-from base64 import b16encode
 from typing import IO, Callable, TextIO
 from functools import partial
 from itertools import count
@@ -289,20 +288,15 @@ async def frontend_accept_or_invite(reactor, config):
 
     status_tracker = _StatusTracker()
 
-    def render():
-        return render_status(status_tracker.current_status)
-
-    # XXX for testing .. maybe an option instead?
-    from rich.console import Console
-    console = Console(force_terminal=True)
-    live = Live(get_renderable=render, console=console)
-
     fowl_wh = await create_fowl(config, status_tracker)
     fowl_wh.start()
 
-    ##@daemon.set_trace
-    def _(o, i, n):
-        print("{} --[ {} ]--> {}".format(o, i, n))
+    # testing a TUI style output UI, maybe optional?
+    def render():
+        return render_status(status_tracker.current_status)
+    from rich.console import Console
+    console = Console(force_terminal=True)
+    live = Live(get_renderable=render, console=console)
 
     ### XXX use PleaseCloseWormhole, approximately
     reactor.addSystemEventTrigger("before", "shutdown", lambda: ensureDeferred(fowl_wh.disconnect_session()))
@@ -321,11 +315,16 @@ async def frontend_accept_or_invite(reactor, config):
     coop = fowl_wh._coop
     assert coop is not None, "wat"
 
-    await fowl_wh.when_connected()
-    print("connected")
+    async def issue_commands():
+        await fowl_wh.when_connected()
+        print("connected, issuing commands")
+        for command in config.commands:
+            fowl_wh.command(command)
+    d = ensureDeferred(issue_commands())
 
-    for command in config.commands:
-        fowl_wh.command(command)
+    @d.addErrback
+    def command_issue_failed(f):
+        print(f"Failed to issue command: {f}")
 
     done_d = fowl_wh.when_done()
 
@@ -333,8 +332,8 @@ async def frontend_accept_or_invite(reactor, config):
     # but for reasons unknown to me it doesn't show "unhandled error"
     # from Twisted -- replace "with live:" here with "if 1:" to see
     # more error stuff (but of course no TUI)
-    if 1:
-    #with live:
+    #if 1:
+    with live:
         while not done_d.called:
             await deferLater(reactor, 0.25, lambda: None)
 
@@ -1296,8 +1295,8 @@ class FowlWormhole:
 
             @d.addCallback
             def did_dilate(arg):
-                print("did dilate")
-                self._coop._status_tracker.peer_connected(verifier, versions)
+                hex_verifier = binascii.hexlify(verifier).decode("utf8")
+                self._coop._status_tracker.peer_connected(hex_verifier, versions)
                 self._peer_connected = True
                 self._coop._versions_verified()
                 return arg
@@ -1811,7 +1810,7 @@ async def create_fowl(config, fowl_status_tracker):
     w = await wormhole_from_config(reactor, config, fowl_status_tracker.wormhole_status)
 
     from .api import create_coop
-    coop = create_coop(reactor, w)
+    coop = create_coop(reactor, w, fowl_status_tracker)
 
 #    @sm.set_trace
 #    def _(start, edge, end):

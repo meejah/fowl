@@ -69,7 +69,6 @@ class _StatusTracker:
         self._listeners.append(listener)
 
     def _emit(self, msg):
-        print("EMIT", msg)
         for target in self._listeners:
             target(msg)
 

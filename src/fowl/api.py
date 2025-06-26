@@ -28,10 +28,10 @@ from .status import _StatusTracker
 from .tcp import allocate_tcp_port
 
 
-def create_coop(reactor, wormhole):
+def create_coop(reactor, wormhole, status_tracker):
     # it is "_FowlCoop.dilate()" that does the magic -- inject our
     # subprotocols etc
-    return _FowlCoop(reactor, wormhole)
+    return _FowlCoop(reactor, wormhole, status_tracker)
 
 
 @define
@@ -244,9 +244,10 @@ class _FowlCoop:
     the `FowlChannelDaemonHere.listen_port` on the Host.
     """
 
-    def __init__(self, reactor, wormhole):
+    def __init__(self, reactor, wormhole, status_tracker):
         self._reactor = reactor
         self._wormhole = wormhole
+        self._status_tracker = status_tracker
 
         self._services = dict()  # name -> FowlChannelDaemonHere: fledge() services.
         self._roosts = dict()  # name -> FowlChannelDaemonThere: permitted / listening services
@@ -254,8 +255,6 @@ class _FowlCoop:
         self._dilated = None  # DilatedWormhole once we're dilated
         self._when_ready = When()
         self._when_roosted = dict()  # maps "unique-name" to When() instances
-
-        self._status_tracker = _StatusTracker()
 
     # XXX status listeners? probably makes more sense from "python
     # Twisted API" sense than the "Messages" objects -- although
