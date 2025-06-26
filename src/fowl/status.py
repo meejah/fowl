@@ -5,7 +5,7 @@ from typing import Dict, Optional, Callable
 
 import attrs
 
-from wormhole._status import ConnectionStatus
+from wormhole._status import ConnectionStatus, Connected, Connecting, AllocatedCode, ConnectedPeer, NoCode, ConsumedCode, AllocatedCode, Disconnected, Failed, Closed
 from wormhole import DilationStatus, WormholeStatus
 
 from fowl.messages import BytesIn, BytesOut, OutgoingConnection, OutgoingDone, OutgoingLost, Listening, Welcome, PeerConnected, RemoteListeningSucceeded, WormholeClosed, CodeAllocated, IncomingConnection, IncomingDone, IncomingLost, GotMessageFromPeer, FowlOutputMessage, WormholeError
@@ -30,15 +30,16 @@ class Listener:
 @attrs.frozen
 class FowlStatus:
     url: Optional[str] = None
-    mailbox_connection: Optional[ConnectionStatus] = None
     welcome: dict = {}
     code: Optional[str] = None
     verifier: Optional[str] = None
     closed: Optional[str] = None  # closed status, "happy", "lonely" etc
+    peer_connected: bool = False
     subchannels: Dict[str, Subchannel] = {}
     listeners: Dict[str, Listener] = {}
     peer_closing: bool = False
     we_closing: bool = False
+    is_connecting: bool = False
 
 
 @attrs.define
@@ -85,14 +86,34 @@ class _StatusTracker:
         """
         Hooked into our wormhole.
         """
-        self._modify_status(mailbox_connection=st.mailbox_connection)
+        # print(st)
+        kwargs = self._convert_wormhole_status(st)
+        self._modify_status(**kwargs)
         # anything we care about from status should be wired through as a
         # FowlOutputMessage or so externally.
+
+    def _convert_wormhole_status(self, st: WormholeStatus) -> dict:
+        kwargs = dict()
+        if isinstance(st.mailbox_connection, Connected):
+            kwargs["url"] = st.mailbox_connection.url
+            kwargs["is_connecting"] = False
+        elif isinstance(st.mailbox_connection, Connecting):
+            kwargs["url"] = st.mailbox_connection.url
+            kwargs["is_connecting"] = True
+        elif isinstance(st.mailbox_connection, (Disconnected, Failed, Closed)):
+            kwargs["url"] = None
+            kwargs["is_connecting"] = False
+
+        if st.code == NoCode() or st.code == ConsumedCode() :
+            kwargs["code"] = None
+        # actual code comes from .get_code()
+        return kwargs
 
     def dilation_status(self, st: DilationStatus):
         """
         Hooked into our wormhole.
         """
+        # print(st)
         self.wormhole_status(st.mailbox)
         # anything we care about from status should be wired through as a
         # FowlOutputMessage or so externally.
@@ -102,7 +123,7 @@ class _StatusTracker:
             welcome=welcome,
             closed=None
         )
-        self._emit(Welcome(welcome))
+        self._emit(Welcome(self._current_status.url, welcome))
 
     def code_allocated(self, code):
         self._modify_status(code=code)

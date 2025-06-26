@@ -31,6 +31,7 @@ class Welcome(FowlOutputMessage):
     Welcome message.
     """
     # open-ended information from the server
+    url: str
     welcome: dict
 
 

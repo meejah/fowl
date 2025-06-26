@@ -1255,20 +1255,21 @@ class FowlWormhole:
     async def _close_active_connections(self):
         pass
 
-    # XXX wants to be an IService?
+    # XXX maybe wants to be an IService?
     def start(self):
-
-        # tie "we got a code" into the state-machine
+        # pick up code for the status
         ensureDeferred(self._wormhole.get_code()).addCallbacks(
             self._coop._status_tracker.code_allocated,
             self._handle_error,
         )
 
+        """
         # pass on the welcome message
         ensureDeferred(self._wormhole.get_welcome()).addCallbacks(
             self._coop._status_tracker.welcomed,
             self._handle_error,
         )
+        """
 
         # when we get the verifier and versions, we emit "peer
         # connected"
