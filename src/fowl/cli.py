@@ -131,6 +131,7 @@ def fowld(ctx, ip_privacy, mailbox, debug):
 # (maybe alias --daemon-there / --daemon-here to --local / --remote? --daemon-there == --local (old-style usage))
 @click.option(
     "--local", "-L",
+    "--client",
     multiple=True,
     help=(
         "We will listen locally, forwarding local connections to the other peer."
@@ -145,6 +146,7 @@ def fowld(ctx, ip_privacy, mailbox, debug):
 )
 @click.option(
     "--remote", "-R",
+    "--service",
     multiple=True,
     help=(
         "Listen on the other peer, so the server-style software runs here."
