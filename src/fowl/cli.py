@@ -415,16 +415,15 @@ def _replay_visuals(cfg, messages):
             json.loads(line)
             for line in f.readlines()
         ]
-    print(messages)
 
     status_tracker = _StatusTracker()
+    where_are_we = messages[0]["timestamp"]
 
     def render():
-        return render_status(status_tracker.current_status)
+        return render_status(status_tracker.current_status, where_are_we)
     from rich.console import Console
     console = Console(force_terminal=True)
     live = Live(get_renderable=render, console=console)
-    where_are_we = messages[0]["timestamp"]
 
     with live:
         while messages:

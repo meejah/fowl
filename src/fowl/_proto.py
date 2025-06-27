@@ -294,7 +294,7 @@ async def frontend_accept_or_invite(reactor, config):
 
     # testing a TUI style output UI, maybe optional?
     def render():
-        return render_status(status_tracker.current_status)
+        return render_status(status_tracker.current_status, reactor.seconds())
     from rich.console import Console
     console = Console(force_terminal=True)
     live = Live(get_renderable=render, console=console)

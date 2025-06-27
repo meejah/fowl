@@ -10,7 +10,7 @@ from .status import FowlStatus
 from fowl import chicken
 
 
-def render_status(st: FowlStatus) -> Table:  # Panel? seomthing else
+def render_status(st: FowlStatus, time_now) -> Table:  # Panel? seomthing else
     """
     Render the given fowl status to a Rich thing
     """
@@ -56,7 +56,9 @@ def render_status(st: FowlStatus) -> Table:  # Panel? seomthing else
 
     if not st.peer_connected:
         status_remote.stylize("rgb(100,255,0) on rgb(255,0,0)")
-
+        t.add_row(Text("hints"), Text(" ".join(st.hints)), None)
+    else:
+        t.add_row(Text("hint"), Text("🐥 {}".format(st.peer_connected)), None)
 
     # turn purple if we / they are closing
     if st.peer_closing:
@@ -88,7 +90,7 @@ def render_status(st: FowlStatus) -> Table:  # Panel? seomthing else
         else:
             remote = local = Text("???", justify="center")
             local = Text("???", justify="center")
-        bw = render_bw(data)
+        bw = render_bw(data, time_now)
         t.add_row(local, bw, remote)
 
     return t
@@ -97,8 +99,7 @@ def render_status(st: FowlStatus) -> Table:  # Panel? seomthing else
 interval = 0.25
 
 
-def render_bw(sub):
-    start = time.time()  # FIXME time provuder
+def render_bw(sub, start):
     if sub.i:
         accum = 0
         idx = 0
@@ -135,13 +136,11 @@ def render_bw(sub):
     else:
         bw = ""
     rendered = Text(bw, style="blue", justify="center")
-    rendered.append_text(Text("\n" + render_bw_out(sub), style="yellow"))
+    rendered.append_text(Text("\n" + render_bw_out(sub, start), style="yellow"))
     return rendered
 
 
-# XXX fixme, need to send in time here (or something) to fix --replay
-def render_bw_out(sub):
-    start = time.time()
+def render_bw_out(sub, start):
     if not sub.o:
         return ""
     accum = 0

@@ -34,12 +34,13 @@ class FowlStatus:
     code: Optional[str] = None
     verifier: Optional[str] = None
     closed: Optional[str] = None  # closed status, "happy", "lonely" etc
-    peer_connected: bool = False
-    subchannels: Dict[str, Subchannel] = {}
-    listeners: Dict[str, Listener] = {}
+    peer_connected: Optional[str] = None  # hint-description if connected
+    subchannels: Dict[str, Subchannel] = attrs.Factory(dict)
+    listeners: Dict[str, Listener] = attrs.Factory(dict)
     peer_closing: bool = False
     we_closing: bool = False
     is_connecting: bool = False
+    hints: list = attrs.Factory(list)
 
 
 @attrs.define
@@ -117,9 +118,14 @@ class _StatusTracker:
         self.wormhole_status(st.mailbox)
         kwargs = dict()
         if isinstance(st.peer_connection, ConnectedPeer):
-            kwargs["peer_connected"] = True
+            kwargs["peer_connected"] = st.peer_connection.hint_description
         else:
-            kwargs["peer_connected"] = False
+            kwargs["peer_connected"] = None
+
+        kwargs["hints"] = [
+            "{} {}".format("🐣" if h.is_direct else "🥚", h.url)
+            for h in st.hints
+        ]
         self._modify_status(**kwargs)
 
     def welcomed(self, welcome):
