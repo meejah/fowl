@@ -410,14 +410,18 @@ def _replay_visuals(cfg, messages):
     import time
     import json
 
+
     with messages as f:
         messages = [
             json.loads(line)
             for line in f.readlines()
         ]
-
-    status_tracker = _StatusTracker()
     where_are_we = messages[0]["timestamp"]
+
+    def current_time():
+        print(f"current {where_are_we}")
+        return where_are_we
+    status_tracker = _StatusTracker(time_provider=current_time)
 
     def render():
         return render_status(status_tracker.current_status, where_are_we)
@@ -429,8 +433,6 @@ def _replay_visuals(cfg, messages):
         while messages:
             data = messages.pop(0)
             timestamp = data.pop("timestamp")
-            delay = timestamp - where_are_we
-            where_are_we = timestamp
 
             msg = FowlStatus(**data)
             msg = attrs.evolve(
@@ -445,11 +447,22 @@ def _replay_visuals(cfg, messages):
                 },
             )
             print(msg)
-            while delay > 0.25:
+            # time is hard
+            # intuitively, we want to trigger a redraw 4 times a second
+            # ...but waiting 0.25s with time.sleep() isn't right,
+            # because we take a non-zero amount of time to do the rest
+            # ... and are we doing "wall-clock time" or some kind of
+            # virtual shit here, who can say.
+            delay = timestamp - where_are_we
+            target = time.time() + delay
+            while time.time() < target:
                 status_tracker._current_status = msg
-                time.sleep(0.25)
-                delay -= 0.25
-            time.sleep(delay)
+                amount = min(0.23, max(0.0, target - time.time()))
+                where_are_we += amount
+                time.sleep(amount)
+
+            # regardless of any overruns, clam to target
+            where_are_we = timestamp
 
 
 def tui(cfg):
