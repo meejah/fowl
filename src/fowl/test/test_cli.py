@@ -15,7 +15,7 @@ import os
 import signal
 from fowl.observer import When, Framer
 from fowl.test.util import ServerFactory, ClientFactory
-from fowl.cli import _to_port, _parse_specifier
+from fowl.cli import _to_port
 
 
 @implementer(IProcessProtocol)
@@ -67,8 +67,7 @@ async def test_happy_path(reactor, request, mailbox):
         [
             "python", "-u", "-m", "fowl.cli",
             "--mailbox", mailbox.url,
-            # redundant "--allow-connect", "2121",
-            "--remote", "2222:2121",
+            "--remote", "test:2121:listen=2222",
         ],
         env=os.environ,
     )
@@ -78,8 +77,7 @@ async def test_happy_path(reactor, request, mailbox):
     x = re.compile(b"code: (.*)\x1b")
     code = None
     while not code:
-        await deferLater(reactor, 1, lambda: None)
-        #print(invite_proto._streams)
+        await deferLater(reactor, .4, lambda: None)
         if m := x.search(invite_proto._streams[1]):
             code = m.group(1).decode("utf8")
 
@@ -92,7 +90,7 @@ async def test_happy_path(reactor, request, mailbox):
         [
             "python", "-u", "-m", "fowl.cli",
             "--mailbox", mailbox.url,
-            "--allow-listen", "2222",
+            "--local", "test:2222",
             code,
         ],
         env=os.environ,
@@ -102,13 +100,13 @@ async def test_happy_path(reactor, request, mailbox):
     print("Starting accept side")
 
     while True:
-        if "🧙".encode("utf8") in invite_proto._streams[1]:
-            print("invite side listening")
+        await deferLater(reactor, .4, lambda: None)
+        if "🧙".encode("utf8") in invite_proto._streams[1] \
+           and "🧙".encode("utf8") in accept_proto._streams[1]:
+            print("both sides set up")
             break
-        elif "🧙".encode("utf8") in accept_proto._streams[1]:
-            print("accept side listening")
-            break
-        await deferLater(reactor, 0.5, lambda: None)
+        os.write(0, invite_proto._streams[1])
+        os.write(0, accept_proto._streams[1])
 
     # now that they are connected, and one side is listening -- we can
     # ourselves listen on the "connect" port and connect on the
