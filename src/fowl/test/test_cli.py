@@ -1,3 +1,4 @@
+import re
 
 import pytest_twisted
 
@@ -73,13 +74,13 @@ async def test_happy_path(reactor, request, mailbox):
     )
     request.addfinalizer(lambda:invite.signalProcess(signal.SIGKILL))
 
-    import re
-    x = re.compile(b"code: (.*)\x1b")
+    code_matcher = re.compile(b"code: ([-0-9a-z]*) ")
     code = None
     while not code:
         await deferLater(reactor, .4, lambda: None)
-        if m := x.search(invite_proto._streams[1]):
+        if m := code_matcher.search(invite_proto._streams[1]):
             code = m.group(1).decode("utf8")
+            code = code.strip()
 
     print(f"Detected code: {code}")
 
@@ -99,14 +100,17 @@ async def test_happy_path(reactor, request, mailbox):
 
     print("Starting accept side")
 
-    while True:
-        await deferLater(reactor, .4, lambda: None)
+    for i in range(5):
+        await deferLater(reactor, 2.5, lambda: None)
         if "🧙".encode("utf8") in invite_proto._streams[1] \
            and "🧙".encode("utf8") in accept_proto._streams[1]:
             print("both sides set up")
             break
-        os.write(0, invite_proto._streams[1])
+#        print(invite_proto._streams[1])
+#        os.write(0, invite_proto._streams[1])
         os.write(0, accept_proto._streams[1])
+    else:
+        assert False, "failed to see both sides set up"
 
     # now that they are connected, and one side is listening -- we can
     # ourselves listen on the "connect" port and connect on the

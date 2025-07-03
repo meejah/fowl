@@ -38,7 +38,7 @@ def render_status(st: FowlStatus, time_now) -> Table:  # Panel? seomthing else
     if st.code is not None:
         # only display code until we're connected
         if st.verifier is None:
-            message_text.append(Text(f"code: {st.code}\n", "bold"))
+            message_text.append(Text(f"code: {st.code} ", "bold"))
 
     if st.verifier is not None:
         nice_verifier = " ".join(
