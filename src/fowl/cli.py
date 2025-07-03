@@ -142,7 +142,7 @@ def fowld(ctx, ip_privacy, mailbox, debug):
         "If you can avoid choosing at all, a random port is assigned -- this is the most likely to succeed."
         "(Run a corresponding --remote with the same service-name on the other peer)"
     ),
-    metavar="service-name:[local-listen-port]:[bind=127.0.0.1]:[connect=port",
+    metavar="service-name:[local-listen-port]:[bind=127.0.0.1]:[connect=port]",
 )
 @click.option(
     "--remote", "-R",

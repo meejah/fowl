@@ -167,25 +167,40 @@ def test_specifiers_one_port(name, port):
 
 
 @given(
+    text(min_size=1),
     integers(min_value=1, max_value=65535),
     integers(min_value=1, max_value=65535),
 )
-def test_specifiers_two_ports(port0, port1):
-    cmd = f"{port0}:{port1}"
-    assert _specifier_to_tuples(cmd) == ("localhost", port0, "localhost", port1)
+def test_specifiers_two_ports(name, port0, port1):
+    assume('[' not in name)
+    assume(']' not in name)
+    assume(':' not in name)
+    spec = RemoteSpecifier.parse(f"{name}:{port0}:listen={port1}")
+    assert spec.to_remote() == RemoteListener(
+        name=name,
+        local_connect_port=port0,
+        remote_listen_port=port1,
+    )
 
 
 @given(
+    text(min_size=1),
     integers(min_value=1, max_value=65535),
     integers(min_value=1, max_value=65535),
     ip_addresses(v=4),  # do not support IPv6 yet
 )
-def test_specifiers_two_ports_one_ip(port0, port1, ip):
+def test_specifiers_two_ports_one_ip(name, port0, port1, ip):
     if ip.version == 4:
-        cmd = f"{ip}:{port0}:{port1}"
+        cmd = f"{name}:{port0}:listen={port1}:address={ip}"
     else:
-        cmd = f"[{ip}]:{port0}:{port1}"
-    assert _specifier_to_tuples(cmd) == (str(ip), port0, "localhost", port1)
+        cmd = f"{name}:{port0}:listen={port1}:address=[{ip}]"
+    spec = RemoteSpecifier.parse(cmd)
+    assert spec.to_remote() == RemoteListener(
+        name=name,
+        local_connect_port=port0,
+        remote_listen_port=port1,
+        connect_address=str(ip),
+    )
 
 
 @given(
