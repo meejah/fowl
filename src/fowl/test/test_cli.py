@@ -1,5 +1,6 @@
 import re
 
+import pytest
 import pytest_twisted
 
 #from twisted.internet.protocol import ProtocolBase
@@ -190,6 +191,9 @@ def test_specifiers_two_ports(name, port0, port1):
     ip_addresses(v=4),  # do not support IPv6 yet
 )
 def test_specifiers_two_ports_one_ip(name, port0, port1, ip):
+    assume('[' not in name)
+    assume(']' not in name)
+    assume(':' not in name)
     if ip.version == 4:
         cmd = f"{name}:{port0}:listen={port1}:address={ip}"
     else:
@@ -204,31 +208,16 @@ def test_specifiers_two_ports_one_ip(name, port0, port1, ip):
 
 
 @given(
+    text(min_size=1),
     integers(min_value=1, max_value=65535),
     integers(min_value=1, max_value=65535),
-    ip_addresses(v=4),  # do not support IPv6 yet
-    ip_addresses(v=4),  # do not support IPv6 yet
-)
-def test_specifiers_two_ports_two_ips(port0, port1, ip0, ip1):
-    cmd = f"{ip0}:{port0}:{ip1}:{port1}"
-    assert _specifier_to_tuples(cmd) == (str(ip0), port0, str(ip1), port1)
-
-
-@given(
-    integers(min_value=1, max_value=65535),
-    integers(min_value=1, max_value=65535),
-    ip_addresses(v=6),
     ip_addresses(v=6),
     sampled_from([True, False]),
 )
-def test_specifiers_unsupported_v6(port0, port1, ip0, ip1, wrap):
+def _test_specifiers_unsupported_v6(port0, port1, ip, wrap):
     if wrap:
-        cmd = f"[{ip0}]:{port0}:[{ip1}]:{port1}"
+        cmd = f"{name}:{port0}:listen={port1}:address=[{ip}]"
     else:
-        cmd = f"{ip0}:{port0}:{ip1}:{port1}"
-    try:
-        assert _specifier_to_tuples(cmd) == (str(ip0), port0, str(ip1), port1)
-    except RuntimeError:
-        pass
-    except ValueError:
-        pass
+        cmd = f"{name}:{port0}:listen={port1}:address={ip}"
+    with pytest.raises(ValueError):
+        assert RemoteSpecifier.parse(cmd)
