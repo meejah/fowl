@@ -212,12 +212,8 @@ def test_specifiers_two_ports_one_ip(name, port0, port1, ip):
     integers(min_value=1, max_value=65535),
     integers(min_value=1, max_value=65535),
     ip_addresses(v=6),
-    sampled_from([True, False]),
 )
-def _test_specifiers_unsupported_v6(port0, port1, ip, wrap):
-    if wrap:
-        cmd = f"{name}:{port0}:listen={port1}:address=[{ip}]"
-    else:
-        cmd = f"{name}:{port0}:listen={port1}:address={ip}"
-    with pytest.raises(ValueError):
+def test_specifiers_unsupported_v6(name, port0, port1, ip):
+    cmd = f"{name}:{port0}:listen={port1}:address=[{ip}]"
+    with pytest.raises(RuntimeError):
         assert RemoteSpecifier.parse(cmd)
