@@ -1671,8 +1671,24 @@ def parse_fowld_command(json_str: str) -> FowlCommandMessage:
     kind_to_message = {
         "allocate-code": parser(AllocateCode, [], [("length", maybe_int)]),
         "set-code": parser(SetCode, [("code", None)], []),
-        "local": parser(LocalListener, [("listen", None), ("connect", None)], []),
-        "remote": parser(RemoteListener, [("listen", None), ("connect", None)], []),
+        "local": parser(
+            LocalListener,
+            [("name", str)],
+            [
+                ("local-listen-port", is_valid_port),
+                ("remote-connect-port", is_valid_port),
+                ("bind-interface", None),  # XXX wants like is_valid_ip_address or so
+            ],
+        ),
+        "remote": parser(
+            RemoteListener,
+            [("name", str)],
+            [
+                ("remote-listen-port", is_valid_port),
+                ("local-connect-port", is_valid_port),
+                ("connect-address", None),  # wants is_valid_address() or similar?
+            ],
+        ),
         "grant-permission": parser(GrantPermission, [("listen", port_list), ("connect", port_list)], []),
         "danger-disable-permission-check": parser(DangerDisablePermissionCheck, [], []),
         "ping": parser(Ping, [("ping_id", None)], []),
@@ -1855,7 +1871,10 @@ async def forward(reactor, config):
             flush=True,
         )
 
-    fowl = await create_fowl(config, output_fowl_message)
+    status_tracker = _StatusTracker()
+    status_tracker.add_listener(output_fowl_message)
+
+    fowl = await create_fowl(config, status_tracker)
     fowl.start()
 
     # arrange to read incoming commands from stdin

@@ -17,7 +17,6 @@ from twisted.internet.endpoints import serverFromString, clientFromString
 from fowl._proto import _Config, forward
 from fowl.observer import Accumulate
 from fowl.test.util import ServerFactory, ClientFactory
-from fowl.policy import AnyConnectPolicy, AnyListenPolicy
 
 
 # XXX ultimately we might want a "TestingWormhole" object or something
@@ -163,8 +162,6 @@ async def test_forward(reactor, request, mailbox, datasize, who):
         use_tor=False,
         create_stdio=create_stdin0,
         stdout=StringIO(),
-        listen_policy=AnyListenPolicy(),
-        connect_policy=AnyConnectPolicy(),
     )
     # note: would like to get rid of this ensureDeferred, but it
     # doesn't start "running" the coro until we do this...
@@ -186,8 +183,6 @@ async def test_forward(reactor, request, mailbox, datasize, who):
         create_stdio=create_stdin1,
         stdout=StringIO(),
         code=msg["code"],
-        listen_policy=AnyListenPolicy(),
-        connect_policy=AnyConnectPolicy(),
     )
 
     d1 = ensureDeferred(forward(reactor, config1))
@@ -293,8 +288,6 @@ async def test_drawrof(reactor, request, mailbox, datasize, who, wait_peer):
         use_tor=False,
         create_stdio=create_stdin0,
         stdout=StringIO(),
-        listen_policy=AnyListenPolicy(),
-        connect_policy=AnyConnectPolicy(),
     )
     # note: would like to get rid of this ensureDeferred, but it
     # doesn't start "running" the coro until we do this...
@@ -318,8 +311,6 @@ async def test_drawrof(reactor, request, mailbox, datasize, who, wait_peer):
         create_stdio=create_stdin1,
         stdout=StringIO(),
         code=msg["code"],
-        listen_policy=AnyListenPolicy(),
-        connect_policy=AnyConnectPolicy(),
     )
     d1 = ensureDeferred(forward(reactor, config1))
     d1.addErrback(ignore_cancel)

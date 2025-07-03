@@ -74,10 +74,6 @@ def fowld(ctx, ip_privacy, mailbox, debug):
         relay_url=WELL_KNOWN_MAILBOXES.get(mailbox, mailbox),
         use_tor=bool(ip_privacy),
         debug_file=debug,
-        # these will be empty; client must activate ports by sending
-        # messages to allow listening (or connecting)
-        listen_policy = LocalhostTcpPortsListenPolicy([]),
-        connect_policy = LocalhostTcpPortsConnectPolicy([]),
     )
     def run(reactor):
         return ensureDeferred(
