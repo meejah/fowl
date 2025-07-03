@@ -8,15 +8,16 @@ from twisted.internet.interfaces import IProcessProtocol
 from twisted.internet.protocol import ProcessProtocol
 from twisted.internet.endpoints import serverFromString, clientFromString
 from twisted.internet.task import deferLater
-from hypothesis.strategies import integers, sampled_from, one_of, ip_addresses
-from hypothesis import given
+from hypothesis.strategies import integers, sampled_from, one_of, ip_addresses, text
+from hypothesis import given, assume
 import click
 import sys
 import os
 import signal
 from fowl.observer import When, Framer
 from fowl.test.util import ServerFactory, ClientFactory
-from fowl.cli import _to_port
+from fowl.cli import _to_port, RemoteSpecifier
+from fowl.messages import RemoteListener
 
 
 @implementer(IProcessProtocol)
@@ -149,10 +150,20 @@ def test_helper_to_port_invalid(port):
         pass
 
 
-@given(integers(min_value=1, max_value=65535))
-def test_specifiers_one_port(port):
+@given(
+    text(min_size=1),
+    integers(min_value=1, max_value=65535),
+)
+def test_specifiers_one_port(name, port):
+    assume('[' not in name)
+    assume(']' not in name)
+    assume(':' not in name)
     cmd = f"{port}"
-    assert _specifier_to_tuples(cmd) == ("localhost", port, "localhost", port)
+    spec = RemoteSpecifier.parse(f"{name}:{port}")
+    assert spec.to_remote() == RemoteListener(
+        name=name,
+        local_connect_port=port,
+    )
 
 
 @given(
