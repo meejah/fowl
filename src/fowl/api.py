@@ -11,6 +11,7 @@ from twisted.internet.interfaces import IStreamClientEndpoint, IStreamServerEndp
 from twisted.internet.endpoints import TCP4ServerEndpoint, TCP6ServerEndpoint
 from twisted.internet.endpoints import TCP4ClientEndpoint, TCP6ClientEndpoint
 from twisted.internet.endpoints import AdoptedStreamServerEndpoint
+from twisted.internet.defer import ensureDeferred
 from twisted.internet.protocol import Factory
 from twisted.python.reflect import requireModule
 from twisted.python.runtime import platformType
@@ -290,9 +291,11 @@ class _FowlCoop:
         self._set_dilated(dilated)
         # "dilated" is a DilatedWormhole instance
 
-        # XXX need to wait for versions, and their verification
-        # maybe: don't call _set_dilated until we get versions
-        # maybe: have a separate call/signal to Coop for that
+        # arrange to trigger our connected signal when the verifier
+        # arrives
+        def got_verifier(_verifier_bytes):
+            self._when_ready.trigger(self._reactor, dilated)
+        ensureDeferred(self._wormhole.get_verifier()).addCallback(got_verifier)
 
         await dilated.listener_for("fowl").listen(
             FowlSubprotocolListener(self._reactor, self, self._status_tracker)
