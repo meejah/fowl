@@ -311,11 +311,6 @@ async def frontend_accept_or_invite(reactor, config):
             AllocateCode(config.code_length)
         )
 
-    # XXX need to unify a bunch of this ... but for now, steal the
-    # wormhole out of FowlWormhole
-    coop = fowl_wh._coop
-    assert coop is not None, "wat"
-
     async def issue_commands():
         await fowl_wh.when_connected()
         for command in config.commands:
