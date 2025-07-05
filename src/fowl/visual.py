@@ -72,7 +72,7 @@ def render_status(st: FowlStatus, time_now) -> Table:  # Panel? seomthing else
     for id_, data in st.listeners.items():
         t.add_row(
             Text("{} {}".format('🧙' if data.remote else ' ', data.local_port)),
-            Text("--> {}".format(data.service_name)),
+            Text("{} {}".format("-->" if data.remote else "<--", data.service_name)),
             Text("{}".format(' ' if data.remote else '🧙'), justify="center"),
         )
 
