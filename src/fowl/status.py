@@ -117,7 +117,7 @@ class _StatusTracker:
         """
         Hooked into our wormhole.
         """
-        print(st)
+        ##print(st)
         self.wormhole_status(st.mailbox)
         kwargs = dict()
         if isinstance(st.peer_connection, ConnectedPeer):
