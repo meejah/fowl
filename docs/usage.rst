@@ -1,14 +1,16 @@
-``fowld`` versus ``fowl``
-=========================
+Command-Line Usage
+======================
 
 This project actually ships two CLI tools: ``fowld`` and ``fowl``.
+
+``fowld`` versus ``fowl``
+-------------------------
 
 One is intended for automated, programmatic use (``fowld``) and the other is intended for human use (``fowl``).
 
 Most users should use ``fowl``.
 
 Programs that integrate with (or otherwise want stable, machine-parsable output) should use ``fowld``.
-Under the hood, ``fowl`` commands actually use ``fowld`` (via a Python API).
 All functionality is available to users of either program.
 
 If you want very similar operation to ``fowld`` but do not like typing JSON, use ``fowl tui``.
@@ -89,7 +91,7 @@ Thus, if you have a ``--local`` on one peer you should expect a corresponding ``
 Similarly, if there is a ``--remote`` on one peer, you should expect the other peer to require a corresponding ``--allow-listen`` argument.
 
 
-.. image:: _static/magic-peer-networking.svg
+.. image:: _static/fowl-plugins-plain.svg
 
 
 So, in the above we have "Peer A" running a Web server (in this case Twisted's) that it wishes to expose to Peer B's "curl" command.
@@ -219,7 +221,7 @@ See :ref:`frontend-protocol` for details on the stdin / stdout protocol that is 
 Mostly aimed at developers or advanced usage, this command essentially directly maps the frontend protocol (see :ref:`frontend-protocol`) to interactive commands.
 
 At the ``>>>`` prompt, certain commands are accepted.
-These map directly to ``"kind"` JSON commands from the above-referenced protocol.
+These map directly to ``"kind"`` JSON commands from the above-referenced protocol.
 
 That is, you _could_ just run ``fowld`` and type in JSON directly -- but this is a little nicer!
 

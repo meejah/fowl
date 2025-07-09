@@ -6,7 +6,7 @@ fowl: Forward Over Wormhole, Locally
 **Peers** communicate to each other over an **end-to-end encrypted** connection, and can use client-type or server-type network services from each side.
 Permitted services and ports are based on consent of each peer.
 
-.. image:: _static/fowl-forward-light.png
+.. image:: fowl-forward-light.png
   :width: 100%
   :alt: Fowl forwarding a connection, with traffic visualization and some ascii-art showing connected peers
 

@@ -76,35 +76,27 @@ Finally, a Diagram of the Situation
 
 No matter what combination of APIs are used for setup, *logically* our setup consists of one or more "Fowl services" which each contain one or more listening/connect pairs of forwarded network streams between two peers.
 
-.. image:: _static/magic-peer-networking.svg
+.. image:: _static/fowl-plugins-plain.svg
   :width: 100%
-  :alt: Diagram of Fowl networking. Two applications, presenting one service named "web" between two peers (A, B) where A listens on 8080 and B connects locally to 4321, which forwards to 8080 on the other peer
+  :alt: Diagram of Fowl networking. Two applications, presenting one service named "chat" between two peers (A, B) where A connects locally to 8888, which forwards to 2222 on the other peer (where the "service" / "daemon" style software is running).
 
 This diagram depicts two peers ("A" and "B") connected via a Magic Wormhole across the internet.
-Both sides are using "fowl", and have a single logical "Fowl service" called "blog" here.
-This service consists of a single forwarded connection: Peer A runs a "twisted Web" daemon on port 8080, while Peer B runs a Fowl listener on port 4321.
+Both sides are using "fowl", and have a single logical "Fowl service" called "chat" here.
+This service consists of a single forwarded connection: Peer B runs a "nc" (netcat) daemon on port 2222, while Peer A has a Fowl listener on 8888.
 
-That is, Peer A has a "listen" style socket on port 8080 (in use by the Web server subprocess -- this could be `nginx` if you prefer).
-And meantime, Peer B has a "listen" style socket on port 4321, in use by the Fowl Python process.
+That is, Peer B has a "listen" style socket on port 2222 (in use by the netcat server subprocess -- this could be any "daemon" style softare you like).
+And meantime, Peer A has a "listen" style socket on port 8888, in use by the Fowl Python process.
 
-When the "curl" process on Peer B connects to this Fowl listener on `localhost:4321`, the connection is forwarded across the wormhole, and the Fowl instance on Peer A connects locally to `localhost:8080` -- where the Web server is running.
+When the "telnet" process on Peer A connects to this Fowl listener on `localhost:8888`, the connection is forwarded across the wormhole, and the Fowl instance on Peer B connects locally to `localhost:2222` -- where the server is running.
 
-**This is the magic**: Peer B is connected to Peer A's Web server, with both peers using only "localhost" as the host-name.
+**This is the magic**: Peer A is connected to Peer B's server, with both peers using only "localhost" as the host-name.
 Network traffic is streamed across the Magic Wormhole.
-
-Note::
-   Experts at Web things may understand that this is one of the cases where we do actually care about ports -- because this particular setup won't work for many Web things.
-   We actually need Peer B to *also* listen on port `8080` -- because a "Web Origin" cares about the port too.
-   More about this special case below.
-
-If our logical "blog" service also needed, for example, a WebSockets listener we could also lump that together in this single logical Fowl service.
-How the application developer groups (or does not) actual forwarded connections is up to them.
 
 So, to recap, we have:
 
-- one "Fowl service" called "blog"
-- ...which consists of one forwarded connection, called "web"
-- ...using port 8080 on the "host" peer (Peer A), and port 4321 on the "guest" peer (Peer B)
+- one "Fowl service" called "chat"
+- ...which consists of one forwarded connection
+- ...using port 2222 on the "host" peer (Peer B), and port 8888 on the "guest" peer (Peer A)
 
 Well-behaved "Fowl service" code will be written so that two or more Fowl services may be composed together over one Wormhole.
 For example, we might want to do "git withme" as well as "tty-share" on the same wormhole, to accomplish "peer to peer pair programming"
