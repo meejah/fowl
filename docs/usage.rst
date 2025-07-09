@@ -11,7 +11,6 @@ One is intended for automated, programmatic use (``fowld``) and the other is int
 Most users should use ``fowl``.
 
 Programs that integrate with (or otherwise want stable, machine-parsable output) should use ``fowld``.
-Under the hood, ``fowl`` commands actually use ``fowld`` (via a Python API).
 All functionality is available to users of either program.
 
 If you want very similar operation to ``fowld`` but do not like typing JSON, use ``fowl tui``.
