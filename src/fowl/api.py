@@ -29,9 +29,11 @@ from .status import _StatusTracker
 from .tcp import allocate_tcp_port
 
 
-def create_coop(reactor, wormhole, status_tracker):
+def create_coop(reactor, wormhole, status_tracker=None):
     # it is "_FowlCoop.dilate()" that does the magic -- inject our
     # subprotocols etc
+    if status_tracker is None:
+        status_tracker = _StatusTracker()
     return _FowlCoop(reactor, wormhole, status_tracker)
 
 

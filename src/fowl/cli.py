@@ -244,7 +244,7 @@ def fowl(ip_privacy, mailbox, debug, local, remote, code_length, code, readme, i
         for spec in remote_services
     ]
 
-    if not commands:
+    if not commands and not interactive:
         raise click.UsageError(WOULD_DO_NOTHING_ERROR)
 
     cfg = _Config(
