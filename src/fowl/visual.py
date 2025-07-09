@@ -56,7 +56,7 @@ def render_status(st: FowlStatus, time_now) -> Table:  # Panel? seomthing else
 
     if not st.peer_connected:
         status_remote.stylize("rgb(100,255,0) on rgb(255,0,0)")
-        t.add_row(Text("hints"), Text(" ".join(st.hints)), None)
+        t.add_row(Text("hints"), Text("\n".join(st.hints)), None)
     else:
         t.add_row(Text("hint"), Text("🐥 {}".format(st.peer_connected)), None)
 
@@ -72,7 +72,7 @@ def render_status(st: FowlStatus, time_now) -> Table:  # Panel? seomthing else
     for id_, data in st.listeners.items():
         t.add_row(
             Text("{} {}".format('🧙' if data.remote else ' ', data.local_port)),
-            Text("--> {}".format(data.service_name)),
+            Text("{} {}".format("-->" if data.remote else "<--", data.service_name)),
             Text("{}".format(' ' if data.remote else '🧙'), justify="center"),
         )
 

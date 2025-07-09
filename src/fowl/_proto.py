@@ -749,7 +749,6 @@ class LocalServerFarSide(Protocol):
         self.queue = []
         self.remote = None
         self.conn_id = allocate_connection_id()
-        print("CONN MADE", self.conn_id, self.factory)
 
         # XXX do we need registerProducer somewhere here?
         # XXX make a real Factory subclass instead
@@ -1294,7 +1293,7 @@ class FowlWormhole:
                 hex_verifier = binascii.hexlify(verifier).decode("utf8")
                 self._coop._status_tracker.peer_connected(hex_verifier, versions)
                 self._peer_connected = True
-                self._coop._versions_verified()
+                # could / is partially alreayd done by FowlCoop
                 return arg
 
         # hook up "incoming message" to input; this is async

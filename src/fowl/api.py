@@ -504,6 +504,12 @@ class _FowlCoop:
         when.trigger(self._reactor, channel)
         return channel
 
+#XXX FowlCoop is replacing FowlWormhole? or something?
+    def _close_all_ports(self):
+        for channel in self._roosts.values():
+            if channel.port:
+                channel.port.close()
+
     def _get_when_roosted(self, unique_name):
         """
         Internal helper.
@@ -528,11 +534,6 @@ class _FowlCoop:
                 "dilated() may only be called once per next"
             )
         self._dilated = dilation
-
-    # called by FowlWormhole
-    def _versions_verified(self) -> None:
-        assert self._dilated is not None, "Internal error: _dilated must be available by now"
-        self._when_ready.trigger(self._reactor, self._dilated)
 
 
 # originally from Tahoe-LAFS
