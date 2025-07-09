@@ -56,7 +56,7 @@ def render_status(st: FowlStatus, time_now) -> Table:  # Panel? seomthing else
 
     if not st.peer_connected:
         status_remote.stylize("rgb(100,255,0) on rgb(255,0,0)")
-        t.add_row(Text("hints"), Text(" ".join(st.hints)), None)
+        t.add_row(Text("hints"), Text("\n".join(st.hints)), None)
     else:
         t.add_row(Text("hint"), Text("🐥 {}".format(st.peer_connected)), None)
 
