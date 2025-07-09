@@ -63,7 +63,7 @@ You can make multiple requests "at the same time" by opening multiple ``"fowl-co
 
 
 ``"kind": "request-listener"``
-`````````````````````````````
+``````````````````````````````
 
 An incoming message of this kind instructs us to open a local listener.
 Upon any connection to this listener, we open a "forwarding subchannel" (see next section).
