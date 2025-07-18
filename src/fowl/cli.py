@@ -1,6 +1,5 @@
 
 import click
-import pkg_resources
 
 from twisted.internet.task import react
 from twisted.internet.defer import ensureDeferred
@@ -152,18 +151,13 @@ def fowld(ctx, ip_privacy, mailbox, debug):
     help="Length of the Wormhole code (if we allocate one)",
 )
 @click.option(
-    "--readme", "-r",
-    help="Display the full project README",
-    is_flag=True,
-)
-@click.option(
     "--interactive", "-i",
     help="Run in interactive mode, a human-friendly fowld",
     is_flag=True,
 )
 @click.argument("code", required=False)
 @click.command()
-def fowl(ip_privacy, mailbox, debug, allow_listen, allow_connect, local, remote, code_length, code, readme, interactive, debug_messages):
+def fowl(ip_privacy, mailbox, debug, allow_listen, allow_connect, local, remote, code_length, code, interactive, debug_messages):
     """
     Forward Over Wormhole, Locally
 
@@ -177,10 +171,6 @@ def fowl(ip_privacy, mailbox, debug, allow_listen, allow_connect, local, remote,
     default. To join an existing session (e.g. you've been given a
     code) add the code as an (optional) argument on the command-line.
     """
-    if readme:
-        display_readme()
-        return
-
     local_commands = [
         _specifier_to_tuples(cmd)
         for cmd in local
@@ -379,17 +369,6 @@ def tui(cfg):
     def run(reactor):
         return ensureDeferred(frontend_tui(reactor, cfg))
     return react(run)
-
-
-def display_readme():
-    """
-    Display the project README
-    """
-    readme = pkg_resources.resource_string('fowl', '../../README.rst')
-    # uhm, docutils documentation is confusing as all hell and no good
-    # examples of "convert this rST string to anything else" .. :/ but
-    # we should "render" it to text
-    click.echo_via_pager(readme.decode('utf8'))
 
 
 if __name__ == "__main__":

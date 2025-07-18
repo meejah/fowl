@@ -64,7 +64,6 @@ dev = [
     "gpg",  # should use isis lovecruft's version?
     "pip-tools",
     "hatch",
-    "readme-renderer",
     "cuvner",
  ]
 
