@@ -1649,6 +1649,8 @@ def parse_fowld_command(json_str: str) -> FowlCommandMessage:
         return parse
 
     def is_valid_port(port):
+        if port is None:
+            return
         if isinstance(port, int) and port >= 1 and port < 65536:
             return port
         raise ValueError(f"Invalid port: {port}")
