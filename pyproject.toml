@@ -23,7 +23,7 @@ license = {file = "LICENSE"}
 authors = [
     { name = "meejah", email = "meejah@meejah.ca" },
 ]
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 keywords = [
     "cryptography",
     "forwarding",
