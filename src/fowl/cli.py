@@ -1,10 +1,9 @@
 
 import click
-import pkg_resources
 import attrs
 from typing import Optional
-
 from ipaddress import IPv4Address, IPv6Address
+from importlib import resources
 
 from twisted.internet.task import react
 from twisted.internet.defer import ensureDeferred
@@ -478,12 +477,9 @@ def display_readme():
     """
     Display the project README
     """
-    readme = pkg_resources.resource_string('fowl', '../../README.rst')
-    # uhm, docutils documentation is confusing as all hell and no good
-    # examples of "convert this rST string to anything else" .. :/ but
-    # we should "render" it to text
-    click.echo_via_pager(readme.decode('utf8'))
-
+    click.echo_via_pager(
+        resources.files("fowl").joinpath("README.rst").read_text(encoding="utf8")
+    )
 
 if __name__ == "__main__":
     try:
