@@ -1669,18 +1669,18 @@ def parse_fowld_command(json_str: str) -> FowlCommandMessage:
             LocalListener,
             [("name", str)],
             [
-                ("local-listen-port", is_valid_port),
-                ("remote-connect-port", is_valid_port),
-                ("bind-interface", None),  # XXX wants like is_valid_ip_address or so
+                ("local_listen_port", is_valid_port),
+                ("remote_connect_port", is_valid_port),
+                ("bind_interface", None),  # XXX wants like is_valid_ip_address or so
             ],
         ),
         "remote": parser(
             RemoteListener,
             [("name", str)],
             [
-                ("remote-listen-port", is_valid_port),
-                ("local-connect-port", is_valid_port),
-                ("connect-address", None),  # wants is_valid_address() or similar?
+                ("remote_listen_port", is_valid_port),
+                ("local_connect_port", is_valid_port),
+                ("connect_address", None),  # wants is_valid_address() or similar?
             ],
         ),
         "grant-permission": parser(GrantPermission, [("listen", port_list), ("connect", port_list)], []),
