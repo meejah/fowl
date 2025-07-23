@@ -22,6 +22,7 @@ Unreleased
 * Proper error-message rendering
 * Allow whitelisting only specific connect/listen endpoints.
 * Nice error if user gives zero options
+* Fix "fowl --readme" and pkg_resources deprecation (#78)
 
 
 24.3.1: March 1, 2024
