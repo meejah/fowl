@@ -24,7 +24,7 @@ from wormhole._dilation.manager import DilatedWormhole
 from wormhole.wormhole import IDeferredWormhole
 
 from .observer import When
-from ._proto import FowlSubprotocolListener, FowlCommandsListener, _SendFowlCommand, _pack_netstring, FowlNearToFar, LocalServer
+from ._proto import FowlSubprotocolListener, FowlCommandsListener, _SendFowlCommand, FowlNearToFar, LocalServer
 from .status import _StatusTracker
 from .tcp import allocate_tcp_port
 
@@ -405,20 +405,9 @@ class _FowlCoop:
         fact = Factory.forProtocol(_SendFowlCommand)
         fact._reactor = self._reactor
         proto = await ep.connect(fact)
-        await proto.when_connected()
 
-        #XXX should be method on _SendFowlCommand
-        proto.transport.write(
-            _pack_netstring(
-                    msgpack.packb({
-                        "kind": "request-listener",
-                        "unique-name": unique_name,
-                        "listen-port": remote_listen_port,
-                    })
-            )
-        )
+        data = await proto.send_command(unique_name, remote_listen_port)
 
-        data = await proto.next_message()
         bsize = len(data)
         assert bsize >= 2, "expected at least 2 bytes"
         expected_size, = struct.unpack("!H", data[:2])

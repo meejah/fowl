@@ -1901,20 +1901,60 @@ _create_request_id = count(1)
 
 
 class _SendFowlCommand(Protocol):
+    """
+    Protocol spoken when we are asking our peer to open a listener, a
+    request-response style interaction.
+
+    use `await p.send_command(...)` to make a request, which will
+    yield once the response is received. Cannot do overlapping
+    requests (make another subchannel for that).
+    """
+    # XXX could / should use a DeferredSemaphore to _enforce_ the "no
+    # overlapping requests" part?
 
     def __init__(self):
         # can a "Protocol" be an attrs @define?
         self._when_connected = When()
         self._message = Next()
 
+    async def send_command(self, unique_name, remote_listen_port=None):
+        """
+        Ask the peer to open a service called `unique_name`, possibly
+        asking for an exact port to listen on (avoid doing this
+        whenever possible, as it's easier to succeed on a random
+        port).
+
+        However, things like Web services often need identitcal ports
+        on both peers. If `remote_listen_port` is specified, it is an
+        error if the peer cannot use that port.
+
+        Use `next_message()` to await the reply
+        """
+        await self.when_connected()
+        self.transport.write(
+            _pack_netstring(
+                    msgpack.packb({
+                        "kind": "request-listener",
+                        "unique-name": unique_name,
+                        "listen-port": remote_listen_port,
+                    })
+            )
+        )
+        msg = self.next_message()
+        return msg
+
+    # users typically don't need to call any of these
+
     def when_connected(self):
         return self._when_connected.when_triggered()
 
-    def connectionMade(self):
-        self._when_connected.trigger(self.factory._reactor, None)
-
     def next_message(self):
         return self._message.next_item()
+
+    # IProtocol API methods / overrides
+
+    def connectionMade(self):
+        self._when_connected.trigger(self.factory._reactor, None)
 
     def dataReceived(self, data):
         self._message.trigger(self.factory._reactor, data)
