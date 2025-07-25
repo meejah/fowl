@@ -1940,7 +1940,7 @@ class _SendFowlCommand(Protocol):
                     })
             )
         )
-        msg = self.next_message()
+        msg = await self.next_message()
         return msg
 
     # users typically don't need to call any of these

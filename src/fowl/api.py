@@ -406,7 +406,7 @@ class _FowlCoop:
         fact._reactor = self._reactor
         proto = await ep.connect(fact)
 
-        data = await proto.send_command(unique_name, remote_listen_port)
+        data = await ensureDeferred(proto.send_command(unique_name, remote_listen_port))
 
         bsize = len(data)
         assert bsize >= 2, "expected at least 2 bytes"
