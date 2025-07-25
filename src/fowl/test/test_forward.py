@@ -369,7 +369,7 @@ async def test_drawrof(reactor, request, mailbox, datasize, who, wait_peer):
 
     msg = await find_message(reactor, config1, kind="listening")
     print(f"Listening: {msg}")
-    msg = await find_message(reactor, config0, kind="connecting")
+    msg = await find_message(reactor, config0, kind="awaiting-connect")
     print(f"Listening: {msg}")
 
     # if we do 'too many' test-cases debian complains about
