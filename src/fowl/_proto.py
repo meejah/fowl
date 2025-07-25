@@ -1791,7 +1791,6 @@ async def create_fowl(config, fowl_status_tracker):
                 # don't leak our absolute time, more convenient anyway
                 js["timestamp"] = reactor.seconds() - start_time
                 # process the subchannel stuff so the visualizer works out
-                print("DING", js)
                 for sc in js["subchannels"].values():
                     sc["i"] = [
                         [d, ts - start_time]

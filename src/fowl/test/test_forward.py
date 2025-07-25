@@ -231,11 +231,21 @@ async def test_forward(reactor, request, mailbox, datasize, who):
     stdios[0].proto.dataReceived(
         json.dumps({
             "kind": "local",
-            "listen": "tcp:7777",
-            "connect": "tcp:localhost:1111",
+            "name": "foo",
+            "local_listen_port": 7777,
+            "remote_connect_port": 1111,
         }).encode("utf8") + b"\n"
     )
+    stdios[1].proto.dataReceived(
+        json.dumps({
+            "kind": "remote",
+            "name": "foo",
+        }).encode("utf8") + b"\n"
+    )
+    print("waiting for listening")
     msg = await find_message(reactor, config0, kind="listening")
+    # XXX wait for "connecting" from other one?
+    print(f"reply: {msg}")
 
     # if we do 'too many' test-cases debian complains about
     # "twisted.internet.error.ConnectBindError: Couldn't bind: 24: Too
@@ -339,17 +349,27 @@ async def test_drawrof(reactor, request, mailbox, datasize, who, wait_peer):
     else:
         print("Not waiting for peer")
 
-    # both sides are connected -- now we can issue a "remote listen"
-    # request
+    # both sides are connected, so we can set up our service. one
+    # service named "bar" mostly set up from the "remote" peer.
+    stdios[1].proto.dataReceived(
+        json.dumps({
+            "kind": "local",
+            "name": "bar",
+        }).encode("utf8") + b"\n"
+    )
     stdios[0].proto.dataReceived(
         json.dumps({
             "kind": "remote",
-            "listen": "tcp:8888",
-            "connect": "tcp:localhost:3333",
+            "name": "bar",
+            "remote_listen_port": 8888,
+            "local_connect_port": 3333,
+            "connect_address": "localhost",
         }).encode("utf8") + b"\n"
     )
 
     msg = await find_message(reactor, config1, kind="listening")
+    print(f"Listening: {msg}")
+    msg = await find_message(reactor, config0, kind="connecting")
     print(f"Listening: {msg}")
 
     # if we do 'too many' test-cases debian complains about
