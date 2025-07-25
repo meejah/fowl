@@ -56,10 +56,12 @@ Requests to the Other Peer
 --------------------------
 
 We speak the `"fowl-commands"` subprotocol to ask our peer to take action.
-All requests decode to a ``dict`` and will have at least a ``kind`` key.
+All requests decode as msgpack to a ``dict`` and will have at least a ``kind`` key.
 This is a simple request/response flow: for each request made, a single response is received.
 Each request is answered in order.
 You can make multiple requests "at the same time" by opening multiple ``"fowl-commands"`` subchannels.
+
+You may not make two "overlapping" requests on one channel.
 
 
 ``"kind": "request-listener"``
@@ -78,9 +80,9 @@ The message comes with some data::
 
 This requests a service with some given name be started.
 The "daemon-style" software is thus running on the *other* peer.
-If the value of ``"listen-port"`` is not ``null`` then it indicates what port we must listen on -- if this is not possible, it's an error.
+If ``"listen-port"`` exists and its value is not ``null`` then it indicates what port we must listen on -- if this is not possible, it's an error.
 
-By default the value of this is ``null`` and in that situation we choose a random port.
+By default the value of ``"listen-port"`` is ``null`` and in that situation we choose a random port.
 This port is not given to the other peer, as they have no reason to know what port we used.
 (One case where ``"listen-port"`` is required is for Web things, which need the very same port on both sides)
 
@@ -94,7 +96,7 @@ Replies look like::
     }
 
 The ``"listening"`` boolean indicates if the request succeeded or not.
-The ``"desired-port"`` value mirrors what was requested via ``"listen-port"`` (either ``null`` or a number).
+Key ``"desired-port"`` may not exist; if it does, it mirrors what was requested via ``"listen-port"`` (either ``null`` or a number).
 
 For "negative" responses, a reason may be included::
 
@@ -105,7 +107,8 @@ For "negative" responses, a reason may be included::
         "reason": "Against local policy"
     }
 
-Upon every connection to this local port (assuming a listener is established), we will open a "forwarding subchannel" to the other side (see next section).
+Upon every connection to this local port, we will open a "forwarding subchannel" to the other side (see next section).
+Of course, if the peer can't establish a listener and error response is sent.
 
 
 .. _forwarding-subchannel:
@@ -138,7 +141,7 @@ The reply message is also an unsigned-short-prefixed `msgpack`_ message which is
 If this is ``False`` then an error occurred and the subchannel should be closed.
 Otherwise the connection switches to forwarding data back and forth.
 
-XXX: consider adding a "reason" string to the reply?
+In case ``"connected"`` is indeed ``False``, a ``"reason"`` key/value should also be available, describing what went wrong.
 
 No bytes shall be forwarded until the reply is received; once the reply is received only forwarded bytes occur on the subchannel (no more structured messages).
 

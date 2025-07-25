@@ -35,7 +35,7 @@ We thus prefer "names" for services and connections -- "connect to your service 
 Terminology
 -----------
 
-Although Fowl operates "peer to peer" (which typically means two computers), it can often be the case that we want more computers involved.
+Although Fowl operates "peer to peer" (which means exactly two computers), it can often be the case that we want more computers involved.
 This can naturally lead to considering one of the peers as "a Host" that may invite several other peers as "Guests".
 
 We try to be careful about centering "real humans" as distinct from computers they may control.
@@ -99,7 +99,7 @@ So, to recap, we have:
 - ...using port 2222 on the "host" peer (Peer B), and port 8888 on the "guest" peer (Peer A)
 
 Well-behaved "Fowl service" code will be written so that two or more Fowl services may be composed together over one Wormhole.
-For example, we might want to do "git withme" as well as "tty-share" on the same wormhole, to accomplish "peer to peer pair programming"
+For example, we might want to do "git withme" as well as "shwim" (shell-with-me) on the same wormhole, to accomplish "peer to peer pair programming"
 
 
 What About the API?
@@ -107,47 +107,51 @@ What About the API?
 
 Okay, there are actually several "levels" at which to consider the API:
 
-- `FowlNest`, the closest to the network
-- `create_nest()`, still Python but configuration-based (uses the above)
-- `fowl` CLI, for use by non-Python programs and scripts
+- `FowlCoop` / `create_coop()`: close to the network, use Python to interact;
+- `fowld` run Fowl as a subprocess for interoperation with any programming language;
+- `fowl` CLI for use by humans
 
 
-The API: `FowlNest`
--------------------
+The API: `_FowlCoop`
+--------------------
 
-Continuing the bird theme, the core of the Fowl API closest to the network / Twisted is a `FowlNest`.
-Each `FowlNest` instance logically represents a cohesive set of services -- which will consist of at least one forwarded stream.
+Continuing the bird theme, the core of the Fowl API closest to the network / Twisted is a `FowlCoop`.
+Each `FowlCoop` instance logically represents a cohesive set of services -- which will consist of at least one forwarded stream.
 
-Each "service" inside a `FowlNest` has a **unique name** and consists of two pieces, one on each peer:
+Each "service" inside a `FowlCoop` has a **unique name** and consists of two pieces, one on each peer:
 - running **server software** (aka "daemon"), on some localhost port;
 - and a **Fowl listener** on some localhost port
 
 We use the words "fledge" and "roost" as opposites to differentiate these two aspects of a service.
-So, for a service named `"foo"` one peer calls `fledge("foo")` and the other calls `roost("foo")`.
-The peer that calls `fledge()` arranges to run the "server style" software (usually as a subprocess listening on localhost, although a Twisted listener in the same process is also possible)
+So, for a service named `"foo"` one peer **must** call `fledge("foo")` and the other **must call** `roost("foo")`.
+The peer that calls `fledge()` arranges to run the "server style" software (usually as a subprocess listening on localhost, although a Twisted listener in the same process is also possible).
+The other peer -- the one that calls `roost()` -- will connect to some port that Fowl is listening on.
 
-If you are creating a service that others might wish to compose, having an API that returns a `FowlNest` instance (with all services set up) is recommended.
+If you are creating a service that others might wish to compose, you'll likely want to provie an API that **takes** a `FowlCoop` instance and sets up its services.
+E.g. ``def create_my_service(fowl_coop, ...):``
 
 Fowl runs on top of Magic Wormhole, so it requires a wormhole instance to operate -- we leave the creation of this Wormhole (via `wormhole.create()`) up to the application developer.
-We in fact need a `wormhole._DeferredWormhole` instance that has a `dilate()` method.
+We in fact require a `wormhole._DeferredWormhole` instance that has a `dilate()` method.
 
 At some point, it is necessary to call `dilate()` on the wormhole in order to enable Dilation (`dilate()` must be called precisely once).
-Each `FowlNest` is kind-of like the "builder" pattern.
+Each `FowlCoop` is kind-of like the "builder" pattern.
 So the actual "build" function is the thing that calls `dilate()` and adds services.
 
-This API is ``build_nests()`` and takes any number of ``FowlNest`` instances.
-It also takes an ``extra_subprotocols=`` argument to accommodate additional users of this wormhole that are not using Fowl.
-That is, other Python + Twisted use-cases for this particular Wormhole instance that are *not* using Fowl.
+That is: you call `wormhole.create()` and pass the result of that to `create_coop`.
+To complete the setup (i.e. after adding all your services by calling `fledge()` or `roost()` as many times as necessary) you call `_FowlCoop.dilate()`.
 
-The ``build_nests()`` call takes care of the ``.dilate()`` call, and so it also accepts any ``kwarg`` that ``dilate()`` accepts.
-It ultimately returns the `DilatedWormhole` instance that `.dilate()` itself returns -- after doing the setup necessary to use all of the `FowlNest` instances passed.
+This async function ultimately returns the `DilatedWormhole` instance that `.dilate()` itself returns -- after doing all setup necessary to use all of the services this `FowlCoop` instance contains.
 
-The API of ``FowlNest`` itself involves setting up listening ports, and their corresponding connect port on the other peer.
-Only a (unique) "name" for each service is *required*.
+When setting up services, you call `fledge()` and `roost()`.
+Only a (unique) "name" parameter for each service is *required*.
 When not provided explicitly, all ports are randomly selected unused localhost TCP ports.
 Sometimes, services (such as Web things) require ports on both sides to be the same -- we thus allow for a "desired port" to be passed.
 
-Let us consider a generic "chat" service using ``nc`` on the "listen" side and ``telnet`` on the "connect" side.
+
+An API Example: chat
+--------------------
+
+Let us consider a generic "chat" service using `nc` on the "listen" side and `telnet` on the "connect" side.
 As per above, the symmetry of a peer-to-peer protocol doesn't immediately give any reason to have the "listener" on either of the peers -- it's a pretty arbitrary decision in this scenario.
 
 Given peers "laptop" and "desktop", we could set this up in either of these two ways:
@@ -160,7 +164,7 @@ That is, we have the listener on "laptop" so we call "fledge" on that side.
 In this example, we've given explicit ports -- but one may call ``fledge("chat")`` to get a random one instead.
 With this particular setup, the Fowl on "laptop" side will "request-listener" from the "desktop" side via a "fowl command".
 
-Another way to set this up is like this::
+Another way to set this up is like this, with Desktop listening::
 
     laptop                  -> FowlNest(laptop)     -> FowlNest(desktop)     -> desktop
     (telnet localhost 4321)    .roost("chat", 4321)    .fledge("chat", 1234)    (nc -l 1234)
@@ -172,10 +176,15 @@ The side upon which you call ``fledge`` or ``roost`` controls where the "real li
 Regardless, there is only one kind of "fowl command", and that is ``request-listener``.
 That means the peer calling ``fledge()`` will initiate the request/response command ``request-listener``.
 
-This means that ``roost()`` merely *prepares* for real work -- **it is lazy**!
+This means that `roost()` merely *prepares* for real work -- **it is lazy**!
 We *lazily-instantiate services* in case a particular application only needs them under certain circumstances.
 
 In contrast, ``fledge("X")`` causes real work to happen -- we send a command to the other Peer asking for their side to be set up.
 An error will result if that other peer has *not* called ``roost("X")``.
+
+.. note::
+
+    Readers may notice that there's an opportunity for a race-condition here: a peer may call `fledge("A")` before the other peer has had a chance to call `roost("A")`.
+    In general, if you set up your services immediately after `dilate()` this will be a difficult race to encounter -- still, magic-wormhole provides a way to communicate a set of named services that are expected to exist via the `expected_subprotocols=` kwarg.
 
 One way to consider this is that ``roost("foo")`` sets up permission; it is preparing a place for a ``fledge("foo")`` to land (but the other peer's service "foo" may never "take off" at all, in which case the "roost" will go unused).

@@ -995,7 +995,6 @@ class FowlFarToNear(Protocol):
         )
 
     def _negative(self, reason):
-        print("negative", reason)
         self.transport.write(
             _pack_netstring(
                 msgpack.packb({
