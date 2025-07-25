@@ -1042,7 +1042,6 @@ class FowlFarToNear(Protocol):
             self.policy_bad(f'No service "{name}"')
             return
         channel = self.factory.coop._services[name]
-        print("ZZZZ", channel)
         port = msg.get("listen-port", None)
         if port is not None:
             if channel.listen_port != port:
@@ -1220,7 +1219,6 @@ class FowlWormhole:
 
     def __init__(self, reactor, wormhole, coop):
         self._reactor = reactor
-        self._listening_ports = []
         self._wormhole = wormhole
         self._done = When() # we have shut down completely
         self._connected = When()  # our Peer has connected
@@ -1242,7 +1240,6 @@ class FowlWormhole:
 
     async def _stop_listening(self):
         self._coop._clean_roosts()
-        print("STOP", self._listening_ports)
 
     async def _close_active_connections(self):
         pass
@@ -1822,7 +1819,6 @@ async def create_fowl(config, fowl_status_tracker):
             d = ensureDeferred(fowl.close_wormhole())
             d.addErrback(lambda f: print(f"Error closing: {f.value}"))
         elif isinstance(msg, Ready):
-            print("READY")
             fowl._coop._set_ready()
         else:
             print(msg)
@@ -1948,7 +1944,6 @@ class FowlCommands(Protocol):
         expected_size, = struct.unpack("!H", data[:2])
         assert bsize == expected_size + 2, "data has more than the message: {} vs {}: {}".format(bsize, expected_size + 2, repr(data[:55]))
         msg = msgpack.unpackb(data[2:])
-        print(msg)
         if msg["kind"] == "request-listener":
             unique_name = msg["unique-name"]
             desired_port = msg.get("listen-port", None)
@@ -1983,7 +1978,6 @@ class FowlCommands(Protocol):
                 return port
 
             def error(f):
-                print("ERR", f)
                 self._reply_negative(unique_name, f.getErrorMessage())
                 self.factory.coop._status_tracker.error(
                     f'Failed to listen on "{unique_name}": {f.value}',
