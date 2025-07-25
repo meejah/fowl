@@ -127,7 +127,7 @@ class Ping(FowlCommandMessage):
 @frozen
 class Listening(FowlOutputMessage):
     """
-    We have opened a local listener.
+    We have opened a listener for a service
 
     Any connections to this listener will result in a subchannel and a
     connect on the other side. This message may result from a
@@ -141,18 +141,19 @@ class Listening(FowlOutputMessage):
 
 
 @frozen
-class RemoteListeningFailed(FowlOutputMessage):
+class ListeningFailed(FowlOutputMessage):
     """
     We have failed to open a listener on the remote side.
     """
-    listen: str  # Twisted server-type endpoint string
+    name: str  # unique name for this service
     reason: str
 
 
 @frozen
-class RemoteListeningSucceeded(FowlOutputMessage):
+class AwaitingConnect(FowlOutputMessage):
     """
-    The remote peer suceeded at fulfilling our listen request.
+    We will be connecting on a port (whenever a stream comes from our
+    remote peer for this service).
     """
     name: str  # unique name for this service
     local_port: int  # where we connect locally

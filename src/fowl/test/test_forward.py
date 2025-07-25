@@ -108,9 +108,9 @@ async def find_message(reactor, config, kind=None, timeout=10, show_error=True):
             if line
         ]
         for msg in messages:
-            if msg["kind"] == kind:
+            if msg.get("kind", None) == kind:
                 return msg
-            if msg["kind"] == "error":
+            if msg.get("kind", None) == "error":
                 print(f"error: {msg['message']}")
         await sleep(reactor, 1)
         if False:

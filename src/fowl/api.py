@@ -481,6 +481,15 @@ class _FowlCoop:
 
     # helper methods follow (not public API)
 
+    def _clean_roosts(self):
+        """
+        We are shutting down; perform cleanup on all roosts -- that is,
+        close listening ports.
+        """
+        for channel in self._roosts.values():
+            if channel.port:
+                channel.port.stopListening()
+
     def _endpoint_for_service(self, unique_name, desired_port: Optional[int]=None):
         try:
             ep = self._roosts[unique_name].endpoint

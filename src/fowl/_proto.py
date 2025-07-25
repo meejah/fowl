@@ -44,8 +44,8 @@ from .messages import (
 
     Welcome,
     Listening,
-    RemoteListeningSucceeded,
-    RemoteListeningFailed,
+    ListeningFailed,
+    AwaitingConnect,
     RemoteConnectFailed,
     PeerConnected,
     CodeAllocated,
@@ -1241,9 +1241,8 @@ class FowlWormhole:
         # XXX put "session ending" code here, if it's useful
 
     async def _stop_listening(self):
-        for port in self._listening_ports:
-            # note to self port.stopListening and port.loseConnection are THE SAME
-            port.stopListening()
+        self._coop._clean_roosts()
+        print("STOP", self._listening_ports)
 
     async def _close_active_connections(self):
         pass
@@ -1256,13 +1255,11 @@ class FowlWormhole:
             self._handle_error,
         )
 
-        """
         # pass on the welcome message
         ensureDeferred(self._wormhole.get_welcome()).addCallbacks(
             self._coop._status_tracker.welcomed,
             self._handle_error,
         )
-        """
 
         # when we get the verifier and versions, we emit "peer
         # connected"
@@ -1704,8 +1701,8 @@ def fowld_output_to_json(msg: FowlOutputMessage) -> dict:
         CodeAllocated: "code-allocated",
         PeerConnected: "peer-connected",
         Listening: "listening",
-        RemoteListeningFailed: "remote-listening-failed",
-        RemoteListeningSucceeded: "remote-listening-succeeded",
+        ListeningFailed: "listening-failed",
+        AwaitingConnect: "awaiting-connect",
         RemoteConnectFailed: "remote-connect-failed",
         OutgoingConnection: "outgoing-connection",
         OutgoingLost: "outgoing-lost",
@@ -1751,9 +1748,9 @@ def parse_fowld_output(json_str: str) -> FowlOutputMessage:
         "set-code": parser(SetCode, [("code", None)]),
         "code-allocated": parser(CodeAllocated, [("code", None)]),
         "peer-connected": parser(PeerConnected, [("verifier", binascii.unhexlify), ("versions", None)]),
-        "listening": parser(Listening, [("unique_name", None), ("listen", None), ("connect", None)]),
-        "remote-listening-failed": parser(RemoteListeningFailed, [("listen", None), ("reason", None)]),
-        "remote-listening-succeeded": parser(RemoteListeningSucceeded, [("listen", None), ("connect", None), ("unique_name", None)]),
+        "listening": parser(Listening, [("unique_name", None), ("listening_port", None)]),
+        "listening-failed": parser(ListeningFailed, [("reason", None)]),
+        "awaiting-connect": parser(AwaitingConnect, [("unique_name", None), ("local_port", int)]),
         "remote-connect-failed": parser(RemoteConnectFailed, [("id", int), ("reason", None)]),
         "outgoing-connection": parser(OutgoingConnection, [("id", int), ("endpoint", None), ("unique_name", None)]),
 ##        "outgoing-lost": parser(),
@@ -1928,81 +1925,7 @@ class _SendFowlCommand(Protocol):
         self._message.trigger(self.factory._reactor, data)
 
 
-# async def _remote_to_local_forward(reactor, dilated, cmd):
-#     """
-#     Ask the remote side to listen on a port, forwarding back here
-#     (where our Incoming subchannel will be told what to connect
-#     to).
-#     """
-#     # XXX if still used, should just call .fledge()
-#     print("DINGDING")
-#     ep = dilated.subprotocol_connector_for("fowl-commands")
-#     fact = Factory.forProtocol(_SendFowlCommand)
-#     fact._reactor = reactor
-#     proto = await ep.connect(fact)
-#     await proto.when_connected()
-#     print("HIHI")
-#     proto.transport.write(
-#         _pack_netstring(
-#                 msgpack.packb({
-#                     "kind": "request-listener",
-#                     "listen-endpoint": cmd.listen,
-#                     "connect-endpoint": cmd.connect,
-#                 })
-#         )
-#     )
-#     msg = await proto.next_message()
-#     print("ZASDF", msg)
-
-
-class ControlDemultiplex(Protocol):
-
-    def register_plugin(self, name):
-        "or something"
-
-    def dataReceived(self, data):
-        msg = msgpack.unpackb(data)
-        try:
-            plugin = self.plugin[msg["subprotocol"]]
-            plugin.got_control_mesage(msg)
-        except KeyError:
-            print("no valid plugin found")
-
-
-class FowlCommandRequest(Protocol):
-    """
-    Send command to the other peer
-    """
-
-    def __init__(self, *args, **kw):
-        super().__init__(*args, **kw)
-        self._done = When()
-
-    def connectionMade(self):
-        self.transport.write(self.factory.command)
-
-    def when_done(self):
-        return self._done.when_triggered()
-
-    def dataReceived(self, data):
-        bsize = len(data)
-        assert bsize >= 2, "expected at least 2 bytes"
-        expected_size, = struct.unpack("!H", data[:2])
-        assert bsize == expected_size + 2, "data has more than the message: {} vs {}: {}".format(bsize, expected_size + 2, repr(data[:55]))
-        msg = msgpack.unpackb(data[2:])
-        print(msg)
-        if msg["kind"] == "listener-response":
-            if msg["listening"]:
-                d.callback(RemoteListeningSucceeded(msg.get("unique-name"), original_cmd.listen, original_cmd.connect))
-            else:
-                d.callback(RemoteListeningFailed(original_cmd.listen, msg.get("reason", "Missing reason")))
-
-        else:
-            self.factory.coop._status_tracker.error(
-                f"Unknown command response: {msg[kind]}",
-            )
-
-# When doesn't support this ...
+# When() doesn't support this ...
 #    def connectionLost(self, reason):
 #        self._done.trigger(self.factory.reactor, None)
 
@@ -2019,7 +1942,8 @@ class FowlCommands(Protocol):
         self._remote_requests = dict()
 
     def dataReceived(self, data):
-        # XXX can we depend on data being "one message"? or do we need length-prefixed?
+        # magic-wormhole abuses the API a little and always sends an
+        # entire "message" per dataReceived() call
         bsize = len(data)
         assert bsize >= 2, "expected at least 2 bytes"
         expected_size, = struct.unpack("!H", data[:2])
@@ -2028,14 +1952,14 @@ class FowlCommands(Protocol):
         print(msg)
         if msg["kind"] == "request-listener":
             unique_name = msg["unique-name"]
-            # if _we_ cared about the other peer's port, it was via --local ...:remote-connect=...
-            remote_connect_port = self.factory.coop._roosts[unique_name].remote_connect_port
+            desired_port = msg.get("listen-port", None)
 
             # okay, so our peer is possibly requesting a port --
             # that's fine, but only if _we_ didn't already specify one
-            desired_port = msg.get("listen-port", None)
             try:
                 listen_ep = self.factory.coop._endpoint_for_service(unique_name, desired_port=desired_port)
+                # if _we_ cared about the other peer's port, it was via --local ...:remote-connect=...
+                remote_connect_port = self.factory.coop._roosts[unique_name].remote_connect_port
             except RuntimeError as e:
                 self._reply_negative(unique_name, str(e))
                 self.factory.coop._status_tracker.error(
