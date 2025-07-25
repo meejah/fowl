@@ -368,9 +368,9 @@ async def test_drawrof(reactor, request, mailbox, datasize, who, wait_peer):
     )
 
     msg = await find_message(reactor, config1, kind="listening")
-    print(f"Listening: {msg}")
+    print(f" Listening: {msg}")
     msg = await find_message(reactor, config0, kind="awaiting-connect")
-    print(f"Listening: {msg}")
+    print(f"Connecting: {msg}")
 
     # if we do 'too many' test-cases debian complains about
     # "twisted.internet.error.ConnectBindError: Couldn't bind: 24: Too

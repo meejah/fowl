@@ -1036,7 +1036,6 @@ class FowlFarToNear(Protocol):
         # what port to use for this service-name -- either random or
         # pre-defined or whatever
         # (nah, we want to check if any FowlCoop has a "roost" for this service name?)
-        print("do_policy_check", msg)
         name = msg.get("unique-name", None)
         if name is None or name not in self.factory.coop._services:
             self.policy_bad(f'No service "{name}"')

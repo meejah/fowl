@@ -108,9 +108,10 @@ async def test_happy_path(reactor, request, mailbox):
            and "🧙".encode("utf8") in accept_proto._streams[1]:
             print("both sides set up")
             break
-#        print(invite_proto._streams[1])
-#        os.write(0, invite_proto._streams[1])
-        os.write(0, accept_proto._streams[1])
+        if False:
+            # debug actual output
+            os.write(0, invite_proto._streams[1])
+            os.write(0, accept_proto._streams[1])
     else:
         assert False, "failed to see both sides set up"
 
