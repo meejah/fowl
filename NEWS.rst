@@ -13,6 +13,16 @@ Unreleased
 
 * (Put new changelog items here)
 * Cool new ASCII-art / terminal visualization of activity (via "rich")
+* Nice error if user gives zero options
+* Fix "fowl --readme" and pkg_resources deprecation (#78)
+* Massive refactoring of internal APIs, philosophy and specifiers.
+  The biggest visible change from this is using "named" services with peer-specified ports.
+  There is now a usable API if you're using Python and Twisted already.
+
+
+25.4.0: April 10, 2025
+----------------------
+
 * Allow for non-local addresses: for both listening interfaces and
   connect endpoints, non-local addresses may be specified in a manner
   similar to "ssh -L" or "ssh -R" arguments. See #37:
@@ -21,8 +31,6 @@ Unreleased
 * Enable "remote" command in --interactive
 * Proper error-message rendering
 * Allow whitelisting only specific connect/listen endpoints.
-* Nice error if user gives zero options
-* Fix "fowl --readme" and pkg_resources deprecation (#78)
 
 
 24.3.1: March 1, 2024
