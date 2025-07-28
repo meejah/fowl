@@ -1604,6 +1604,7 @@ def parse_fowld_output(json_str: str) -> FowlOutputMessage:
     Parse the given JSON message assuming it came from fowld.
     :raises: ValueError if it's an invalid message.
     """
+    print("LOADING", repr(json_str))
     cmd = json.loads(json_str)
     try:
         kind = cmd["kind"]
@@ -1629,14 +1630,14 @@ def parse_fowld_output(json_str: str) -> FowlOutputMessage:
         "set-code": parser(SetCode, [("code", None)]),
         "code-allocated": parser(CodeAllocated, [("code", None)]),
         "peer-connected": parser(PeerConnected, [("verifier", binascii.unhexlify), ("versions", None)]),
-        "listening": parser(Listening, [("unique_name", None), ("listening_port", None)]),
+        "listening": parser(Listening, [("name", None), ("listening_port", None)]),
         "listening-failed": parser(ListeningFailed, [("reason", None)]),
-        "awaiting-connect": parser(AwaitingConnect, [("unique_name", None), ("local_port", int)]),
+        "awaiting-connect": parser(AwaitingConnect, [("name", None), ("local_port", int)]),
         "remote-connect-failed": parser(RemoteConnectFailed, [("id", int), ("reason", None)]),
-        "outgoing-connection": parser(OutgoingConnection, [("id", int), ("endpoint", None), ("unique_name", None)]),
+        "outgoing-connection": parser(OutgoingConnection, [("id", int), ("endpoint", None), ("name", None)]),
 ##        "outgoing-lost": parser(),
-        "outgoing-done": parser(OutgoingDone, [("id", int)]),
-        "incoming-connection": parser(IncomingConnection, [("id", int), ("endpoint", None), ("unique_name", None)]),
+        "outgoing-done": parser(OutgoingDone, [("service_name", str)]),
+        "incoming-connection": parser(IncomingConnection, [("id", int), ("endpoint", None), ("name", None)]),
         "incoming-lost": parser(IncomingLost, [("id", int), ("reason", None)]),
         "incoming-done": parser(IncomingDone, [("id", int)]),
         "bytes-in": parser(BytesIn, [("id", int), ("bytes", int)]),
