@@ -15,11 +15,13 @@ All functionality is available to users of either program.
 
 If you want very similar operation to ``fowld`` but do not like typing JSON, use ``fowl tui``.
 
+Note that if you're invoking with ``python -m`` then ``python -m fowl`` is "fowld" and ``python -m fowl.cli`` is the human-centric ("fowl") one.
+
 
 High-Level Overview
 -------------------
 
-What we aim to accomplish here is to easily set up the forwarding of TCP or Unix streams over a secure, identity-less and durable connection.
+What we aim to accomplish here is to easily set up the forwarding of TCP streams over a secure, identity-less and durable connection.
 
 These streams may be anything at all -- but the core use-case is aimed at eliminating the need to run public-IP services.
 Our canonical "hello world" example is a simple chat system:
@@ -30,7 +32,7 @@ Although ``nc`` and ``telnet`` provide no security, using them here we get an en
 We also get "durability" (if one side loses conenction or changes to a different network, we will eventually resume uninterrupted).
 We do not have to change the ``nc`` or ``telnet`` programs at all (they can already connect to and listen upon ``localhost`` -- that's all we need).
 
-The general flow of a session is that one side "starts" it (allocating a secret code), and the second side "joins" it (consuming the secret coe).
+The general flow of a session is that one side "starts" it (allocating a secret code), and the second side "joins" it (consuming the secret code).
 These codes can be used precisely once: if a bad actor guesses or intercepts the code, your partner will know (because it won't work for them).
 
 You may also gain additional security by using the "verifier" feature, if desired (this ensures that you're 100% definitely communicating with the intended party).
@@ -65,19 +67,16 @@ Programs integrating with it should be able to use any version of the software (
 ``fowl`` is a friendly, human-centric frontend to start or join a forwarding session.
 You may specify streams to forward and rules to accept forwarded streams.
 
-We are cautious by default, so any incoming stream requests will result in a "y/n" style question on the command-line (unless overridden by options specifically allowing streams).
-
-Since the Dilation protocol is fairly symmetric, most options are available under ``fowl`` instead of the sub-commands ``fowl accept`` and ``fowl invite``
+Since the Dilation protocol is fairly symmetric, it usually doesn't matter which side "creates" the code and which side "consumes" it.
 
 For example, whether you started or joined a session, either side can ask the other side to start forwarding a port (``--remote``) or start one on the near side (``--local``).
-Thus, the options for what to allow are required on both sides.
 
 
 Overview of a Session
 ---------------------
 
 Using ``fowl`` involves two computers.
-One computer runs ``fowl invite`` and the other computer runs ``fowl accept``.
+One computer runs ``fowl`` with no code and the other computer runs ``fowl <magic-code>`` with a code provided by some other instance of ``fowl``.
 
 After this, a lot of things are "symmetric" in that either side can listen on a port (or cause the peer to listen on a port) and subsequently forward data over resulting connections.
 
@@ -87,83 +86,54 @@ This wording can become a little confusing due to the symmetry.
 Basically, either peer can set up a listener.
 When doing so, you must take care set up permissions on the *other* peer.
 
-Thus, if you have a ``--local`` on one peer you should expect a corresponding ``--allow-connect`` on the other peer.
-Similarly, if there is a ``--remote`` on one peer, you should expect the other peer to require a corresponding ``--allow-listen`` argument.
+Every ``--client`` (or ``--local``) MUST be PAIRED with a corresponding ``--service`` (or ``--remote``) for the very same name.
+Thus, if you have a ``--local chat`` on one peer you should expect a corresponding ``--remote chat`` on the other peer.
+
+If you need to care about ports, you can specify these -- if there are disagreements it's an error.
+Here a "disagreement" means that one side asks for a different port than the other.
 
 
 .. image:: _static/fowl-plugins-plain.svg
 
 
-So, in the above we have "Peer A" running a Web server (in this case Twisted's) that it wishes to expose to Peer B's "curl" command.
-The "Controlling App" on "Peer A" runs the "twisted web" as a subprocess, and also a "fowld" as a subprocess.
-Similar on the "Peer B" side: it also runs a "fowld" and, in this case, the "client" application.
+So, in the above we have "Peer B" running a service (in this case ``nc``) while "Peer B" runs a client (in this case ``telnet``).
+This could be a human on either side running ``fowl`` or it coul be a "controlling program" of some sort running ``fowld`` in a subprocess.
 
-.. NOTE::
+Since we know "Peer B" is running the service, this means it must run the ``--service`` / ``--remote`` option.
+This means that "Peer A" must direct its "fowl" to do a "remote" listener (e.g. with ``--client`` / ``--local chat:8888:remote-connect=2222``) which says a service will exist on the far side on port "2222" and we will present a "fake" listener on this side, on port 8888.
+"Peer B" will check its permission (e.g. ``--remote`` / ``--service chat:2222``) before actually listening.
+(If "Peer B" had invoked ``--service chat:9999`` then an error occurs -- because "9999" is not the same as "2222")
 
-    Although we explain this example using ``fowl`` options, usually a
-    controlling application like this would use ``fowld``.
+The "best" way to assign ports is not at all -- let each peer select.
+If you need to know the ports beforehand, the next-best way is to let each peer assign only its side of the ports -- that is, in the above example, "Peer A" has no real reason to specify ``:remote-connect=2222`` and can just leave that out.
 
+In this particular case, we don't have a good reason to run ``nc`` on "Peer B", so we could flip things around.
+That is, decide to run ``nc`` on Peer A, flip who runs ``--service`` etc etc.
 
-There are two ways to set up the desired flow in ``fowl``!
+One way to decide which peer makes sense is to consider that "--service" is the one that causes "real work" to occur.
+The Fowl with a ``--client`` / ``--local`` option is "lazy" in the sense that this just prepares for a service -- but **if and only if** the other side does a ``--service`` / ``--remote`` will listeners be set up and so forth.
 
-One way is for "Peer A" to direct its "fowl" to do a "remote" listener (e.g. with ``--remote 4321:8080``) which says to listen on "4321" on the far-side peer (i.e. "Peer B") and forward connections to "8080" on the near side (i.e. "Peer A").
-"Peer B" will check its permission (e.g. ``--allow-listen 4321``) before actually listening.
-
-The other way is for "Peer B" to direct its "fowl" to do a "local" listener (e.g. with ``--local 4321:8080``) which says to listen on "4321" on the near-side peer (i.e. "Peer B") and to forward connections to "8080" on the far side (i.e. "Peer A").
-
-These are both pretty equivalent, because they end up with the same situation: Peer A has "server-style" application running on port 8080, and Peer B makes it *look* like it's accessible there.
-The listener on Peer B is "fowl".
-That is, "twistd web" is listening on 8080 on Peer A and "fowl" is listening on "4321" on Peer B.
-
-When "curl" runs on Peer B, the fowl on Peer B sees a connection, and opens a "dilation subchannel" to Peer A.
-It then sends an initial ``msgpack``-encoded message asking for ``local-destination`` of ``tcp:localhost:8080``.
-Peer B checks its policy (e.g. ``--allow-connect 8080``) and replies good or bad.
-If good, all data is forwarded across the subchannel.
-
-Choosing one over the other is up to the "Controlling Application".
-In this example, the "Controlling Application" could be a Web preview or collaboration tool where "Peer A" has the Web site files.
-"Peer B" can then see the proposed Web site.
-
-
-Common ``fowl`` Options: An Example
------------------------------------
-
-Both subcommands ``accept`` and ``invite`` share a series of options for setting up streaming connections.
-
-Either side may have a listener on a local port; this listener will accept any incoming connection, create a Wormhole subchannel, and ask the other side to make a particular local connection.
-
-The normal use-case here is that you're running a daemon on one of the two peers and you wish to have the other peer be able to reach it.
-
-Let's take SSH as an example: the computer "desktop" is running an SSH daemon on the usual port 22.
-One this side we run ``fowl invite``, which produces a code.
-
-On the computer called "laptop" we run ``fowl accept``, consuming the code.
-
-So to use SSH over this Wormhole connnection, we want to have a listener appear on the "laptop" (because the "desktop" computer already has a listener: the SSH daemon on port 22).
-
-We have two choices here: either the "desktop" or the "laptop" side may initiate the listening; if we do it on the "desktop" side we use the ``"remote"`` command and if we do it on the "laptop" side we use the ``"local"`` command.
-
-The ``"remote"`` and ``"local"`` commands are mirrors of each other and both have a ``"listen"`` and ``"connect"`` value -- what changes is _where_ that value is used.
-In a ``"remote"`` command, the ``"listen"`` value is used on the "far" side, whereas in a ``"local"`` command the ``"listen"`` value is used on the near side.
-
-So back to our example, we want the "laptop" to open a new listener.
-
-On the "laptop" machine we'd use something like ``--local 22`` to indicate that we'd like to listen on port ``22`` (and forward to the same port on the other side).
-Maybe we can't listen on ``22``, though, so we might want to listen on ``1234`` but still forward to ``22`` on the far side; this is expressed with ``--local 1234:22``
-
-To flip this around, on the "desktop" machine we could do ``--remote 22`` or ``--remote 1234:22`` to use the same values from above.
-
-.. NOTE::
-
-    If you're using ``fowld`` directly, the above correspond to ``{"kind": "remote", "listen": "tcp:1234:interface=localhost", "connect": "tcp:localhost:22}`` from the "desktop" machine or ``{"kind": "local", "listen": "tcp:1234:interface=localhost", "connect": "tcp:localhost:22}`` from the "laptop" machine.
+The side running ``--service`` is typically doing some other work, such as running daemon software or setting up listeners some other way.
 
 
 Common ``fowl`` Options
 -----------------------
 
-* ``--local port:[remote-port]``: listen locally on ``port``. On any connection to this port, we will ask the peer to open a connection on its end to ``port`` (instead to ``remote-port`` if specified).
+There are several options to control ``fowl`` behavior.
+It does not matter whether (or how many) ``--client`` and/or ``--service`` options either peer has.
 
-* ``--remote port:[local-port]``: listen on the remote peer's ``port``. On any connection to this port (on the peer's side), we will ask our local side to open a connection to ``port`` (or instead to ``local-port`` if specified).
+Besides those options, there are some additional interesting ones:
+
+* ``--mailbox`` which Mailbox server to contact; this can be a WebSocket URI or the name ``default`` for Brian Warner's canonical server or ``winden`` for the Winden server or ``local`` for a localhost one (typically for testing). Both peers must use the same Mailbox to succesfully communicate.
+* ``--code-length`` how many words to use in secret codes (only makes sense when not specifying a code)
+* ``--ip-privacy`` use Tor
+
+For developers and bug-reporters, some additional flags can be useful:
+
+* ``--debug filename`` output all magic-wormhole state-machine transitions to ``<filename>``.
+* ``--debug-status filename`` dump Fowl status state to ``<filename>``.
+* ``--replay filename`` replay a file from ``--debug-status`` through the visualizer.
+* ``--debug-messages filename`` dump all fowld-style messages to the given file.
 
 
 Starting a Session
@@ -173,14 +143,17 @@ One side has to begin first, and this side runs ``fowl`` (possibly with some opt
 This uses the Magic Wormhole protocol to allocate a short, one-time code.
 
 This code is used by the "other end" to join this forwarding session with ``fowl <code>``.
-Once that side has successfully set up, we will see a message::
+By default, we see some basic TUI style status.
+When you see a "verifier" string (and green "chicken") it means the peer has connected.
 
-    Peer is connected.
-    Verifier: b191 e9d1 fd27 be77 f576 c3e7 f30d 1ff3 e9d3 840b 7f8e 1ce2 6730 55f4 d1fc bb4f
+Verifier strings look like this::
 
-After this, we reach the more "symmetric" state of the session: although under the hood one side is randomly "the Follower" and one side is "the Leader" in the Dilation session, at our level either side can request forwards from the other.
+    b191 e9d1 fd27 be77 f576 c3e7 f30d 1ff3
+    e9d3 840b 7f8e 1ce2 6730 55f4 d1fc bb4f
 
-The "Verifier" is a way to confirm that the session keys match; confirming both sides have the same verifier is optional.
+You may be 100% sure you're talking with the intended computer by comparing these verifier strings.
+(If they match, you both have the same ephemeral secret key).
+This is optional.
 However, confirming them means you can be 100% sure (instead of 99.85% sure or 1 in 65536) nobody has become a MitM.
 
 See below.
@@ -192,15 +165,12 @@ Joining a Session
 One side has to be the "second" user to a session and that person runs this command.
 ``fowl <code>`` consumes a Wormhole code and must receive it from the human who ran the ``fowl`` command which allocated the code.
 
-Once the Magic Wormhole protocol has successfully set up a Dilation connection, a message will appear on ``stdout``::
-
-    Peer is connected.
-    Verifier: b191 e9d1 fd27 be77 f576 c3e7 f30d 1ff3 e9d3 840b 7f8e 1ce2 6730 55f4 d1fc bb4f
+Both sides see the same visualization once connected.
+See above for details about the Verifier.
 
 After this, we reach the more "symmetric" state of the session: although under the hood one side is randomly "the Follower" and one side is "the Leader" in the Dilation session, at our level either side can request forwards from the other.
 
-Generally ports to forward are specified on the command-line (and "policy" type options to allow or deny these are also expressed as command-line options).
-In case no "policy" options were specified, the user will be interactively asked on every stream that the other side proposes to open.
+Generally ports to forward are specified on the command-line, but in the case of ``fowld`` may be asked for interactively at any time.
 
 
 ``fowld`` Usage

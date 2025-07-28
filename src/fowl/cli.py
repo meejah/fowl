@@ -30,7 +30,7 @@ WOULD_DO_NOTHING_ERROR = """
 You have requested no listeners and allowed neither listening nor connecting.
 This would not do anything useful.
 
-You should use at least one of: --remote, --local, --allow-listen or --allow-connect
+You should use at least one of: --service or --client (or --remote or --local)
 For more information: fowl --help
 """
 

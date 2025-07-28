@@ -68,6 +68,9 @@ class State:
 
 
 async def frontend_tui(reactor, config):
+    print(f"Coming (back) soon!")
+    return
+
     print(f"Connecting: {config.relay_url}")
 
     @functools.singledispatch
