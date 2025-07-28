@@ -24,13 +24,6 @@ from .messages import (
     LocalListener,
     RemoteListener,
 )
-from .policy import (
-    LocalhostTcpPortsListenPolicy,
-    LocalhostTcpPortsConnectPolicy,
-    ArbitraryAddressTcpConnectPolicy,
-    ArbitraryInterfaceTcpPortsListenPolicy,
-    is_localhost,
-)
 
 
 WOULD_DO_NOTHING_ERROR = """

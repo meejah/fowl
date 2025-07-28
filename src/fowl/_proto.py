@@ -68,7 +68,6 @@ from .messages import (
 
     PleaseCloseWormhole,
 )
-from .policy import IClientListenPolicy, IClientConnectPolicy, AnyConnectPolicy, AnyListenPolicy
 from .status import _StatusTracker
 from .visual import render_status
 
