@@ -149,107 +149,6 @@ async def wormhole_from_config(reactor, config, on_status, wormhole_create=None)
         reactor,
         tor=tor,
         timing=None,  # args.timing,
-
-
-# peer a: fowl --local 1234:22
-# peer b: fowl --allow-connect 22
-
-# peer a: fowl --remote 1234:22   # hey, other peer, please LISTEN on 1234 and send back to me on 22
-# peer b: fowl --allow-listen 1234
-
-# file-transfer, it might also "commands"
-# peer a sends a "command"
-# - global control channel
-# - ...but how
-#
-# shapr: unix server sockets. like "xinetd". "i want to connect on 'web'" -> nginx -> etc
-# (only one thing can listen on TCP)
-#
-# okay, so then we have "a" protocol spoken on the control-channel
-# ...but it says "this message is for subprotocol X"
-# ...so then it can de-multiplex to the 'actual' subprotocol control channel
-#
-# OPEN scid 'fowl'
-#  -> DATA: <actual data>
-# OPEN 0 ''
-#  -> DATA: 'fowl-control' <actual data>
-#  -> DATA: 'file-transfer-control' <actual data>
-#
-# Follow: connects, Leader: listens
-#  -> if i'm the leader, and app code asks for 'fowl-control' channel, I need to wait for the OPEN
-#  -> if i'm the follower and app code asks for 'fowl-control' channel, I immediately send OPEN
-#
-#  -> both peers only get notified of a _successul_ connect when the BOTH do the above
-#
-# features:
-# - unused plugins NEVER have an open contol-channel (or any other channel)
-#
-# if user_wants_fowl:  # implicit? GUI?
-#     ep = api.subprotocol_control_for('fowl-control')
-#     proto = await ep.connect(Factory)
-#
-# shapr: how do we know if the other side wants it?
-#   - GUI app: 'share terminal', 'send file', 'share GIT'
-#   - peer A clicks 'send file'
-#   - peer B ...? how does it know it even needs a control channel?
-#   - (it already created one?)
-#
-# (can the control channel come up w/o much overhead? yes)
-
-# docs: if your protocol has a control channel, you should .connect()
-# it ASAP once you have a peer
-#
-
-# 'file-transfer': FileTransferListener()
-#
-# to send a file:
-#   - OPEN a subchannel
-#   - immediately send a msgpack-encoded Offer
-#   - wait for "yes, no"
-#   - if no: close subchannel
-#   - if yes: stream file / offer data
-#
-# the use-case for the control-channel is:
-#  - we want a SINGLE channel (for ordering)
-#  - and the application doesn't know who goes first
-#
-#  - look at libp2p: how do they do this? do they??
-#  - shapr: priority system on the hints -- variation on happy eyeballs
-#
-#  - shapr: okay, ARE there any plugins or protocols or use-cases that
-#    aren't served by req/resp http style
-#
-#  - what is A / THE use-case(s) for control-channel
-#
-# - chat session
-# - ssh session (kind-of)
-# - games?
-# - randomly spew out a list of protocols ... do any NEED the control-channel thing?
-# - ...
-# - coming up blank on when you might NEEEEED the control-channel
-#
-# - TODO: write docs for Dilation w/ Subprotocols --- flesh out the above
-# - TODO: can we make control-channels a new feature/version/whatever
-#
-# - maybe conclusion: wait and see; if someone comes along as says
-#   they need a singletonl / control channel OR someone wants to know
-#   leader/follower THEN we ask why etc -- and write it all up as a
-#   future use-case.
-#
-# - another wrapper? with "the messages" of the protocol
-# - how can we make it EVEN NICER to use plugins / etc
-# - write "tty-share" greenfield thing that is "a wormhole
-#
-# - bigger picture things:
-#   - opinionated plugins: 'nice' api etc etc
-#   - GUI for ^
-#   - how to compose ^
-#   - low-level, HOWTO write ssh-over-wormhole
-#
-#
-# meejah, "the outer layer of the onion shouldn't make you cry"
-
-##        dilation_subprotocols=subprotocols,
         dilation=True,
         versions={
             "fowl": {
@@ -454,7 +353,9 @@ class FowlNearToFar(Protocol):
         Confirm to the other side that we've connected.
         """
         self.factory.other_proto.transport.resumeProducing()
-        self.factory.other_proto._maybe_drain_queue()
+        # we _had_ a queue in this, but nothing ever put anything into
+        # it ..
+        # self.factory.other_proto._maybe_drain_queue()
 
     @m.output()
     def emit_remote_failed(self, reason):
@@ -700,7 +601,6 @@ class LocalServer(Protocol):
     """
 
     def connectionMade(self):
-        self.queue = []
         self.remote = None
         self.conn_id = allocate_connection_id()
 
@@ -722,12 +622,6 @@ class LocalServer(Protocol):
         d.addErrback(err)
         return d
 
-    def _maybe_drain_queue(self):
-        while self.queue:
-            msg = self.queue.pop(0)
-            self.remote.transport.write(msg)
-        self.queue = None
-
     def connectionLost(self, reason):
         # XXX causes duplice local_close 'errors' in magic-wormhole ... do we not want to do this?)
         if self.remote is not None and self.remote.transport:
@@ -746,7 +640,6 @@ class LocalServerFarSide(Protocol):
     """
 
     def connectionMade(self):
-        self.queue = []
         self.remote = None
         self.conn_id = allocate_connection_id()
 
@@ -772,13 +665,6 @@ class LocalServerFarSide(Protocol):
             print("proto", proto)
         d.addCallback(got_proto)
         return d
-
-    #XXX this looks unused?
-    def _maybe_drain_queue(self):
-        while self.queue:
-            msg = self.queue.pop(0)
-            self.remote.transport.write(msg)
-        self.queue = None
 
     def connectionLost(self, reason):
         # XXX causes duplice local_close 'errors' in magic-wormhole ... do we not want to do this?)
