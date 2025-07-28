@@ -1,6 +1,5 @@
 from __future__ import print_function
 
-import os
 import sys
 import json
 import binascii
@@ -22,18 +21,15 @@ import automat
 from twisted.internet import reactor
 from twisted.internet.defer import Deferred, ensureDeferred, DeferredList, race, CancelledError
 from twisted.internet.task import deferLater
-from twisted.internet.endpoints import serverFromString, clientFromString
 from twisted.internet.protocol import Factory, Protocol
 from twisted.internet.error import ConnectionDone
 from twisted.internet.stdio import StandardIO
 from twisted.protocols.basic import LineReceiver
-from zope.interface import directlyProvides, implementer
+from zope.interface import directlyProvides
 from wormhole.cli.public_relay import RENDEZVOUS_RELAY as PUBLIC_MAILBOX_URL, TRANSIT_RELAY
 import wormhole.errors as wormhole_errors
-from wormhole import SubchannelAddress
 
 from .observer import When, Next
-from .tcp import allocate_tcp_port
 from .messages import (
     SetCode,
     AllocateCode,
@@ -966,7 +962,6 @@ class FowlFarToNear(Protocol):
         d = ep.connect(factory)
 
         def bad(fail):
-            message = fail.getErrorMessage()
             reactor.callLater(0, lambda: self.connection_failed(fail.getErrorMessage()))
             return None
 
@@ -1409,7 +1404,7 @@ class FowlWormhole:
 
     async def _do_dilate(self):
         # XXX move FowlWormhole do its own module so imports aren't broken
-        dilated = self._dilated = await self._coop.dilate(
+        self._dilated = await self._coop.dilate(
             transit_relay_location=TRANSIT_RELAY,
         )
         # the "FowlCoop.dilate" method already listens for commands,
@@ -1688,10 +1683,6 @@ async def create_fowl(config, fowl_status_tracker):
                 print(e)
         fowl_status_tracker.add_status_listener(status)
 
-    if config.debug_file:
-        kind = "invite" if config.code is None else "accept"
-        w.debug_set_trace(kind, which="B N M S O K SK R RC L C T", file=config.debug_file)
-
     def command_message(msg):
         # XXX so if we try to shut down due to incompatible versions,
         # we hit this .. but this is insufficient, since now both
@@ -1710,6 +1701,10 @@ async def create_fowl(config, fowl_status_tracker):
     # XXX FIXME hook in "output_wrapper" as a listener on the status_tracker
 
     w = await wormhole_from_config(reactor, config, fowl_status_tracker.wormhole_status)
+
+    if config.debug_file:
+        kind = "invite" if config.code is None else "accept"
+        w.debug_set_trace(kind, which="B N M S O K SK R RC L C T", file=config.debug_file)
 
     from .api import create_coop
     coop = create_coop(reactor, w, fowl_status_tracker)
@@ -1911,7 +1906,7 @@ class FowlCommands(Protocol):
             # XXX should await port.stopListening() somewhere...at the appropriate time
         else:
             self.factory.coop._status_tracker.error(
-                f"Unknown control command: {msg[kind]}",
+                f"Unknown control command: {msg['kind']}",
             )
 
     def _reply_positive(self, unique_name, desired_port):

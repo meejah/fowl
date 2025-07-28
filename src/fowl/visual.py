@@ -1,7 +1,6 @@
 from rich.table import Table
 from rich.text import Text
 
-import time
 import random
 
 import humanize

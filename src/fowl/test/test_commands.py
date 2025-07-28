@@ -1,6 +1,6 @@
 import json
 
-from hypothesis.strategies import one_of, integers, lists, sampled_from, builds, text, ip_addresses, just
+from hypothesis.strategies import one_of, integers, lists, sampled_from, builds, text, just
 from hypothesis import given
 
 

@@ -2,12 +2,6 @@ import binascii
 import automat
 
 from .messages import (
-    Welcome,
-    CodeAllocated,
-    PeerConnected,
-    SendMessageToPeer,
-    GotMessageFromPeer,
-    WormholeClosed,
     PleaseCloseWormhole,
 )
 

@@ -1,11 +1,10 @@
 import time
 import json
-import functools
 from typing import Dict, Optional, Callable
 
 import attrs
 
-from wormhole._status import ConnectionStatus, Connected, Connecting, AllocatedCode, ConnectedPeer, NoCode, ConsumedCode, AllocatedCode, Disconnected, Failed, Closed
+from wormhole._status import Connected, Connecting, ConnectedPeer, NoCode, ConsumedCode, Disconnected, Failed, Closed
 from wormhole import DilationStatus, WormholeStatus
 
 from fowl.messages import BytesIn, BytesOut, OutgoingConnection, OutgoingDone, OutgoingLost, Listening, Welcome, PeerConnected, WormholeClosed, CodeAllocated, IncomingConnection, IncomingDone, IncomingLost, GotMessageFromPeer, FowlOutputMessage, WormholeError, AwaitingConnect

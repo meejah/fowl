@@ -10,7 +10,6 @@ from twisted.internet.defer import ensureDeferred
 
 from wormhole.cli.public_relay import (
     RENDEZVOUS_RELAY as PUBLIC_MAILBOX_URL,
-    TRANSIT_RELAY,
 )
 
 from ._proto import (
@@ -394,7 +393,6 @@ def _replay_visuals(cfg, messages):
     from rich.live import Live
     from .visual import render_status
     from .status import _StatusTracker, FowlStatus, Listener, Subchannel
-    from .messages import Welcome
     import time
     import json
 

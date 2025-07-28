@@ -9,7 +9,7 @@ from twisted.internet.interfaces import IProcessProtocol
 from twisted.internet.protocol import ProcessProtocol
 from twisted.internet.endpoints import serverFromString, clientFromString
 from twisted.internet.task import deferLater
-from hypothesis.strategies import integers, sampled_from, one_of, ip_addresses, text
+from hypothesis.strategies import integers, one_of, ip_addresses, text
 from hypothesis import given, assume
 import click
 import sys
@@ -160,7 +160,6 @@ def test_specifiers_one_port(name, port):
     assume('[' not in name)
     assume(']' not in name)
     assume(':' not in name)
-    cmd = f"{port}"
     spec = RemoteSpecifier.parse(f"{name}:{port}")
     assert spec.to_remote() == RemoteListener(
         name=name,

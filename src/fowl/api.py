@@ -1,32 +1,30 @@
 import os
-import sys
 import socket
 import struct
 from attr import define
-from typing import Optional, Callable, Any
+from typing import Optional, Any
 
 import msgpack
 from ipaddress import IPv4Address, IPv6Address
-from twisted.internet.interfaces import IStreamClientEndpoint, IStreamServerEndpoint, IListeningPort, IReactorSocket, IReactorCore
+from twisted.internet.interfaces import IStreamClientEndpoint, IStreamServerEndpoint, IReactorSocket
 from twisted.internet.endpoints import TCP4ServerEndpoint, TCP6ServerEndpoint
 from twisted.internet.endpoints import TCP4ClientEndpoint, TCP6ClientEndpoint
 from twisted.internet.endpoints import AdoptedStreamServerEndpoint
 from twisted.internet.defer import ensureDeferred
 from twisted.internet.protocol import Factory
 from twisted.python.reflect import requireModule
-from twisted.python.runtime import platformType
-# not available on Windows
-fcntl = requireModule("fcntl")
 
 from zope.interface import implementer
 
 from wormhole._dilation.manager import DilatedWormhole
-from wormhole.wormhole import IDeferredWormhole
 
 from .observer import When
-from ._proto import FowlSubprotocolListener, FowlCommandsListener, _SendFowlCommand, FowlNearToFar, LocalServer
+from ._proto import FowlSubprotocolListener, FowlCommandsListener, _SendFowlCommand
 from .status import _StatusTracker
 from .tcp import allocate_tcp_port
+
+# not available on Windows
+fcntl = requireModule("fcntl")
 
 
 def create_coop(reactor, wormhole, status_tracker=None):

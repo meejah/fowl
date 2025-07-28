@@ -1,6 +1,4 @@
-from twisted.internet.defer import DeferredList, ensureDeferred
 
-import pytest
 import pytest_twisted
 
 from ..observer import Next
