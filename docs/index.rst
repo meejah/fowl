@@ -14,6 +14,7 @@ There are no logins, no identities and the server can't see content because ever
 Additionally, the server is usually not involved in the "bulk transport" of bytes at all as the protocol prefers P2P connections.
 
 Conceptually, this is somewhat similar to ``ssh -R`` and ``ssh -L`` except without pre-shared or long-term secrets.
+Unlike ``ssh``, reconnection is invisible to the forwarded applications.
 
 Sound interesting? Read on!
 

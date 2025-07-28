@@ -228,7 +228,6 @@ Full example, computer one (run each command in its own terminal window):
 
     $ nc -l localhost 8888
     $ fowl --service chat:8888
-    Invite code: 1-foo-bar
 
 Computer two:
 

@@ -41,7 +41,7 @@ This can naturally lead to considering one of the peers as "a Host" that may inv
 We try to be careful about centering "real humans" as distinct from computers they may control.
 Thus, we try to avoid confusing anthropomorphisms like "Alice" and "Bob" -- those are human names, but typically blur the line between "Alice" herself and "a computer Alice controls".
 
-Examples using computers should use computer-relevant names like "laptop", "desktop" or "phone".
+Examples using computers use computer-relevant names like "laptop", "desktop" or "phone".
 Humans get human names -- but an important feature of humans is that they may control multiple computers at once.
 
 Thus, "two peer computers" called "laptop" and "desktop" may be controlled by either one or two humans -- this distinction should *always* be obvious in documentation and specifications.
