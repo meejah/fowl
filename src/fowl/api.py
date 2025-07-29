@@ -17,6 +17,7 @@ from twisted.python.reflect import requireModule
 from zope.interface import implementer
 
 from wormhole._dilation.manager import DilatedWormhole
+from wormhole.cli.public_relay import TRANSIT_RELAY
 
 from .observer import When
 from ._proto import FowlSubprotocolListener, FowlCommandsListener, _SendFowlCommand
@@ -287,6 +288,12 @@ class _FowlCoop:
             kwargs["on_status_update"] = wrapper
         else:
             kwargs["on_status_update"] = self._status_tracker.dilation_status
+        # add the default transit_relay_location= if it doesn't
+        # already exist in the kwargs -- but note that if it's there
+        # and None we should leave it alone (so upstream can decide
+        # "we don't want a transit relay")
+        if "transit_relay_location" not in kwargs:
+            kwargs["transit_relay_location"] = TRANSIT_RELAY
         dilated = self._wormhole.dilate(**kwargs)
         self._set_dilated(dilated)
         # "dilated" is a DilatedWormhole instance
