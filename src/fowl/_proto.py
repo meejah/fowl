@@ -655,10 +655,6 @@ class LocalServerFarSide(Protocol):
                 str(f.value),
             )
         d.addErrback(err)
-
-        def got_proto(proto):
-            print("proto", proto)
-        d.addCallback(got_proto)
         return d
 
     def connectionLost(self, reason):
