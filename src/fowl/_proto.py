@@ -588,48 +588,6 @@ class ConnectionForward(Protocol):
         self.stream_closed(reason)
 
 
-class LocalServer(Protocol):
-    """
-    Listen on an endpoint. On every connection: open a subchannel,
-    follow the protocol from _forward_loop above (ultimately
-    forwarding data).
-    """
-
-    def connectionMade(self):
-        self.remote = None
-        self.conn_id = allocate_connection_id()
-
-        # XXX do we need registerProducer somewhere here?
-        # XXX make a real Factory subclass instead
-        factory = Factory.forProtocol(FowlNearToFar)
-        factory.other_proto = self
-        factory.conn_id = self.conn_id
-        factory.unique_name = self.factory.unique_name
-        factory.coop = self.factory.coop
-        # Note: connect_ep here is the Wormhole provided
-        # IClientEndpoint that lets us create new subchannels -- not
-        # to be confused with the endpoint created from the "local
-        # endpoint string"
-        d = self.factory.connect_ep.connect(factory)
-
-        def err(f):
-            self.factory.coop._status_tracker.error(str(f.value))
-        d.addErrback(err)
-        return d
-
-    def connectionLost(self, reason):
-        # XXX causes duplice local_close 'errors' in magic-wormhole ... do we not want to do this?)
-        if self.remote is not None and self.remote.transport:
-            self.remote.transport.loseConnection()
-
-    def dataReceived(self, data):
-        self.factory.coop._status_tracker.bytes_in(
-            self.conn_id,
-            len(data),
-        )
-        self.remote.transport.write(data)
-
-
 class LocalServerFarSide(Protocol):
     """
     """
