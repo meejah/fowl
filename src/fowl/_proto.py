@@ -354,7 +354,7 @@ class FowlNearToFar(Protocol):
 
     @m.output()
     def emit_remote_failed(self, reason):
-        print("bad", reason)
+        # print("bad", reason)
         self.factory.coop._status_tracker.outgoing_lost(
             self.factory.conn_id,
             reason,
@@ -1556,7 +1556,6 @@ def parse_fowld_output(json_str: str) -> FowlOutputMessage:
     Parse the given JSON message assuming it came from fowld.
     :raises: ValueError if it's an invalid message.
     """
-    print("LOADING", repr(json_str))
     cmd = json.loads(json_str)
     try:
         kind = cmd["kind"]
