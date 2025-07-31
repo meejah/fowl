@@ -1,6 +1,6 @@
 import json
 
-from hypothesis.strategies import one_of, integers, lists, sampled_from, builds, text
+from hypothesis.strategies import one_of, integers, lists, sampled_from, builds, text, just
 from hypothesis import given
 
 
@@ -36,12 +36,16 @@ def command_class_to_arg_generators(cls):
         messages.DangerDisablePermissionCheck: {
         },
         messages.LocalListener: {
-            "listen": local_server_endpoints(),
-            "connect": local_client_endpoints(),
+            "name": text(min_size=1),
+            "local_listen_port": one_of([just(None), integers(min_value=1, max_value=65535)]),
+            "remote_connect_port": one_of([just(None), integers(min_value=1, max_value=65535)]),
+#            "bind_interface": ip_addresses(v=4),
         },
         messages.RemoteListener: {
-            "listen": local_server_endpoints(),
-            "connect": local_client_endpoints(),
+            "name": text(min_size=1),
+            "remote_listen_port": one_of([just(None), integers(min_value=1, max_value=65535)]),
+            "local_connect_port": one_of([just(None), integers(min_value=1, max_value=65535)]),
+#            "connect_address": ip_addresses(v=4),
         },
         messages.GrantPermission: {
             "listen": port_lists(),

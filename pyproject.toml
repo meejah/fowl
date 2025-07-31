@@ -43,8 +43,9 @@ dependencies = [
     "msgpack",
     "humanize",
     "twisted",
-    "magic-wormhole[dilate]",
+    "magic-wormhole[dilate] @ git+https://github.com/magic-wormhole/magic-wormhole.git#egg=magic-wormhole[dilate]",
     "rich",
+    "ipaddress",
 ]
 
 [project.optional-dependencies]

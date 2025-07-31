@@ -14,6 +14,24 @@ Get TCP streams from one computer to another, safely.
 - Documentation: https://fowl.readthedocs.io/en/latest/
 
 
+🛗 Elevator Pitch
+-----------------
+
+There is lots of "self-hostable" networking software, with both the server and client available as FOSS.
+With Fowl, we turn that software into end-to-end-encrypted peer-to-peer software.
+
+Self-hosting services on a public IP address often takes "real work": setting things up on a VPS, worrying about attacks, doing updates, etc etc.
+With Fowl, we only worry about connections to one other peer.
+
+Persistent, durable connections provided by Dilated Magic Wormhole connections allow one side to change networks (e.g. close laptop, go to library, open laptop) and resume talking without any special support from the "actual" software being used.
+
+.. NOTE::
+
+   Astute readers will notice there is still a "public server" involved: the Magic Wormhole Mailbox server.
+   This server, however, cannot see any traffic content.
+   It does learn certain metadata -- e.g. client IP addresses, if not using `Tor <https://torproject.org>`_.
+
+
 🤔 Motivation
 -------------
 
@@ -21,9 +39,6 @@ We sometimes pair-program but don't like the idea of sending keystrokes over a t
 That could be solved by self-hosting, but we also like avoiding the extra work of "set up a server on a public IP address".
 
 For more context, see my blog posts: `Forwarding Streams over Magic Wormhole <https://meejah.ca/blog/fow-wormhole-forward>`_ and `Wizard Gardens vision <https://meejah.ca/blog/wizard-gardens-vision>`_.
-
-To generalize this a little: there are many FOSS client/server programs that *can* be self-hosted -- ``fowl`` lets us use these sorts of programs in a peer-to-peer fashion, behind NATs.
-This means only depending on one general-purpose, public-IP-having server (the Magic Wormhole "mailbox server" used to set up connections) instead of "one per application" (or more).
 
 .. image:: fowl-interaction-screenshot-1000.png
    :height: 474px
@@ -162,7 +177,7 @@ The actual "hello world" of networked applications these days is chat, amirite? 
 
 We will use two venerable network utilities (``nc`` and ``telnet``) to implement a **simple, secure, and e2e-encrypted chat**.
 
-Yes, that's correct: we will make secure chat over ``telnet``.
+Yes, that's correct: **we will make secure chat over telnet**!
 The first insight here is that we can make ``nc`` listen on a localhost-only port, and we can make ``telnet`` connect to a localhost TCP port.
 
 At first we can prove the concept locally, from one terminal to another.
@@ -188,34 +203,38 @@ This means we need:
 
 So, we still run the exact same ``nc`` and ``telnet`` commands, but first do some ``fowl`` magic on each machine.
 
-On the *first* machine, open a terminal and start ``nc`` on port 8888 via ``nc -l localhost 8888``. We'll then need to add in something that *listens* on port 8888 and sends it through the wormhole.
-This thing is: ``fowl --allow-connect 8888 <secret code>``. If you don't specify a ``<secret code>``, ``fowl`` will generate one for you, say ``1-foo-bar`` If you want to generate your own codes, you can specify it directly like so: ``fowl --allow-connect 8888 1-foo-bar``.
+On the *first* machine, open a terminal and start ``nc`` on port 8888 via ``nc -l localhost 8888``.
+This side is running the service, so we run ``fowl --service chat:8888``.
+Fowl will generate a magic-code and display it.
+We use this magic-code in the next step.
 
-On the *second* machine we'll need to add in something that connects our wormhole to our own 8888 port.
-This thing is: ``fowl --local 8888 <secret-code>``, in our case ``fowl --local 8888 1-boo-bar``
+On the *second* machine we'll need something that listens locally (since ``nc`` is not here, but on the other machine) and knows how to forward to the first machine.
+We run ``fowl --client chat:2222 <secret-code>``, using the secret code from the first machine.
 
-What happens under the hood is that the two ``fowl`` programs establish a secure connection, via the public Mailbox Server.
+These secret codes are one-time-use only and are communicated out-of-band (e.g. via a channel you already have with your fellow human).
+This could be reading it off your screen if you're side-by-side somewhere, or using a phone call or other communication.
+
+What happens under the hood is that the two ``fowl`` programs establish a secure connection via the public Mailbox Server.
 They then use this connection to maintain a persistent (possibly changing) TCP connection between each other (worst case, using the public Transit Relay) to send end-to-end encrypted messages.
 
 ``fowl`` uses this connection to communicate via a simple protocol that can establish listeners on either end or ask for fresh connections.
-These result in "subchannels" (in the Magic Wormhole Dilation protocol) that can send bytes back or forth.
+These result in "subchannels" (in the Magic Wormhole Dilation protocol terminology) that can send bytes back or forth.
 
 Any bytes received at either end of the connection are simply forwarded over the subchannel.
 
-Full example, computer one:
+Full example, computer one (run each command in its own terminal window):
 
 .. code-block:: shell
 
     $ nc -l localhost 8888
-    $ fowl --allow-connect 8888
-    Invite code: 1-foo-bar
+    $ fowl --service chat:8888
 
 Computer two:
 
 .. code-block:: shell
 
-    $ fowl --local 8888 1-foo-bar
-    $ telnet localhost 8888
+    $ fowl --client chat:2222 1-foo-bar
+    $ telnet localhost 2222
 
 **Now we have encrypted chat**.
 

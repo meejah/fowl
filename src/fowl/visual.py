@@ -1,18 +1,15 @@
 from rich.table import Table
 from rich.text import Text
 
-import time
 import random
 
 import humanize
-
-from wormhole._status import Connecting
 
 from .status import FowlStatus
 from fowl import chicken
 
 
-def render_status(st: FowlStatus) -> Table:  # Panel? seomthing else
+def render_status(st: FowlStatus, time_now) -> Table:  # Panel? seomthing else
     """
     Render the given fowl status to a Rich thing
     """
@@ -40,7 +37,7 @@ def render_status(st: FowlStatus) -> Table:  # Panel? seomthing else
     if st.code is not None:
         # only display code until we're connected
         if st.verifier is None:
-            message_text.append(Text(f"code: {st.code}\n", "bold"))
+            message_text.append(Text(f"code: {st.code} ", "bold"))
 
     if st.verifier is not None:
         nice_verifier = " ".join(
@@ -53,10 +50,14 @@ def render_status(st: FowlStatus) -> Table:  # Panel? seomthing else
         status_remote.plain = chicken.peer[2]
         status_remote.stylize("rgb(0,100,0) on rgb(100,255,100)")
 
-    if isinstance(st.mailbox_connection, Connecting):
+    if st.is_connecting:
         status_local.stylize("rgb(0,100,100) on rgb(100,255,200)")
-    elif isinstance(st.mailbox_connection, Connecting):
-        status_local.stylize("rgb(0,100,100) on rgb(100,255,255)")
+
+    if not st.peer_connected:
+        status_remote.stylize("rgb(100,255,0) on rgb(255,0,0)")
+        t.add_row(Text("hints"), Text("\n".join(st.hints)), None)
+    else:
+        t.add_row(Text("hint"), Text("🐥 {}".format(st.peer_connected)), None)
 
     # turn purple if we / they are closing
     if st.peer_closing:
@@ -68,27 +69,27 @@ def render_status(st: FowlStatus) -> Table:  # Panel? seomthing else
         status_local.plain = random.choice(chicken.default)
 
     for id_, data in st.listeners.items():
-        if data.remote:
-            t.add_row(
-                Text(""),
-                Text("{} <--".format(data.connect.split(":")[2]), justify="right"),
-                Text("{} 🧙".format(data.listen.split(":")[1])),
-            )
-        else:
-            t.add_row(
-                Text("🧙 {}".format(data.listen.split(":")[1])),
-                Text("--> {}".format(data.connect.split(":")[2])),
-                Text(""),
-            )
+        t.add_row(
+            Text("{} {}".format('🧙' if data.remote else ' ', data.local_port)),
+            Text("{} {}".format("-->" if data.remote else "<--", data.service_name)),
+            Text("{}".format(' ' if data.remote else '🧙'), justify="center"),
+        )
 
     for id_, data in st.subchannels.items():
-        if data.listener_id in st.listeners:
-            local = Text(st.listeners[data.listener_id].listen.split(":")[1] + "\nlisten")
-            remote = Text("connect\n" + str(data.endpoint.split(":")[-1]))
+        if data.service_name in st.listeners:
+            if st.listeners[data.service_name].remote:
+                remote = Text("ᯤ", justify="center")
+                local = Text("")
+            else:
+                if st.listeners[data.service_name].remote_port:
+                    remote = Text("connect\n" + str(st.listeners[data.service_name].remote_port))
+                else:
+                    remote = Text("connect")
+                local = Text("ᯤ", justify="center")
         else:
-            remote = Text("remote\npeer  🧙")
-            local = Text("connect\n" + str(data.endpoint.split(":")[-1]))
-        bw = render_bw(data)
+            remote = local = Text("???", justify="center")
+            local = Text("???", justify="center")
+        bw = render_bw(data, time_now)
         t.add_row(local, bw, remote)
 
     return t
@@ -97,8 +98,7 @@ def render_status(st: FowlStatus) -> Table:  # Panel? seomthing else
 interval = 0.25
 
 
-def render_bw(sub):
-    start = time.time()  # FIXME time provuder
+def render_bw(sub, start):
     if sub.i:
         accum = 0
         idx = 0
@@ -135,12 +135,11 @@ def render_bw(sub):
     else:
         bw = ""
     rendered = Text(bw, style="blue", justify="center")
-    rendered.append_text(Text("\n" + render_bw_out(sub), style="yellow"))
+    rendered.append_text(Text("\n" + render_bw_out(sub, start), style="yellow"))
     return rendered
 
 
-def render_bw_out(sub):
-    start = time.time()
+def render_bw_out(sub, start):
     if not sub.o:
         return ""
     accum = 0

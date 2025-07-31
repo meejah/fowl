@@ -28,7 +28,6 @@ from .messages import (
     LocalListener,
     RemoteListener,
     Listening,
-    RemoteListeningSucceeded,
     BytesIn,
     BytesOut,
     IncomingConnection,
@@ -69,6 +68,9 @@ class State:
 
 
 async def frontend_tui(reactor, config):
+    print("Coming (back) soon!")
+    return
+
     print(f"Connecting: {config.relay_url}")
 
     @functools.singledispatch
@@ -88,7 +90,7 @@ async def frontend_tui(reactor, config):
         print(f"\b\b\b\bListening: {msg.listen}")
         replace_state(attr.evolve(state[0], listeners=state[0].listeners + [msg]))
 
-    @output_message.register(RemoteListeningSucceeded)
+        #XXX fixme
     def _(msg):
         print(f"\b\b\b\bRemote side is listening: {msg.listen}")
         replace_state(attr.evolve(state[0], remote_listeners=state[0].remote_listeners + [msg]))
