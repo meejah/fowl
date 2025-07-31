@@ -13,6 +13,7 @@ from twisted.internet.task import deferLater
 from twisted.internet.defer import ensureDeferred, CancelledError
 from twisted.internet.protocol import Protocol
 from twisted.internet.endpoints import serverFromString, clientFromString
+from twisted.internet.error import ConnectionDone
 
 from fowl._proto import _Config, forward
 from fowl.observer import Accumulate, When
@@ -394,7 +395,10 @@ async def test_forward_no_listener(reactor, request, mailbox):
     fac.protocol = Client
     client_proto = await client.connect(fac)
     client_proto.send(os.urandom(100))
-    await client_proto.when_closed()
+    try:
+        await client_proto.when_closed()
+    except ConnectionDone:
+        pass
     # unfortunately, Subchannel doesn't forward the remote error -- we
     # need the status for that
     for line in status.getvalue().splitlines():
