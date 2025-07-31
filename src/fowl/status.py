@@ -40,6 +40,7 @@ class FowlStatus:
     we_closing: bool = False
     is_connecting: bool = False
     hints: list = attrs.Factory(list)
+    lost: list = attrs.Factory(list)  # 3-tuples: (time, channel_id, reason-string)
 
 
 @attrs.define
@@ -198,6 +199,7 @@ class _StatusTracker:
 
     def incoming_lost(self, channel_id, reason):
         del self._current_status.subchannels[channel_id]
+        self._current_status.lost.append((self._time_provider(), channel_id, reason))
         self._notify_listeners()
         self._emit(IncomingLost(channel_id, reason))
 
@@ -219,5 +221,6 @@ class _StatusTracker:
 
     def outgoing_lost(self, channel_id, reason):
         del self._current_status.subchannels[channel_id]
+        self._current_status.lost.append((self._time_provider(), channel_id, reason))
         self._notify_listeners()
         self._emit(OutgoingLost(channel_id, reason))
