@@ -776,6 +776,10 @@ class FowlFarToNear(Protocol):
         """
         We wish to close this subchannel
         """
+        # there isn't currently a great way to pass on "why" we closed
+        # to the Subchannel -- this will end up with "exited
+        # normally", approximately, but it would be ideal if we could
+        # pass along this reason somehow.
         self.transport.loseConnection()
 
     @m.output()
