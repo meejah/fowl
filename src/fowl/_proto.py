@@ -8,7 +8,6 @@ import struct
 import signal
 from typing import IO, Callable, TextIO
 from functools import partial
-from itertools import count
 
 import click
 import humanize
