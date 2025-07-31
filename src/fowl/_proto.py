@@ -1033,15 +1033,6 @@ class FowlFarToNear(Protocol):
         self.got_bytes(data)
 
 
-##XXX needs a shutdown path
-## this is currently via "cancel"
-## so need a "await FowlDaemon.shutdown()" or similar which can do
-## async stuff like shut down all listeners, etc etc
-
-## refactoring _forward_loop etc
-##XXX doesn't exist yet but ... @implementer(IWormholeDelegate)
-
-
 class FowlWormhole:
     """
     Does I/O related to a wormhole connection.
@@ -1203,8 +1194,6 @@ class FowlWormhole:
         # before we emit "closing", we must ensure we won't start
         # any new channels.
         await self._stop_listening()
-        # XXX probably do this via req/resp .. or at least don't
-        # plumb it through FowlDaemon
         self._wormhole.send_message(json.dumps({
             "closing": self._wormhole._boss._next_tx_phase,
         }).encode("utf8"))

@@ -83,6 +83,7 @@ def create_wormhole_factory():
                 return b"x" * 32
 
             def dilate(self):
+                # XXX incorrect, should return DilatedWormhole
                 return (self.control_ep, self.connect_ep, self.listen_ep)
 
         w = Wormhole()

@@ -66,12 +66,12 @@ class FowlChannelDaemonThere:
 
     @property
     def connect_port(self) -> int:
-        if isinstance(self.endpoint, TCP4ServerEndpoint):
+        if self.port is not None:
+            return self.port._realPortNumber
+        elif isinstance(self.endpoint, TCP4ServerEndpoint):
             return self.endpoint._port
         elif isinstance(self.endpoint, TCP6ServerEndpoint):
             return self.endpoint._port
-        elif self.port is not None:
-            return self.port._realPortNumber
         raise ValueError(
             ".listener endpoint is neither TCP4 nor TCP6 server, and we have no port"
         )
@@ -146,7 +146,6 @@ class _LocalListeningEndpoint:
                     # allocations.  It doesn't know about *file descriptor*
                     # allocation though.  So ... we'll "teach" it about those,
                     # here.
-                    ####fileDescriptorResource.allocate()
                     fd = os.dup(s.fileno())
                     flags = fcntl.fcntl(fd, fcntl.F_GETFD)
                     flags = flags | os.O_NONBLOCK | fcntl.FD_CLOEXEC
@@ -330,10 +329,9 @@ class _FowlCoop:
         we can't control what our peer decides to do) await the
         `when_roosted()` method for the same `unique_name`.
        """
-         # XXX okay so if we care what the 'other side' listens on, it HAS to be started from there?
-        # (why might we? what would that even ... mean / do?)
-        # XXX IPv4 vs IPv6?
-        # XXX bind/connect addresses?
+        # todo: IPv4 vs IPv6?
+        # todo: bind/connect addresses?
+        # (currently can do both those by providing a local_endpoint "by hand", right?)
         if local_endpoint is None:
             local_endpoint = _LocalListeningEndpoint(self._reactor, None)
         channel = FowlChannelDaemonThere(
@@ -536,7 +534,7 @@ class _FowlCoop:
         """
         if self._dilated is not None:
             raise ValueError(
-                "dilated() may only be called once per next"
+                "dilated() may only be called once"
             )
         self._dilated = dilation
 
@@ -572,4 +570,3 @@ class CleanupEndpoint:
         """
         if not self._listened:
             os.close(self._fd)
-            ####fileDescriptorResource.release()
