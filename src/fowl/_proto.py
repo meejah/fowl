@@ -903,18 +903,14 @@ class FowlFarToNear(Protocol):
     @m.output()
     def establish_local_connection(self, msg):
         """
-        FIXME
+        For a given service, establish our outgoing local connection
         """
         ep = self.factory.coop.local_connect_endpoint(msg["unique-name"])
-        ##ep = self.factory.coop.connect_endpoint(msg["unique-name"])
-        ###ep = clientFromString(reactor, msg["local-destination"])
 
         factory = Factory.forProtocol(ConnectionForward)
         factory.other_proto = self
         factory.coop = self.factory.coop
         factory.conn_id = self.conn_id
-
-#emit was here
 
         d = ep.connect(factory)
 
