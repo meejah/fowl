@@ -1711,32 +1711,6 @@ async def forward(reactor, config):
         await fowl.stop()
 
 
-# async def _local_to_remote_forward(reactor, config, connect_ep, on_listen, on_message, cmd, coop):
-#     """
-#     Listen locally, and for each local connection create an Outgoing
-#     subchannel which will connect on the other end. So the daemon is
-#     running on the other side.
-#     """
-#     #XXX okay so this is "LocalServer for a local listener" ....
-#     factory = Factory.forProtocol(LocalServer)
-#     factory.config = config
-#     factory.unique_name = cmd.name
-#     factory.connect_ep = connect_ep
-#     from .api import _LocalListeningEndpoint
-#     ep = _LocalListeningEndpoint(reactor, cmd.listening_port)
-#     port = await ep.listen(factory)
-#     print("PORT", port, dir(port))
-#     on_listen(port)
-#     coop._status_tracker.add_remote_service(
-#         unique_name,
-#         port._realPort,
-#     )
-
-
-_local_requests = dict()
-_create_request_id = count(1)
-
-
 class _SendFowlCommand(Protocol):
     """
     Protocol spoken when we are asking our peer to open a listener, a
