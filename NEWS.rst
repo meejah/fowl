@@ -12,6 +12,11 @@ Unreleased
 ----------
 
 * (Put new changelog items here)
+
+
+25.7.0: July 31, 2025
+---------------------
+
 * Cool new ASCII-art / terminal visualization of activity (via "rich")
 * Nice error if user gives zero options
 * Fix "fowl --readme" and pkg_resources deprecation (#78)

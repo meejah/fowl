@@ -40,9 +40,9 @@ That could be solved by self-hosting, but we also like avoiding the extra work o
 
 For more context, see my blog posts: `Forwarding Streams over Magic Wormhole <https://meejah.ca/blog/fow-wormhole-forward>`_ and `Wizard Gardens vision <https://meejah.ca/blog/wizard-gardens-vision>`_.
 
-.. image:: fowl-interaction-screenshot-1000.png
-   :height: 474px
-   :width: 1000px
+.. image:: four-window-localhost-demo-1500.png
+   :height: 672px
+   :width: 1500px
    :alt: screenshot of four terminals demonstrating fowl with two peers, one "nc" and one "telnet": encrypted chat with telnet over wormhole
 
 
