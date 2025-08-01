@@ -22,9 +22,6 @@ test:
 #release: pin
 release:
 	python update-version.py
-	hatch version `git tag --sort -v:refname | head -1`
-	git add -u
-	git commit -m "update version"
 	hatchling build
 	twine check dist/fowl-`git describe --abbrev=0`-py3-none-any.whl
 	twine check dist/fowl-`git describe --abbrev=0`.tar.gz
