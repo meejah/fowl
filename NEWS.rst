@@ -12,6 +12,7 @@ Unreleased
 ----------
 
 * (Put new changelog items here)
+* Add --version option to fowl and fowld
 
 
 25.7.0: July 31, 2025
