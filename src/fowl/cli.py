@@ -36,6 +36,11 @@ For more information: fowl --help
 
 
 @click.option(
+    "--version",
+    flag_value=True,
+    help="Output currently running versions as JSON.",
+)
+@click.option(
     "--ip-privacy/--clearnet",
     default=False,
     help="Enable operation over Tor (default is public Internet)",
@@ -54,13 +59,20 @@ For more information: fowl --help
 )
 @click.command()
 @click.pass_context
-def fowld(ctx, ip_privacy, mailbox, debug):
+def fowld(ctx, ip_privacy, mailbox, debug, version):
     """
     Forward Over Wormhole, Locally, Daemon
 
     Low-level daemon to set up and forward streams over Dilated magic
     wormhole connections
     """
+    if version:
+        import json
+        versions = _versions()
+        # versions["kind"] = "version"
+        print(json.dumps(versions))
+        return
+
     ctx.obj = _Config(
         relay_url=WELL_KNOWN_MAILBOXES.get(mailbox, mailbox),
         use_tor=bool(ip_privacy),
@@ -76,6 +88,11 @@ def fowld(ctx, ip_privacy, mailbox, debug):
     return react(run)
 
 
+@click.option(
+    "--version",
+    flag_value=True,
+    help="Display the currently running version",
+)
 @click.option(
     "--debug-messages",
     default=None,
@@ -162,7 +179,7 @@ def fowld(ctx, ip_privacy, mailbox, debug):
 )
 @click.argument("code", required=False)
 @click.command()
-def fowl(ip_privacy, mailbox, debug, local, remote, code_length, code, readme, interactive, debug_messages, debug_status, replay):
+def fowl(ip_privacy, mailbox, debug, local, remote, code_length, code, readme, interactive, debug_messages, debug_status, replay, version):
     """
     Forward Over Wormhole, Locally
 
@@ -210,6 +227,12 @@ def fowl(ip_privacy, mailbox, debug, local, remote, code_length, code, readme, i
     Note that this can fail for things like Web servers which include
     the port as part of the URI and the 'same-origin' check.
     """
+    if version:
+        versions = _versions()
+        print(f"    fowl: {versions['fowl']}")
+        print(f"wormhole: {versions['wormhole']}")
+        return
+
     if replay:
         _replay_visuals(None, replay)
         return
@@ -449,6 +472,18 @@ def _replay_visuals(cfg, messages):
 
             # regardless of any overruns, clam to target
             where_are_we = timestamp
+
+
+def _versions():
+    """
+    Return information about interesting versions
+    """
+    from fowl import __version__ as fowl_version
+    from wormhole import __version__ as wormhole_version
+    return {
+        "fowl": fowl_version,
+        "wormhole": wormhole_version,
+    }
 
 
 def tui(cfg):
