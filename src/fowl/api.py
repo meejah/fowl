@@ -281,7 +281,7 @@ class _FowlCoop:
         if "on_status_update" in kwargs:
             # if upstream user sent a status_update we need a wrapper
             def wrapper(st):
-                self._status_tracer.dilation_status(st)
+                self._status_tracker.dilation_status(st)
                 return wrapper.upstream(st)
             wrapper.upstream = kwargs["on_status_update"]
             kwargs["on_status_update"] = wrapper
