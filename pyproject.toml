@@ -62,7 +62,6 @@ dev = [
     "twine",
     "sphinx",
     "dulwich",
-    "gpg",  # should use isis lovecruft's version?
     "pip-tools",
     "hatch",
     "readme-renderer",
