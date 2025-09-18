@@ -457,6 +457,9 @@ class FowlNearToFar(Protocol):
         # might be "better state-machine" to do the message-sending in
         # an @output and use this method to send "connected()" @input
         # or similar?
+        print(f"BAZINGA0 {type(self.transport)}")
+        print(f"BAZINGA1 {type(self.factory.other_proto.transport)}")
+        self.transport.registerProducer(self, True)
         self._buffer = b""
         # self.do_trace(lambda o, i, n: print("{} --[ {} ]--> {}".format(o, i, n)))
 
@@ -479,10 +482,22 @@ class FowlNearToFar(Protocol):
         # then
         self.factory.other_proto.transport.pauseProducing()
 
+    def pauseProducing(self):
+        print(f"{type(self)} -> pauseProducing")
+        # remove ourselves from the reactor
+        print(type(self.transport))
+        self.factory.coop._reactor.removeReader(self.factory.other_proto.transport)
+
+    def resumeProducing(self):
+        print(f"{type(self)} -> resumeProducing")
+        # add back to the reactor
+        self.factory.coop._reactor.addReader(self.factory.other_proto.transport)
+
     def dataReceived(self, data):
         self.got_bytes(data)
 
     def connectionLost(self, reason):
+        print(f"connectionLost {reason}")
         self.subchannel_closed(str(reason))
         if self.factory.other_proto:
             self.factory.other_proto.transport.loseConnection()
@@ -578,12 +593,36 @@ class ConnectionForward(Protocol):
     )
 
     def connectionMade(self):
-        pass
+        print("connectionMade, registering")
+        print(f"FOO0 {type(self.transport)}")
+        print(f"FOO1 {type(self.factory.other_proto.transport)}")
+        # "self.transport" is a twisted thing
+        # "self.factory.other_proto" is a SubChannel
+        # register ourselves as a push producer
+        self.factory.other_proto.transport.registerProducer(self, True)
+
+    def stopProducing(self):
+        print(f"{self} -> stopProducing")
+        pass  # do we disconnect here? or is that coming "anyway"?
+
+    def pauseProducing(self):
+        print(f"{type(self)} -> pauseProducing")
+        # remove ourselves from the reactor
+        self.factory.coop._reactor.removeReader(self.transport)
+
+    def resumeProducing(self):
+        print(f"{type(self)} -> resumeProducing")
+        # add back to the reactor
+        self.factory.coop._reactor.addReader(self.transport)
 
     def dataReceived(self, data):
-        self.got_bytes(data)
+        try:
+            self.got_bytes(data)
+        except Exception as e:
+            print(f"BAD {e}")
 
     def connectionLost(self, reason):
+        print(f"connectionLost {reason}")
         self.stream_closed(reason)
 
 
@@ -1030,7 +1069,10 @@ class FowlFarToNear(Protocol):
         """
         Twisted API
         """
-        self.got_bytes(data)
+        try:
+            self.got_bytes(data)
+        except Exception as e:
+            print(f"BAD2 {type(e)} {e}")
 
 
 class FowlWormhole:
@@ -1569,10 +1611,10 @@ def parse_fowld_output(json_str: str) -> FowlOutputMessage:
         "listening-failed": parser(ListeningFailed, [("reason", None)]),
         "awaiting-connect": parser(AwaitingConnect, [("name", None), ("local_port", int)]),
         "remote-connect-failed": parser(RemoteConnectFailed, [("id", int), ("reason", None)]),
-        "outgoing-connection": parser(OutgoingConnection, [("id", int), ("endpoint", None), ("name", None)]),
+        "outgoing-connection": parser(OutgoingConnection, [("id", int), ("service_name", None)]),
 ##        "outgoing-lost": parser(),
         "outgoing-done": parser(OutgoingDone, [("service_name", str)]),
-        "incoming-connection": parser(IncomingConnection, [("id", int), ("endpoint", None), ("name", None)]),
+        "incoming-connection": parser(IncomingConnection, [("id", int), ("service_name", None)]),
         "incoming-lost": parser(IncomingLost, [("id", int), ("reason", None)]),
         "incoming-done": parser(IncomingDone, [("id", int)]),
         "bytes-in": parser(BytesIn, [("id", int), ("bytes", int)]),
