@@ -175,7 +175,7 @@ class OutgoingConnection(FowlOutputMessage):
     an outgoing subchannel to the other peer).
     """
     service_name: str
-    channel_id: str
+    id: str
 
 
 @frozen
@@ -201,7 +201,7 @@ class IncomingConnection(FowlOutputMessage):
     The other side is requesting we open a connection
     """
     service_name: str
-    channel_id: str
+    id: str
 
 
 @frozen

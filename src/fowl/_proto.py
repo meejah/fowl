@@ -417,7 +417,7 @@ class FowlNearToFar(Protocol):
     await_confirmation.upon(
         subchannel_closed,
         enter=finished,
-        outputs=[],####emit_incoming_lost],
+        outputs=[],  # used to emit_incoming_lost, do we need to handle something here?
     )
 
     evaluating.upon(
@@ -458,6 +458,7 @@ class FowlNearToFar(Protocol):
         # might be "better state-machine" to do the message-sending in
         # an @output and use this method to send "connected()" @input
         # or similar?
+        self.transport.registerProducer(self, True)
         self._buffer = b""
         # self.do_trace(lambda o, i, n: print("{} --[ {} ]--> {}".format(o, i, n)))
 
@@ -480,10 +481,26 @@ class FowlNearToFar(Protocol):
         # then
         self.factory.other_proto.transport.pauseProducing()
 
+    def pauseProducing(self):
+        ##print(f"{type(self)} -> pauseProducing")
+        # remove ourselves from the reactor
+        self.factory.coop._reactor.removeReader(self.factory.other_proto.transport)
+        self.factory.coop._reactor.removeWriter(self.factory.other_proto.transport)
+
+    def resumeProducing(self):
+        ##print(f"{type(self)} -> resumeProducing")
+        # add back to the reactor
+        self.factory.coop._reactor.addReader(self.factory.other_proto.transport)
+        self.factory.coop._reactor.addWriter(self.factory.other_proto.transport)
+
     def dataReceived(self, data):
         self.got_bytes(data)
 
     def connectionLost(self, reason):
+        # XXX we get exception if we do this (keyerror) so I don't
+        # think we need to? todo: double-check what happens in this
+        # path
+        ##self.transport.unregisterProducer()
         self.subchannel_closed(str(reason))
         if self.factory.other_proto:
             self.factory.other_proto.transport.loseConnection()
@@ -551,18 +568,6 @@ class ConnectionForward(Protocol):
         except Exception:
             pass
 
-    @m.output()
-    def emit_incoming_done(self, reason):
-        if isinstance(reason.value, ConnectionDone):
-            self.factory.coop._status_tracker.incoming_done(
-                self.factory.conn_id,
-            )
-        else:
-            self.factory.coop._status_tracker.incoming_lost(
-                self.factory.conn_id,
-                str(reason),
-            )
-
     forwarding_bytes.upon(
         got_bytes,
         enter=forwarding_bytes,
@@ -571,7 +576,7 @@ class ConnectionForward(Protocol):
     forwarding_bytes.upon(
         stream_closed,
         enter=finished,
-        outputs=[emit_incoming_done, close_other_side]
+        outputs=[close_other_side]
     )
 
     def connectionMade(self):
@@ -865,11 +870,6 @@ class FowlFarToNear(Protocol):
         # note: do this policy check after the IncomingConnection
         # message is emitted (otherwise there will be cases where we
         # emit _just_ a IncomingLost which is confusing)
-
-        # XXX instead of a "policy check" we should just ask our Coop
-        # what port to use for this service-name -- either random or
-        # pre-defined or whatever
-        # (nah, we want to check if any FowlCoop has a "roost" for this service name?)
         name = msg.get("unique-name", None)
         if name is None or name not in self.factory.coop._services:
             self.policy_bad(f'No service "{name}"')
@@ -892,10 +892,28 @@ class FowlFarToNear(Protocol):
 
     @m.output()
     def emit_incoming_lost(self, msg):
+        print(f"lost {msg}")
         self.factory.coop._status_tracker.incoming_lost(
             self.conn_id,
             f"Incoming connection against local policy: {msg}",
         )
+
+    # hrmmm .. okay so this is "the server of iperf3 dropped our
+    # _server_ connection" but we haven't yet gotten that information
+    # out to wormhole / dilation, so it continues to accept incoming
+    # bytes ... so we should do this status-tracker thing somewhere
+    # else (i.e. so Dilation stops feeding us bytes)
+    @m.output()
+    def emit_incoming_done(self, reason):
+        if isinstance(reason, ConnectionDone):
+            self.factory.coop._status_tracker.incoming_done(
+                self.conn_id,
+            )
+        else:
+            self.factory.coop._status_tracker.incoming_lost(
+                self.conn_id,
+                str(reason),
+            )
 
     @m.output()
     def establish_local_connection(self, msg):
@@ -956,7 +974,7 @@ class FowlFarToNear(Protocol):
     await_message.upon(
         subchannel_closed,
         enter=finished,
-        outputs=[],
+        outputs=[emit_incoming_done],
     )
     local_connect.upon(
         connection_made,
@@ -983,7 +1001,7 @@ class FowlFarToNear(Protocol):
     forwarding_bytes.upon(
         subchannel_closed,
         enter=finished,
-        outputs=[close_local_connection]
+        outputs=[close_local_connection, emit_incoming_done]
     )
 
     finished.upon(
@@ -1010,9 +1028,31 @@ class FowlFarToNear(Protocol):
         # (want some kind of opt-in on this side, probably)
         self._buffer = b""
         self._local_connection = None
+        # note: we could delay registration until we make the local
+        # connection, but seems more clear here (and we check anyway
+        # in pauseProducing etc)
+        self.transport.registerProducer(self, True)
         # def tracer(o, i, n):
         #     print("{} --[ {} ]--> {}".format(o, i, n))
         # self.set_trace(tracer)
+
+    # todo: can use --reverse on the client iperf3 side to stimulate this
+    # code-path but an automated test would be ideal
+    def pauseProducing(self):
+        ###print(f"??? {type(self)} -> pauseProducing")
+        # remove our local connection from the reactor
+        if self._local_connection is not None:
+            t = self._local_connection.transport
+            self.factory.coop._reactor.removeReader(t)
+            self.factory.coop._reactor.removeWriter(t)
+
+    def resumeProducing(self):
+        ###print(f"??? {type(self)} -> resumeProducing")
+        # add back our local connection to the reactor
+        if self._local_connection is not None:
+            t = self._local_connection.transport
+            self.factory.coop._reactor.addWriter(t)
+            self.factory.coop._reactor.addReader(t)
 
     def connectionLost(self, reason):
         """

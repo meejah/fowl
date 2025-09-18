@@ -176,11 +176,17 @@ class _StatusTracker:
 # channel-id is randomly/etc assigned
 # each channel-id is associated with precisely one 'service' (formerly "listener-id")
     def bytes_in(self, channel_id, num):
+        if channel_id not in self._current_status.subchannels:
+            print(f"bytes_in for non-existent subchannel {channel_id}: {num}")
+            return
         self._current_status.subchannels[channel_id].i.insert(0, (num, self._time_provider()))
         self._notify_listeners()
         self._emit(BytesIn(channel_id, num))
 
     def bytes_out(self, channel_id, num):
+        if channel_id not in self._current_status.subchannels:
+            print(f"bytes_out for non-existent subchannel {channel_id}: {num}")
+            return
         self._current_status.subchannels[channel_id].o.insert(0, (num, self._time_provider()))
         self._notify_listeners()
         self._emit(BytesOut(channel_id, num))
@@ -191,9 +197,7 @@ class _StatusTracker:
         self._emit(IncomingConnection(service_name, channel_id))
 
     def incoming_done(self, channel_id):
-        #out = humanize.naturalsize(sum([b for b, _ in subchannels[msg.id].o]))
-        #in_ = humanize.naturalsize(sum([b for b, _ in subchannels[msg.id].i]))
-        #print(f"{msg.id} closed: {out} out, {in_} in")
+        # todo: emit a summary message?
         del self._current_status.subchannels[channel_id]
         self._notify_listeners()
         self._emit(IncomingDone(channel_id))
@@ -211,7 +215,7 @@ class _StatusTracker:
 
     def outgoing_done(self, channel_id):
         # if there was an "other side initiated" error (e.g. "can't connect") then
-        #P we get both an "outgoing_lost()" and then an "outgoing_done()"...
+        # we get both an "outgoing_lost()" and then an "outgoing_done()"...
         try:
             # todo: periodically flush old channels?
             self._current_status.subchannels[channel_id].done_at = self._time_provider()
@@ -221,6 +225,7 @@ class _StatusTracker:
         else:
             self._notify_listeners()
             self._emit(OutgoingDone(channel_id))
+        # todo: include a "summary" in OutgoingDone?
 
     def outgoing_lost(self, channel_id, reason):
         del self._current_status.subchannels[channel_id]
