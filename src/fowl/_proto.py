@@ -888,9 +888,9 @@ class FowlFarToNear(Protocol):
         Tell our peer why we're closing them
         """
         self._negative(reason)
-        self.factory.coop._status_tracker.incoming_bad_policy(
+        self.factory.coop._status_tracker.incoming_lost(
             self.conn_id,
-            reason,
+            f"{reason}",
         )
 
     def _negative(self, reason):
