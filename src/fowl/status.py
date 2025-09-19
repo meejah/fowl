@@ -200,6 +200,8 @@ class _StatusTracker:
         if 1:
             out = humanize.naturalsize(sum([b for b, _ in self._current_status.subchannels[channel_id].o]))
             in_ = humanize.naturalsize(sum([b for b, _ in self._current_status.subchannels[channel_id].i]))
+            out = sum([b for b, _ in self._current_status.subchannels[channel_id].o])
+            in_ = sum([b for b, _ in self._current_status.subchannels[channel_id].i])
             print(f"incoming {channel_id} closed: {out} out, {in_} in")
         del self._current_status.subchannels[channel_id]
         self._notify_listeners()
