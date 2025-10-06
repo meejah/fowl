@@ -503,9 +503,21 @@ def display_readme():
     """
     Display the project README
     """
-    click.echo_via_pager(
-        resources.files("fowl").joinpath("README.rst").read_text(encoding="utf8")
+    from rich.table import Table
+    from rich.text import Text
+    from rich.console import Console
+    from .visual import littlebitspace_big_logo
+
+    layout = Table.grid("text", "digram")
+    layout.add_row(
+        resources.files("fowl").joinpath("README.rst").read_text(encoding="utf8"),
+        Text.from_ansi(littlebitspace_big_logo, no_wrap=True)
     )
+
+    c = Console()
+    with c.capture() as capture:
+        c.print(layout)
+    click.echo_via_pager(capture.get())
 
 if __name__ == "__main__":
     try:
