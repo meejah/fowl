@@ -371,27 +371,39 @@ class FowlNearToFar(Protocol):
         """
         Shut down this subchannel.
         """
-        self.factory.other_proto.transport.loseConnection()
+        if self.factory.other_proto:
+            self.factory.other_proto.transport.loseConnection()
 
     @m.output()
     def forward_bytes(self, data):
         """
         Send bytes to the other side
         """
-        max_noise = 65000
-        while len(data):
-            d = data[:max_noise]
-            data = data[max_noise:]
-            self.factory.coop._status_tracker.bytes_out(
-                self.factory.conn_id,
-                len(d),
-            )
-            self.factory.other_proto.transport.write(d)
+        if 1:
+            self.factory.other_proto.transport.write(data)
+        else:
+            max_noise = 65000
+            while len(data):
+                d = data[:max_noise]
+                data = data[max_noise:]
+                self.factory.coop._status_tracker.bytes_out(
+                    self.factory.conn_id,
+                    len(d),
+                )
+                self.factory.other_proto.transport.write(d)
 
-#    @m.output()
-#    def emit_incoming_lost(self):
-#        # do we need a like "OutgoingLost"?
-#        self.factory.message_out(IncomingLost(self.factory.conn_id, "Unknown"))
+    @m.output()
+    def emit_incoming_lost(self, reason):
+        print(f"emit_incoming_lost: {reason}")
+        if isinstance(reason, ConnectionDone):
+            self.factory.coop._status_tracker.outgoing_done(
+                self.factory.conn_id,
+            )
+        else:
+            self.factory.coop._status_tracker.outgoing_lost(
+                self.factory.conn_id,
+                str(reason),
+            )
 
     await_confirmation.upon(
         no_confirmation,
@@ -416,7 +428,7 @@ class FowlNearToFar(Protocol):
     await_confirmation.upon(
         subchannel_closed,
         enter=finished,
-        outputs=[],####emit_incoming_lost],
+        outputs=[emit_incoming_lost],
     )
 
     evaluating.upon(
@@ -442,7 +454,7 @@ class FowlNearToFar(Protocol):
     forwarding_bytes.upon(
         subchannel_closed,
         enter=finished,
-        outputs=[close_other_connection]
+        outputs=[close_other_connection, emit_incoming_lost]
     )
 
     finished.upon(
@@ -457,6 +469,9 @@ class FowlNearToFar(Protocol):
         # might be "better state-machine" to do the message-sending in
         # an @output and use this method to send "connected()" @input
         # or similar?
+        print(f"BAZINGA0 {type(self.transport)}")
+        print(f"BAZINGA1 {type(self.factory.other_proto.transport)}")
+        self.transport.registerProducer(self, True)
         self._buffer = b""
         # self.do_trace(lambda o, i, n: print("{} --[ {} ]--> {}".format(o, i, n)))
 
@@ -479,24 +494,30 @@ class FowlNearToFar(Protocol):
         # then
         self.factory.other_proto.transport.pauseProducing()
 
+    def pauseProducing(self):
+        print(f"{type(self)} -> pauseProducing")
+        # remove ourselves from the reactor
+        self.factory.coop._reactor.removeReader(self.factory.other_proto.transport)
+        self.factory.coop._reactor.removeWriter(self.factory.other_proto.transport)
+
+    def resumeProducing(self):
+        print(f"{type(self)} -> resumeProducing")
+        # add back to the reactor
+        self.factory.coop._reactor.addReader(self.factory.other_proto.transport)
+        self.factory.coop._reactor.addWriter(self.factory.other_proto.transport)
+
     def dataReceived(self, data):
         self.got_bytes(data)
 
     def connectionLost(self, reason):
-        self.subchannel_closed(str(reason))
-        if self.factory.other_proto:
-            self.factory.other_proto.transport.loseConnection()
-        if isinstance(reason, ConnectionDone):
-            self.factory.coop._status_tracker.outgoing_done(
-                self.factory.conn_id,
-            )
-        else:
-            self.factory.coop._status_tracker.outgoing_lost(
-                self.factory.conn_id,
-                str(reason),
-            )
+        print(f"ZZZ connectionLost {reason}")
+        # need to do this async'ly in case there are "in flight"
+        # reads/writes in the reactor
+        self.transport.unregisterProducer()
+        self.factory.reactor.callLater(0, self.subchannel_closed, reason)
 
-
+# might want to do this?
+#@implementer(IHalfCloseableProtocol)
 class ConnectionForward(Protocol):
     """
     The protocol we speak on connections _we_ make to local
@@ -536,35 +557,25 @@ class ConnectionForward(Protocol):
 
         This will be from the 'actual server' side to our local client
         """
-        max_noise = 65000
-        while len(data):
-            d = data[:max_noise]
-            data = data[max_noise:]
-            self.factory.coop._status_tracker.bytes_in(
-                self.factory.conn_id,
-                len(d),
-            )
-            self.factory.other_proto.transport.write(d)
+        print(f"fwd {len(data)}")
+        if 1:
+            self.factory.other_proto.transport.write(data)
+        else:
+            max_noise = 65000
+            while len(data):
+                d = data[:max_noise]
+                data = data[max_noise:]
+                self.factory.coop._status_tracker.bytes_in(
+                    self.factory.conn_id,
+                    len(d),
+                )
+                print(f"   write {len(d)}")
+                self.factory.other_proto.transport.write(d)
 
     @m.output()
     def close_other_side(self, reason):
-        try:
-            if self.factory.other_proto:
-                self.factory.other_proto.transport.loseConnection()
-        except Exception:
-            pass
-
-    @m.output()
-    def emit_incoming_done(self, reason):
-        if isinstance(reason.value, ConnectionDone):
-            self.factory.coop._status_tracker.incoming_done(
-                self.factory.conn_id,
-            )
-        else:
-            self.factory.coop._status_tracker.incoming_lost(
-                self.factory.conn_id,
-                str(reason),
-            )
+        if self.factory.other_proto:
+            self.factory.reactor.callLater(0, self.factory.other_proto.transport.loseConnection)
 
     forwarding_bytes.upon(
         got_bytes,
@@ -574,17 +585,59 @@ class ConnectionForward(Protocol):
     forwarding_bytes.upon(
         stream_closed,
         enter=finished,
-        outputs=[emit_incoming_done, close_other_side]
+        outputs=[close_other_side]
     )
 
     def connectionMade(self):
-        pass
+        print("connectionMade, registering")
+        print(f"FOO0 {type(self.transport)}")
+        print(f"FOO1 {type(self.factory.other_proto.transport)}")
+        # "self.transport" is a twisted thing
+        # "self.factory.other_proto" is a SubChannel
+        # register ourselves as a push producer
+        self.factory.other_proto.transport.registerProducer(self, True)
+
+    def stopProducing(self):
+        print(f"{self} -> stopProducing")
+        pass  # do we disconnect here? or is that coming "anyway"?
+
+    def pauseProducing(self):
+        print(f"{type(self)} -> pauseProducing")
+        # remove ourselves from the reactor
+        #self.factory.coop._reactor.removeReader(self.transport)
+        #self.factory.coop._reactor.removeWriter(self.transport)
+
+    def resumeProducing(self):
+        print(f"{type(self)} -> resumeProducing {self.transport}")
+        # add back to the reactor
+        #self.factory.coop._reactor.addWriter(self.transport)
+        #self.factory.coop._reactor.addReader(self.transport)
 
     def dataReceived(self, data):
-        self.got_bytes(data)
+        try:
+            self.got_bytes(data)
+        except Exception as e:
+            print(f"BAD {e}")
+
+    def readConnectionLost(self):
+        print(f"readconnectionlost {self}")
+
+    def writeConnectionLost(self):
+        print(f"writeconnectionlost {self}")
 
     def connectionLost(self, reason):
-        self.stream_closed(reason)
+        #this is coming from .. our local daemon? so how is it closing _before_ the subchannel does?
+        #did i trace wrong? seems weird .. WE should be closing on the server (after subchannel closes) right?
+
+        #XXX this is 'too soon', basically? on the iperf test we hit
+        #this before all bytes delivered .. how/why? do we have to
+        #'subscribe' to the subchannel closing? shouldn't it be
+        #already?
+        print(f"{type(self)} connectionLost {reason}")
+        print(self.transport)
+        # yeah: we're not done until self.transport's connectionLost is called
+        # (but also the bytes don't appear to be going through either?)
+        self.factory.reactor.callLater(0, self.stream_closed, reason)
 
 
 class LocalServerFarSide(Protocol):
@@ -602,6 +655,7 @@ class LocalServerFarSide(Protocol):
         factory.conn_id = self.conn_id
         factory.unique_name = self.factory.unique_name
         factory.coop = self.factory.coop
+        factory.reactor = self.factory.reactor
 
         connect_ep = self.factory.coop.subchannel_connector()
 #XXXX we want "a local connection" endpoint
@@ -617,13 +671,19 @@ class LocalServerFarSide(Protocol):
     def connectionLost(self, reason):
         # XXX causes duplice local_close 'errors' in magic-wormhole ... do we not want to do this?)
         if self.remote is not None and self.remote.transport:
-            self.remote.transport.loseConnection()
+            print(f"{type(self)} connectionLost {reason}: closing other")
+            def close():
+                print("closing other now")
+                self.remote.transport.loseConnection
+            self.factory.reactor.callLater(0, close)
 
     def dataReceived(self, data):
+        print(f"{type(self)} dataReceived {len(data)}")
         self.factory.coop._status_tracker.bytes_in(
             self.conn_id,
             len(data),
         )
+        print(f"fwd2 {len(data)}")
         self.remote.transport.write(data)
 
 
@@ -829,7 +889,7 @@ class FowlFarToNear(Protocol):
         self._negative(reason)
         self.factory.coop._status_tracker.incoming_lost(
             self.conn_id,
-            reason,
+            f"{reason}",
         )
 
     def _negative(self, reason):
@@ -841,7 +901,6 @@ class FowlFarToNear(Protocol):
                 })
             )
         )
-
 
     @m.output()
     def send_positive_reply(self):
@@ -864,15 +923,30 @@ class FowlFarToNear(Protocol):
         )
 
     @m.output()
+    def emit_incoming_done(self, reason):
+        print(f"emit_incoming_done {reason}")
+        if isinstance(reason, ConnectionDone):
+            self.factory.coop._status_tracker.incoming_done(
+                self.conn_id,
+            )
+        else:
+            self.factory.coop._status_tracker.incoming_lost(
+                self.conn_id,
+                str(reason),
+            )
+
+    @m.output()
+    def emit_incoming_bad_policy(self, msg):
+        self.factory.coop._status_tracker.incoming_lost(
+            self.conn_id,
+            f"Incoming connection against local policy: {msg}",
+        )
+
+    @m.output()
     def do_policy_check(self, msg):
         # note: do this policy check after the IncomingConnection
         # message is emitted (otherwise there will be cases where we
         # emit _just_ a IncomingLost which is confusing)
-
-        # XXX instead of a "policy check" we should just ask our Coop
-        # what port to use for this service-name -- either random or
-        # pre-defined or whatever
-        # (nah, we want to check if any FowlCoop has a "roost" for this service name?)
         name = msg.get("unique-name", None)
         if name is None or name not in self.factory.coop._services:
             self.policy_bad(f'No service "{name}"')
@@ -894,13 +968,6 @@ class FowlFarToNear(Protocol):
         self.transport.loseConnection()
 
     @m.output()
-    def emit_incoming_lost(self, msg):
-        self.factory.coop._status_tracker.incoming_lost(
-            self.conn_id,
-            f"Incoming connection against local policy: {msg}",
-        )
-
-    @m.output()
     def establish_local_connection(self, msg):
         """
         For a given service, establish our outgoing local connection
@@ -908,14 +975,15 @@ class FowlFarToNear(Protocol):
         ep = self.factory.coop.local_connect_endpoint(msg["unique-name"])
 
         factory = Factory.forProtocol(ConnectionForward)
+        factory.conn_id = self.conn_id
         factory.other_proto = self
         factory.coop = self.factory.coop
-        factory.conn_id = self.conn_id
+        factory.reactor = self.factory.reactor
 
         d = ep.connect(factory)
 
         def bad(fail):
-            reactor.callLater(0, lambda: self.connection_failed(fail.getErrorMessage()))
+            self.factory.reactor.callLater(0, lambda: self.connection_failed(fail.getErrorMessage()))
             return None
 
         def assign(proto):
@@ -953,7 +1021,7 @@ class FowlFarToNear(Protocol):
     local_policy_check.upon(
         policy_bad,
         enter=finished,
-        outputs=[local_disconnect, emit_incoming_lost]
+        outputs=[local_disconnect, emit_incoming_bad_policy]
     )
 
     await_message.upon(
@@ -986,7 +1054,7 @@ class FowlFarToNear(Protocol):
     forwarding_bytes.upon(
         subchannel_closed,
         enter=finished,
-        outputs=[close_local_connection]
+        outputs=[emit_incoming_done, close_local_connection]
     )
 
     finished.upon(
@@ -1021,15 +1089,23 @@ class FowlFarToNear(Protocol):
         """
         Twisted API
         """
-#        self.factory.message_out(
-#            IncomingLost(self._conn_id, reason)
-#        )
-        self.subchannel_closed(reason)
+        # this is coming from our SubChannel
+        print(f"BLARG {self} connectionLost {reason}")
+        # we call this async'ly in case there are "writes in flight"
+        # etc in the reactor right now
+        try:
+            self.factory.reactor.callLater(0, lambda: self.subchannel_closed(reason))
+        except Exception as e:
+            print("BADBAD", e)
 
     def dataReceived(self, data):
         """
         Twisted API
         """
+        # this callback comes out of SubChannel in magic-wormhole,
+        # notifying us of a (decrypted etc) message from the other
+        # peer
+        print(f"{type(self)} !! dataReceived {len(data)}")
         self.got_bytes(data)
 
 
@@ -1569,10 +1645,10 @@ def parse_fowld_output(json_str: str) -> FowlOutputMessage:
         "listening-failed": parser(ListeningFailed, [("reason", None)]),
         "awaiting-connect": parser(AwaitingConnect, [("name", None), ("local_port", int)]),
         "remote-connect-failed": parser(RemoteConnectFailed, [("id", int), ("reason", None)]),
-        "outgoing-connection": parser(OutgoingConnection, [("id", int), ("endpoint", None), ("name", None)]),
+        "outgoing-connection": parser(OutgoingConnection, [("id", int), ("service_name", None)]),
 ##        "outgoing-lost": parser(),
         "outgoing-done": parser(OutgoingDone, [("service_name", str)]),
-        "incoming-connection": parser(IncomingConnection, [("id", int), ("endpoint", None), ("name", None)]),
+        "incoming-connection": parser(IncomingConnection, [("id", int), ("service_name", None)]),
         "incoming-lost": parser(IncomingLost, [("id", int), ("reason", None)]),
         "incoming-done": parser(IncomingDone, [("id", int)]),
         "bytes-in": parser(BytesIn, [("id", int), ("bytes", int)]),
@@ -1796,6 +1872,7 @@ class FowlCommands(Protocol):
                 return
 
             factory = Factory.forProtocol(LocalServerFarSide)
+            factory.reactor = self.factory.reactor
             factory.coop = self.factory.coop
             factory.unique_name = unique_name
             # XXX this can fail (synchronously) if address in use, for example
