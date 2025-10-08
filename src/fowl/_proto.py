@@ -23,9 +23,8 @@ from twisted.internet.task import deferLater
 from twisted.internet.protocol import Factory, Protocol
 from twisted.internet.error import ConnectionDone
 from twisted.internet.stdio import StandardIO
-from twisted.internet.interfaces import IHalfCloseableProtocol
 from twisted.protocols.basic import LineReceiver
-from zope.interface import directlyProvides, implementer
+from zope.interface import directlyProvides
 from wormhole.cli.public_relay import RENDEZVOUS_RELAY as PUBLIC_MAILBOX_URL, TRANSIT_RELAY
 import wormhole.errors as wormhole_errors
 

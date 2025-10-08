@@ -438,8 +438,8 @@ def _replay_visuals(cfg, messages):
     console = Console(force_terminal=True)
     live = Live(get_renderable=render, console=console)
 
-    if 1:
-    #with live:
+    #if 1:
+    with live:
         while messages:
             data = messages.pop(0)
             timestamp = data.pop("timestamp")
