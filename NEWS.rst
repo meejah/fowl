@@ -19,7 +19,7 @@ Unreleased
 * Amazing new ANSI-art logo from littlebitspace
 * Add --no-logo option to fowl (to hide cool new logo)
 * Correct spelling in a variable, sometimes causing downstream exceptions (#85)
-* Explicitly support Python 3.13
+* Explicitly support Python 3.13 and 3.14
 
 
 25.7.0: July 31, 2025
