@@ -177,9 +177,15 @@ def fowld(ctx, ip_privacy, mailbox, debug, version):
     help="Run in interactive mode, a human-friendly fowld",
     is_flag=True,
 )
+@click.option(
+    "--no-logo", "--logo",
+    is_flag=True,
+    help="Display the ANSI logo from littlebitspace (or not)",
+    default=False,
+)
 @click.argument("code", required=False)
 @click.command()
-def fowl(ip_privacy, mailbox, debug, local, remote, code_length, code, readme, interactive, debug_messages, debug_status, replay, version):
+def fowl(ip_privacy, mailbox, debug, local, remote, code_length, code, readme, interactive, debug_messages, debug_status, replay, version, no_logo):
     """
     Forward Over Wormhole, Locally
 
@@ -270,6 +276,7 @@ def fowl(ip_privacy, mailbox, debug, local, remote, code_length, code, readme, i
         commands=commands,
         output_debug_messages=debug_messages,
         output_status=debug_status,
+        no_logo=no_logo,
     )
 
     if interactive:

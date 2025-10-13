@@ -43,15 +43,15 @@ littlebitspace_big_logo = r"""[0m                      _       .[1;33m,,[0m.
   `[1;33m""[0m'     [1m`"²Y?%%%%²"'[0m"""
 
 
-def render_status(st: FowlStatus, time_now) -> Table:  # Panel? seomthing else
+def render_status(st: FowlStatus, time_now, show_logo=True) -> Table:  # Panel? seomthing else
     """
     Render the given fowl status to a Rich thing
     """
 
     logo = Text.from_ansi(littlebitspace_word_logo)
-#    logo = Text.from_ansi(littlebitspace_big_logo)
     top = Table.grid('one')
-    top.add_row(logo)
+    if show_logo:
+        top.add_row(logo)
 
     from rich import box
     t = Table(show_header=False, show_lines=True, box=box.HORIZONTALS) #title="Active Connections")
