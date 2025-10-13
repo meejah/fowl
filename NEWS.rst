@@ -16,6 +16,8 @@ Unreleased
 * Do not fragment on Noise limits; wormhole does this
 * Keep closed streams around for a few seconds so
   user can see them and their summary
+* Amazing new ANSI-art logo from littlebitspace
+* Add --no-logo option to fowl (to hide cool new logo)
 
 
 25.7.0: July 31, 2025
