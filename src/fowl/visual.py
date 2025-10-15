@@ -127,6 +127,10 @@ def render_status(st: FowlStatus, time_now) -> Table:  # Panel? seomthing else
         )
 
     for id_, data in st.subchannels.items():
+        if data.done_at is not None:
+            if time_now - data.done_at > 10.0:
+                # skip an ended Subchannel some time after it's finished
+                continue
         if data.service_name in st.listeners:
             if st.listeners[data.service_name].remote:
                 remote = Text("ᯤ", justify="center")
@@ -141,6 +145,28 @@ def render_status(st: FowlStatus, time_now) -> Table:  # Panel? seomthing else
             remote = local = Text("???", justify="center")
             local = Text("???", justify="center")
         bw = render_bw(data, time_now)
+        if data.done_at is not None:
+            from rich.style import Style
+            if 0:
+                # so, it would be cool to "fade out" the old streams,
+                # but figuring out the background colour is like "a
+                # whole blog post" (and rich doesn't support it)
+                # .. leaving here for future-me
+                # (move me to a function if this is good)
+                # fade from "999999" towards "222222" based on 10s timeout
+                elapsed = time_now - data.done_at
+                if elapsed > 10.0:
+                    elapsed = 10.0
+                diff = elapsed / 10.0  # normalize to [0, 1)
+                # at "10.0" we want to equal 222222
+                color_diff = 0xaa - 0x22
+                color = 0x22 + int(diff * color_diff)
+                s = Style(color=f"#{color:02x}{color:02x}{color:02x}", dim=True, bgcolor=None)
+            else:
+                s = Style(color="#676767", dim=True, bgcolor=None)
+            local = Text("", s)
+            remote = Text("✓", s, justify="center")
+            bw.stylize(s)
         t.add_row(local, bw, remote)
 
     return top

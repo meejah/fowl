@@ -16,6 +16,7 @@ class Subchannel:
     channel_id: str
     i: list
     o: list
+    done_at: Optional[int] = None # timestamp when ended, or None
 
 
 @attrs.define
@@ -212,7 +213,9 @@ class _StatusTracker:
         # if there was an "other side initiated" error (e.g. "can't connect") then
         #P we get both an "outgoing_lost()" and then an "outgoing_done()"...
         try:
-            del self._current_status.subchannels[channel_id]
+            # todo: periodically flush old channels?
+            self._current_status.subchannels[channel_id].done_at = self._time_provider()
+            ##del self._current_status.subchannels[channel_id]
         except KeyError:
             pass
         else:
