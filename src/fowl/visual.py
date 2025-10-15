@@ -155,14 +155,15 @@ def render_status(st: FowlStatus, time_now) -> Table:  # Panel? seomthing else
                 # (move me to a function if this is good)
                 # fade from "999999" towards "222222" based on 10s timeout
                 elapsed = time_now - data.done_at
-                if elapsed > 10.0: elapsed = 10.0
+                if elapsed > 10.0:
+                    elapsed = 10.0
                 diff = elapsed / 10.0  # normalize to [0, 1)
                 # at "10.0" we want to equal 222222
                 color_diff = 0xaa - 0x22
                 color = 0x22 + int(diff * color_diff)
                 s = Style(color=f"#{color:02x}{color:02x}{color:02x}", dim=True, bgcolor=None)
             else:
-                s = Style(color=f"#676767", dim=True, bgcolor=None)
+                s = Style(color="#676767", dim=True, bgcolor=None)
             local = Text("", s)
             remote = Text("✓", s, justify="center")
             bw.stylize(s)
