@@ -113,6 +113,7 @@ class _Config:
     commands: list[FowlCommandMessage] = AttrFactory(list)
     output_debug_messages: TextIO = None  # Option<Writable>
     output_status: TextIO = None  # Option<Readable>
+    no_logo: bool = False
 
 
 async def wormhole_from_config(reactor, config, on_status, wormhole_create=None):
@@ -187,7 +188,11 @@ async def frontend_accept_or_invite(reactor, config):
 
     # testing a TUI style output UI, maybe optional?
     def render():
-        return render_status(status_tracker.current_status, reactor.seconds())
+        return render_status(
+            status_tracker.current_status,
+            reactor.seconds(),
+            show_logo=not config.no_logo
+        )
     from rich.console import Console
     console = Console(force_terminal=True)
     live = Live(get_renderable=render, console=console)
