@@ -1,0 +1,39 @@
+name: Code Checks
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  unit-tests:
+    strategy:
+      matrix:
+        os:
+          - runs-on: ubuntu-latest
+        python-version:
+          - "3.13"
+    runs-on: ${{ matrix.os.runs-on }}
+    steps:
+    - name: Check out source code
+      uses: actions/checkout@v2
+      with:
+        # Get enough history for the tags we get next to be meaningful.  0
+        # means all history.
+        fetch-depth: "0"
+        # Checkout head of the branch of the PR, or the exact revision
+        # specified for non-PR builds.
+        ref: "${{ github.event.pull_request.head.sha || github.sha }}"
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v2
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install dependencies
+      run: |
+        pip install --editable .[lint]
+
+    - name: ruff
+      run: python -m ruff check src/

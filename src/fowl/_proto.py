@@ -378,15 +378,11 @@ class FowlNearToFar(Protocol):
         """
         Send bytes to the other side
         """
-        max_noise = 65000
-        while len(data):
-            d = data[:max_noise]
-            data = data[max_noise:]
-            self.factory.coop._status_tracker.bytes_out(
-                self.factory.conn_id,
-                len(d),
-            )
-            self.factory.other_proto.transport.write(d)
+        self.factory.other_proto.transport.write(data)
+        self.factory.coop._status_tracker.bytes_out(
+            self.factory.conn_id,
+            len(data),
+        )
 
 #    @m.output()
 #    def emit_incoming_lost(self):
@@ -536,15 +532,11 @@ class ConnectionForward(Protocol):
 
         This will be from the 'actual server' side to our local client
         """
-        max_noise = 65000
-        while len(data):
-            d = data[:max_noise]
-            data = data[max_noise:]
-            self.factory.coop._status_tracker.bytes_in(
-                self.factory.conn_id,
-                len(d),
-            )
-            self.factory.other_proto.transport.write(d)
+        self.factory.other_proto.transport.write(data)
+        self.factory.coop._status_tracker.bytes_in(
+            self.factory.conn_id,
+            len(data),
+        )
 
     @m.output()
     def close_other_side(self, reason):
