@@ -67,7 +67,10 @@ dev = [
     "hatch",
     "readme-renderer",
     "cuvner",
- ]
+]
+lint = [
+    "ruff"
+]
 
 [project.scripts]
 fowl = "fowl.cli:fowl"
