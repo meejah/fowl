@@ -1,5 +1,6 @@
 from rich.table import Table
 from rich.text import Text
+from rich.style import Style
 
 import random
 
@@ -48,7 +49,10 @@ def render_status(st: FowlStatus, time_now, show_logo=True) -> Table:  # Panel? 
     Render the given fowl status to a Rich thing
     """
 
-    logo = Text.from_ansi(littlebitspace_word_logo)
+    logo = Text.from_ansi(
+        littlebitspace_word_logo,
+        style=Style(bgcolor="#002b36"),
+    )
     top = Table.grid('one')
     if show_logo:
         top.add_row(logo)
@@ -146,7 +150,6 @@ def render_status(st: FowlStatus, time_now, show_logo=True) -> Table:  # Panel? 
             local = Text("???", justify="center")
         bw = render_bw(data, time_now)
         if data.done_at is not None:
-            from rich.style import Style
             if 0:
                 # so, it would be cool to "fade out" the old streams,
                 # but figuring out the background colour is like "a
