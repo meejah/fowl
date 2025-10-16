@@ -129,14 +129,12 @@ async def test_happy_local(reactor, request, wormhole):
     ``kind="local"`` command.
     """
     f0 = await fowld(reactor, request, mailbox=wormhole.url)
-    f0.protocol.send_message({"kind": "danger-disable-permission-check"})
     f0.protocol.send_message({"kind": "allocate-code"})
     code_msg = await f0.protocol.next_message(CodeAllocated)
 
     # normally the "code" is shared via human interaction
 
     f1 = await fowld(reactor, request, mailbox=wormhole.url)
-    f1.protocol.send_message({"kind": "danger-disable-permission-check"})
     f1.protocol.send_message({"kind": "set-code", "code": code_msg.code})
     # open a listener of some sort
     f1.protocol.send_message({
