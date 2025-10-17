@@ -33,8 +33,6 @@ def command_class_to_arg_generators(cls):
             "id": integers(),
             "bytes": integers(min_value=1),
         },
-        messages.DangerDisablePermissionCheck: {
-        },
         messages.LocalListener: {
             "name": text(min_size=1),
             "local_listen_port": one_of([just(None), integers(min_value=1, max_value=65535)]),
