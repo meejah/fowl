@@ -20,6 +20,13 @@ Unreleased
 * Add --no-logo option to fowl (to hide cool new logo)
 * Correct spelling in a variable, sometimes causing downstream exceptions (#85)
 * Explicitly support Python 3.13 and 3.14
+* New message for fowld: "kind": "session-close" (optionally with
+  "timeout": int) to initiate the same shutdown the "human" CLI does on
+  ctrl-c. That is, attempt to signal the peer nicely, but give up (after
+  "timeout" seconds).
+  Regardless, "fowld" will exit once "session-close" has been
+  initiated -- with non-zero code if the timeout was hit, or 0
+  otherwise (#92 @matrss @meejah)
 
 
 25.7.0: July 31, 2025
