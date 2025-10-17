@@ -15,7 +15,7 @@ Unreleased
 * Add --version option to fowl and fowld
 * Do not fragment on Noise limits; wormhole does this
 * Keep closed streams around for a few seconds so
-  user can see them and their summary
+  user can see them and their summary (#91)
 * Amazing new ANSI-art logo from littlebitspace
 * Add --no-logo option to fowl (to hide cool new logo)
 * Correct spelling in a variable, sometimes causing downstream exceptions (#85)
