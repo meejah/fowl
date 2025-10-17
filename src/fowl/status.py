@@ -34,6 +34,7 @@ class FowlStatus:
     code: Optional[str] = None
     verifier: Optional[str] = None
     closed: Optional[str] = None  # closed status, "happy", "lonely" etc
+    # todo: periodically flush old channels? (we only mark as done currently)
     peer_connected: Optional[str] = None  # hint-description if connected
     subchannels: Dict[str, Subchannel] = attrs.Factory(dict)
     listeners: Dict[str, Listener] = attrs.Factory(dict)
@@ -176,11 +177,17 @@ class _StatusTracker:
 # channel-id is randomly/etc assigned
 # each channel-id is associated with precisely one 'service' (formerly "listener-id")
     def bytes_in(self, channel_id, num):
+        if channel_id not in self._current_status.subchannels:
+            print(f"bytes_in for non-existent subchannel {channel_id}: {num}")
+            return
         self._current_status.subchannels[channel_id].i.insert(0, (num, self._time_provider()))
         self._notify_listeners()
         self._emit(BytesIn(channel_id, num))
 
     def bytes_out(self, channel_id, num):
+        if channel_id not in self._current_status.subchannels:
+            print(f"bytes_out for non-existent subchannel {channel_id}: {num}")
+            return
         self._current_status.subchannels[channel_id].o.insert(0, (num, self._time_provider()))
         self._notify_listeners()
         self._emit(BytesOut(channel_id, num))
@@ -191,15 +198,13 @@ class _StatusTracker:
         self._emit(IncomingConnection(service_name, channel_id))
 
     def incoming_done(self, channel_id):
-        #out = humanize.naturalsize(sum([b for b, _ in subchannels[msg.id].o]))
-        #in_ = humanize.naturalsize(sum([b for b, _ in subchannels[msg.id].i]))
-        #print(f"{msg.id} closed: {out} out, {in_} in")
-        del self._current_status.subchannels[channel_id]
+        self._current_status.subchannels[channel_id].done_at = self._time_provider()
         self._notify_listeners()
         self._emit(IncomingDone(channel_id))
+        # todo: emit a summary message?
 
     def incoming_lost(self, channel_id, reason):
-        del self._current_status.subchannels[channel_id]
+        self._current_status.subchannels[channel_id].done_at = self._time_provider()
         self._current_status.lost.append((self._time_provider(), channel_id, reason))
         self._notify_listeners()
         self._emit(IncomingLost(channel_id, reason))
@@ -211,19 +216,14 @@ class _StatusTracker:
 
     def outgoing_done(self, channel_id):
         # if there was an "other side initiated" error (e.g. "can't connect") then
-        #P we get both an "outgoing_lost()" and then an "outgoing_done()"...
-        try:
-            # todo: periodically flush old channels?
-            self._current_status.subchannels[channel_id].done_at = self._time_provider()
-            ##del self._current_status.subchannels[channel_id]
-        except KeyError:
-            pass
-        else:
-            self._notify_listeners()
-            self._emit(OutgoingDone(channel_id))
+        # we get both an "outgoing_lost()" and then an "outgoing_done()"...
+        self._current_status.subchannels[channel_id].done_at = self._time_provider()
+        self._notify_listeners()
+        self._emit(OutgoingDone(channel_id))
+        # todo: include a "summary" in OutgoingDone?
 
     def outgoing_lost(self, channel_id, reason):
-        del self._current_status.subchannels[channel_id]
+        self._current_status.subchannels[channel_id].done_at = self._time_provider()
         self._current_status.lost.append((self._time_provider(), channel_id, reason))
         self._notify_listeners()
         self._emit(OutgoingLost(channel_id, reason))

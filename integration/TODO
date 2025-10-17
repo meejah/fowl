@@ -1,0 +1,26 @@
+
+We don't have a good _automated_ producer/consumer test.
+
+For manual testing, that looks like this:
+
+1. Start the two fowls:
+
+    fowl --service iperf:54321 12345-foo-bar
+    fowl --client iperf:12345 12345-foo-bar
+
+2. run iperf3 server:
+
+    iperf3 -4 -s localhost -p 54321
+
+3. run the iperf3 client:
+
+    iperf3 -4 -c localhost -p 12345 -n 3000M
+    iperf3 -4 -c localhost -p 12345 -n 3000M --reverse
+
+In both the normal and "reverse" case, we should NOT see the memory of
+either client grow substantially (e.g. in failing cases it would crest
+at about 3.0GB). In my tests, it's about 70M per client.
+
+Note that both kinds of iperf3 client tests are required, as one tests
+"NearToFar" and the other tests "FarToNear" (--reverse instructs the
+_server_ iperf3 to send the data).

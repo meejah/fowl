@@ -4,6 +4,10 @@ import attrs
 from typing import Optional
 from ipaddress import IPv4Address, IPv6Address
 from importlib import resources
+from rich.style import Style
+from rich.table import Table
+from rich.text import Text
+from rich.console import Console
 
 from twisted.internet.task import react
 from twisted.internet.defer import ensureDeferred
@@ -18,11 +22,12 @@ from ._proto import (
     frontend_accept_or_invite,
     WELL_KNOWN_MAILBOXES,
 )
-from ._tui import frontend_tui
 from .messages import (
     LocalListener,
     RemoteListener,
 )
+from ._tui import frontend_tui
+from .visual import littlebitspace_big_logo
 
 
 WOULD_DO_NOTHING_ERROR = """
@@ -445,6 +450,7 @@ def _replay_visuals(cfg, messages):
     console = Console(force_terminal=True)
     live = Live(get_renderable=render, console=console)
 
+    #if 1:
     with live:
         while messages:
             data = messages.pop(0)
@@ -510,15 +516,15 @@ def display_readme():
     """
     Display the project README
     """
-    from rich.table import Table
-    from rich.text import Text
-    from rich.console import Console
-    from .visual import littlebitspace_big_logo
-
     layout = Table.grid("text", "digram")
+    logo = Text.from_ansi(
+        littlebitspace_big_logo,
+        no_wrap=True,
+        style=Style(bgcolor="#002b36"),
+    )
     layout.add_row(
         resources.files("fowl").joinpath("README.rst").read_text(encoding="utf8"),
-        Text.from_ansi(littlebitspace_big_logo, no_wrap=True)
+        logo,
     )
 
     c = Console()
