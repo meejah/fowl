@@ -45,9 +45,8 @@ def command_class_to_arg_generators(cls):
             "local_connect_port": one_of([just(None), integers(min_value=1, max_value=65535)]),
 #            "connect_address": ip_addresses(v=4),
         },
-        messages.GrantPermission: {
-            "listen": port_lists(),
-            "connect": port_lists(),
+        messages.SessionClose: {
+            "timeout": integers(min_value=1, max_value=30),
         },
         messages.Ping: {
             "ping_id": text(),  # should really be "base16-encoded 4-bytes of binary"
