@@ -36,7 +36,6 @@ from .messages import (
     OutgoingConnection,
     OutgoingDone,
     WormholeError,
-    GrantPermission,
     Ping,
     Pong,
 )
@@ -300,12 +299,6 @@ async def _cmd_listen_local(reactor, wh, state, *args):
         remote_port = port
 
     wh.command(
-        GrantPermission(
-            listen=[port],
-            connect=[],
-        )
-    )
-    wh.command(
         LocalListener(
             listen=f"tcp:{port}:interface=localhost",
             connect=f"tcp:localhost:{remote_port}",
@@ -337,51 +330,9 @@ async def _cmd_listen_remote(reactor, wh, state, *args):
         local_port = remote_port
 
     wh.command(
-        GrantPermission(
-            listen=[],
-            connect=[local_port],
-        )
-    )
-    wh.command(
         RemoteListener(
             listen=f"tcp:{remote_port}:interface=localhost",
             connect=f"tcp:localhost:{local_port}",
-        )
-    )
-
-
-async def _cmd_allow(reactor, wh, state, *args):
-    """
-    Allow an incoming connection on a particular port
-    """
-    try:
-        local_port = int(args[0])
-    except (ValueError, IndexError):
-        print("Requires a TCP port, as an integer.")
-        print("If the other side tries to connect via this port, we will allow it")
-        return
-    wh.command(
-        GrantPermission(
-            listen=[],
-            connect=[local_port],
-        )
-    )
-
-
-async def _cmd_allow_listen(reactor, wh, state, *args):
-    """
-    Allow remote side to listen on a given TCP port.
-    """
-    try:
-        local_port = int(args[0])
-    except (ValueError, IndexError):
-        print("Requires a TCP port, as an integer.")
-        print("We will allow the other side to listen on this TCP port")
-        return
-    wh.command(
-        GrantPermission(
-            listen=[local_port],
-            connect=[],
         )
     )
 
@@ -547,9 +498,6 @@ commands = {
 
     "local": _cmd_listen_local,
     "remote": _cmd_listen_remote,
-
-    "allow": _cmd_allow,
-    "allow-listen": _cmd_allow_listen,
 
     "ping": _cmd_ping,
     "p": _cmd_ping,

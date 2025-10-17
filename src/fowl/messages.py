@@ -78,24 +78,6 @@ class PeerConnected(FowlOutputMessage):
 
 
 @frozen
-class GrantPermission(FowlCommandMessage):
-    """
-    Grant additional listen or connection privileges. Both are lists
-    of valid ports between 1 and 65535 inclusive.
-    """
-    listen: list[int]
-    connect: list[int]
-
-
-@frozen
-class DangerDisablePermissionCheck(FowlCommandMessage):
-    """
-    DANGER: allow listening or connecting to anything. Can be
-    dangerous, you must know the implications.
-    """
-
-
-@frozen
 class LocalListener(FowlCommandMessage):
     """
     We wish to open a local listener. (That means the daemon-style
@@ -122,6 +104,11 @@ class RemoteListener(FowlCommandMessage):
 @frozen
 class Ping(FowlCommandMessage):
     ping_id: int
+
+
+@frozen
+class SessionClose(FowlCommandMessage):
+    timeout: int = 10  # how long to wait for the other side
 
 
 @frozen
