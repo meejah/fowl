@@ -40,6 +40,9 @@ jobs:
         python -m pip install --upgrade pip
         pip install --editable .[test]
 
+    - name: basic sanity
+      run: python -m pytest --version
+
     - name: pytest
       run: python -m pytest --disable-warnings --cov=fowl -s -v src/fowl/test/
 
