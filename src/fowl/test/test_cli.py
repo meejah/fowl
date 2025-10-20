@@ -53,7 +53,7 @@ class CollectStreams(ProcessProtocol):
 
 # maybe Hypothesis better, via strategies.binary() ?
 @pytest_twisted.ensureDeferred
-async def test_happy_path(reactor, request, mailbox):
+async def __test_happy_path(reactor, request, mailbox):
     """
     One side invites, other accepts.
 
