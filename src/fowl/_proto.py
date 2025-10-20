@@ -892,7 +892,6 @@ class FowlFarToNear(Protocol):
 
     @m.output()
     def emit_incoming_lost(self, msg):
-        print(f"lost {msg}")
         self.factory.coop._status_tracker.incoming_lost(
             self.conn_id,
             f"Incoming connection against local policy: {msg}",
