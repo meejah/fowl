@@ -12,6 +12,30 @@ Unreleased
 ----------
 
 * (Put new changelog items here)
+* Add --version option to fowl and fowld
+* Do not fragment on Noise limits; wormhole does this
+* Keep closed streams around for a few seconds so
+  user can see them and their summary (#91)
+* Amazing new ANSI-art logo from littlebitspace
+* Add --no-logo option to fowl (to hide cool new logo)
+* Correct spelling in a variable, sometimes causing downstream exceptions (#85)
+* Explicitly support Python 3.13 and 3.14
+
+
+25.7.0: July 31, 2025
+---------------------
+
+* Cool new ASCII-art / terminal visualization of activity (via "rich")
+* Nice error if user gives zero options
+* Fix "fowl --readme" and pkg_resources deprecation (#78)
+* Massive refactoring of internal APIs, philosophy and specifiers.
+  The biggest visible change from this is using "named" services with peer-specified ports.
+  There is now a usable API if you're using Python and Twisted already.
+
+
+25.4.0: April 10, 2025
+----------------------
+
 * Allow for non-local addresses: for both listening interfaces and
   connect endpoints, non-local addresses may be specified in a manner
   similar to "ssh -L" or "ssh -R" arguments. See #37:

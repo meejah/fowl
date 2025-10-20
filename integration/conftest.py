@@ -1,6 +1,5 @@
 import pytest
 import pytest_twisted
-from twisted.internet.defer import ensureDeferred
 from util import (
     WormholeMailboxServer,
 )

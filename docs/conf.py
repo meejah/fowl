@@ -25,12 +25,13 @@ exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 
 html_theme = 'furo'
 html_logo = 'logo.svg'
-html_static_path = ['.']
+html_static_path = ['_static']
 html_theme_options = {
     "top_of_page_buttons": ["view", "edit"],
     "source_repository": "https://github.com/meejah/fowl/",
     "source_branch": "main",
     "source_directory": "docs/",
+    "navigation_with_keys": True,
     "footer_icons": [
         {
             "name": "GitHub",

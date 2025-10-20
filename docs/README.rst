@@ -10,6 +10,27 @@ Get TCP streams from one computer to another, safely.
 
 (The base protocol below `Magic Wormhole <https://github.com/magic-wormhole/magic-wormhole>`_ provides a powerful account-less, peer-to-peer networking solution -- ``fowl`` helps you use this power immediately with existing programs)
 
+- Code: https://github.com/meejah/fowl
+- Documentation: https://fowl.readthedocs.io/en/latest/
+
+
+🛗 Elevator Pitch
+-----------------
+
+There is lots of "self-hostable" networking software, with both the server and client available as FOSS.
+With Fowl, we turn that software into end-to-end-encrypted peer-to-peer software.
+
+Self-hosting services on a public IP address often takes "real work": setting things up on a VPS, worrying about attacks, doing updates, etc etc.
+With Fowl, we only worry about connections to one other peer.
+
+Persistent, durable connections provided by Dilated Magic Wormhole connections allow one side to change networks (e.g. close laptop, go to library, open laptop) and resume talking without any special support from the "actual" software being used.
+
+.. NOTE::
+
+   Astute readers will notice there is still a "public server" involved: the Magic Wormhole Mailbox server.
+   This server, however, cannot see any traffic content.
+   It does learn certain metadata -- e.g. client IP addresses, if not using `Tor <https://torproject.org>`_.
+
 
 🤔 Motivation
 -------------
@@ -19,8 +40,9 @@ That could be solved by self-hosting, but we also like avoiding the extra work o
 
 For more context, see my blog posts: `Forwarding Streams over Magic Wormhole <https://meejah.ca/blog/fow-wormhole-forward>`_ and `Wizard Gardens vision <https://meejah.ca/blog/wizard-gardens-vision>`_.
 
-To generalize this a little: there are many FOSS client/server programs that _can_ be self-hosted -- ``fowl`` lets us use these sorts of programs in a peer-to-peer fashion, behind NATs.
-This means only depending on one general-purpose, public-IP-having server (the Magic Wormhole "mailbox server" used to set up connections) instead of "one per application" (or more).
+.. image:: four-window-localhost-demo-1500.png
+   :width: 100%
+   :alt: screenshot of four terminals demonstrating fowl with two peers, one "nc" and one "telnet": encrypted chat with telnet over wormhole
 
 
 🦃 What?
@@ -112,7 +134,7 @@ Human CLI users can use ``fowl`` itself to set up and use connections, for any p
 
 For developers doing integration, ``fowld`` provides a simple stdin/out protocol for any runtime to use.
 That is, some "glue" code running ``fowld`` as a sub-process.
-This co-ordinatoin program will also handle running necessary client-type or server-type networking applications that accomplish some goal useful to users. For example, "pair-programming" (for my case).
+This co-ordination program will also handle running necessary client-type or server-type networking applications that accomplish some goal useful to users. For example, "pair-programming" (for my case).
 
 Some other ideas to get you started:
 
@@ -154,7 +176,7 @@ The actual "hello world" of networked applications these days is chat, amirite? 
 
 We will use two venerable network utilities (``nc`` and ``telnet``) to implement a **simple, secure, and e2e-encrypted chat**.
 
-Yes, that's correct: we will make secure chat over ``telnet``.
+Yes, that's correct: **we will make secure chat over telnet**!
 The first insight here is that we can make ``nc`` listen on a localhost-only port, and we can make ``telnet`` connect to a localhost TCP port.
 
 At first we can prove the concept locally, from one terminal to another.
@@ -172,45 +194,46 @@ It's not pretty, but it works fine.
 
 However, we want to talk to other machines.
 This means we need:
+
 * encryption;
 * and a way to arrange network connectivity
 
-**These additional features are exactly what ``fowl`` gives us.**
+**These additional features are exactly what** ``fowl`` **gives us.**
 
 So, we still run the exact same ``nc`` and ``telnet`` commands, but first do some ``fowl`` magic on each machine.
 
-On the *second* machine (the one running ``telnet``) we'll need to add in something that listens on port 8888.
-This thing is: ``fowl --listen 8888 invite``
-When connected to the public Mailbox Server, this will print out a ``<secret code>`` like ``1-foo-bar``
+On the *first* machine, open a terminal and start ``nc`` on port 8888 via ``nc -l localhost 8888``.
+This side is running the service, so we run ``fowl --service chat:8888``.
+Fowl will generate a magic-code and display it.
+We use this magic-code in the next step.
 
-Next we want all the information this listener gets to be magically forwarded to the first machine (the one running ``nc``).
-So, on it we run: ``fowl --allow-connect 8888 accept <secret code>``.
-The ``<secret code>`` comes from the "invite" above, and is communicated -- usually via a human or two -- to the second machine.
+On the *second* machine we'll need something that listens locally (since ``nc`` is not here, but on the other machine) and knows how to forward to the first machine.
+We run ``fowl --client chat:2222 <secret-code>``, using the secret code from the first machine.
 
-Note that we could swap "``invite``" and "``accept``" around if it's more convenient for one or the other human to go first.
+These secret codes are one-time-use only and are communicated out-of-band (e.g. via a channel you already have with your fellow human).
+This could be reading it off your screen if you're side-by-side somewhere, or using a phone call or other communication.
 
-What happens under the hood is that the two ``fowl`` programs establish a secure connection, via the public Mailbox Server.
+What happens under the hood is that the two ``fowl`` programs establish a secure connection via the public Mailbox Server.
 They then use this connection to maintain a persistent (possibly changing) TCP connection between each other (worst case, using the public Transit Relay) to send end-to-end encrypted messages.
 
 ``fowl`` uses this connection to communicate via a simple protocol that can establish listeners on either end or ask for fresh connections.
-These result in "subchannels" (in the Magic Wormhole Dilation protocol) that can send bytes back or forth.
+These result in "subchannels" (in the Magic Wormhole Dilation protocol terminology) that can send bytes back or forth.
 
 Any bytes received at either end of the connection are simply forwarded over the subchannel.
 
-Full example, computer one:
+Full example, computer one (run each command in its own terminal window):
 
 .. code-block:: shell
 
     $ nc -l localhost 8888
-    $ fowl --allow-connect 8888 invite
-    Invite code: 1-foo-bar
+    $ fowl --service chat:8888
 
 Computer two:
 
 .. code-block:: shell
 
-    $ fowl --listen 8888 accept 1-foo-bar
-    $ telnet localhost 8888
+    $ fowl --client chat:2222 1-foo-bar
+    $ telnet localhost 2222
 
 **Now we have encrypted chat**.
 
@@ -219,12 +242,16 @@ Like TCP promises, all bytes are delivered in-order.
 In addition, they are **encrypted**.
 Also the stream will **survive changing networks** (disconnects, new IP addresses, etc); that is, the actual inter-computer TCP connection is re-stablished, but to the applications (``nc``, ``telnet``) it looks uninterupted.
 
-
 .. note::
 
-    The two public servers mentioned (the Mailbox Server and the Transit Relay) will learn the IP addresses of who is communicating.
-    Tor is supported for users who do not wish to reveal their network location.
-    **Neither server can see any plaintext** (like any other attacker, the Mailbox Server could try a single but destructive and noticable guess at the code for any mailbox).
+    The two public servers mentioned (the Mailbox Server and the
+    Transit Relay) will learn the IP addresses of who is
+    communicating.
+
+    Tor is supported for users who do not wish to reveal their network
+    location.  **Neither server can see any plaintext** (like any
+    other attacker, the Mailbox Server could try a single but
+    destructive and noticable guess at the code for any mailbox).
 
 
 📦 Other Platforms
@@ -250,4 +277,5 @@ See ``NEWS.rst`` for specific release information.
 ---------------
 
 - `meejah <https://meejah.ca>`_: main development
+- `shapr <https://www.scannedinavian.com/>`_: much feedback, pairing and feature development
 - `balejk <https://github.com/balejk>`_: early feedback, proof-reading, review and testing

@@ -12,7 +12,7 @@ import pytest_twisted
 
 from twisted.internet.interfaces import ITransport
 from twisted.internet.protocol import ProcessProtocol
-from twisted.internet.error import ProcessExitedAlready, ProcessDone
+from twisted.internet.error import ProcessExitedAlready
 from twisted.internet.defer import Deferred
 
 from fowl._proto import parse_fowld_output
@@ -203,7 +203,7 @@ class _FowlProtocol(ProcessProtocol):
         while b'\n' in self._data:
             line, self._data = self._data.split(b"\n", 1)
             try:
-                msg = parse_fowld_output(line)
+                msg, _timestamp = parse_fowld_output(line)
             except Exception as e:
                 print(f"Not JSON: {line}: {e}")
             else:
@@ -247,6 +247,7 @@ async def fowld(reactor, request, *extra_args, mailbox=None):
     Run `fowl` with a given subcommand
     """
 
+    # note: running "python -m fowl" is same as "fowld" helper
     args = [
         "fowl",
     ]

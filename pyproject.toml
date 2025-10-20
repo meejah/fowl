@@ -23,7 +23,7 @@ license = {file = "LICENSE"}
 authors = [
     { name = "meejah", email = "meejah@meejah.ca" },
 ]
-requires-python = ">=3.6"
+requires-python = ">=3.9"
 keywords = [
     "cryptography",
     "forwarding",
@@ -43,7 +43,9 @@ dependencies = [
     "msgpack",
     "humanize",
     "twisted",
-    "magic-wormhole[dilate]",
+    "autobahn != 25.9.1",
+    "magic-wormhole[dilate] >= 0.20.0",
+    "rich",
     "ipaddress",
 ]
 
@@ -66,11 +68,17 @@ dev = [
     "hatch",
     "readme-renderer",
     "cuvner",
- ]
+]
+lint = [
+    "ruff"
+]
 
 [project.scripts]
 fowl = "fowl.cli:fowl"
 fowld = "fowl.cli:fowld"
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.hatch.version]
 path = "src/fowl/__init__.py"

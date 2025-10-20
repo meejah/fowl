@@ -3,32 +3,32 @@ from __future__ import print_function
 import sys
 import json
 import binascii
-import textwrap
 import functools
 import struct
-from typing import IO, Callable
+import signal
+from typing import IO, Callable, TextIO
 from functools import partial
-from itertools import count
 
 import click
 import humanize
 from attrs import frozen, define, asdict, Factory as AttrFactory
 
+from rich.live import Live
+
 import msgpack
 import automat
 from twisted.internet import reactor
-from twisted.internet.defer import Deferred, ensureDeferred, DeferredList, race
+from twisted.internet.defer import Deferred, ensureDeferred, DeferredList, race, CancelledError
 from twisted.internet.task import deferLater
-from twisted.internet.endpoints import serverFromString, clientFromString
 from twisted.internet.protocol import Factory, Protocol
 from twisted.internet.error import ConnectionDone
 from twisted.internet.stdio import StandardIO
 from twisted.protocols.basic import LineReceiver
 from zope.interface import directlyProvides
-from wormhole.cli.public_relay import RENDEZVOUS_RELAY as PUBLIC_MAILBOX_URL
+from wormhole.cli.public_relay import RENDEZVOUS_RELAY as PUBLIC_MAILBOX_URL, TRANSIT_RELAY
 import wormhole.errors as wormhole_errors
 
-from .observer import When
+from .observer import When, Next
 from .messages import (
     SetCode,
     AllocateCode,
@@ -39,8 +39,8 @@ from .messages import (
 
     Welcome,
     Listening,
-    RemoteListeningSucceeded,
-    RemoteListeningFailed,
+    ListeningFailed,
+    AwaitingConnect,
     RemoteConnectFailed,
     PeerConnected,
     CodeAllocated,
@@ -54,12 +54,17 @@ from .messages import (
     OutgoingLost,
     WormholeClosed,
     WormholeError,
-    GotMessageFromPeer,
+
+    Ping,
+    Pong,
 
     FowlOutputMessage,
     FowlCommandMessage,
+
+    PleaseCloseWormhole,
 )
-from .policy import IClientListenPolicy, IClientConnectPolicy, AnyConnectPolicy, AnyListenPolicy
+from .status import _StatusTracker
+from .visual import render_status
 
 
 
@@ -71,6 +76,9 @@ WELL_KNOWN_MAILBOXES = {
     # Do YOU run a public mailbox service? Contact the project to
     # consider having it listed here
 }
+SUPPORTED_FEATURES = [
+    "core-v1",  # the only version of the protocol so far
+]
 
 
 def _sequential_id():
@@ -103,11 +111,12 @@ class _Config:
     create_stdio: Callable = None  # returns a StandardIO work-alike, for testing
     debug_file: IO = None  # for state-machine transitions
     commands: list[FowlCommandMessage] = AttrFactory(list)
-    connect_policy: IClientConnectPolicy = None
-    listen_policy: IClientListenPolicy = None
+    output_debug_messages: TextIO = None  # Option<Writable>
+    output_status: TextIO = None  # Option<Readable>
+    no_logo: bool = False
 
 
-async def wormhole_from_config(reactor, config, wormhole_create=None):
+async def wormhole_from_config(reactor, config, on_status, wormhole_create=None):
     """
     Create a suitable wormhole for the given configuration.
 
@@ -135,14 +144,13 @@ async def wormhole_from_config(reactor, config, wormhole_create=None):
         reactor,
         tor=tor,
         timing=None,  # args.timing,
-        _enable_dilate=True,
+        dilation=True,
         versions={
             "fowl": {
-                "features": {
-                    "core": {}
-                }
+                "features": SUPPORTED_FEATURES,
             }
-        }
+        },
+        on_status_update=on_status,
     )
     if config.debug_state:
         w.debug_set_trace("forward", file=config.stdout)
@@ -154,221 +162,81 @@ class Connection:
     endpoint: str
     i: int = 0
     o: int = 0
+    unique_name: str = "unknown"
+
 
 
 async def frontend_accept_or_invite(reactor, config):
+    """
+    This runs the core of the default 'fowl' behavior:
+      - creates a code (or: consumes a code)
+      - creates any local listeners
+      - creates any remote listeners
+      - await incoming subchannels:
+        - attempt local connection (if permitted by policy)
+        - forward traffic until one side closes
+      - await connects on local listeners:
+        - open subchannel
+        - request far-side connection
+        - forward traffic until one side closes
+    """
 
-    connections = dict()
-    when_explicitly_closed_d = Deferred()
-    we_closed_d = Deferred()
+    status_tracker = _StatusTracker()
 
-    @functools.singledispatch
-    def output_message(msg):
-        print(f"UNhandled output: {msg}")
+    fowl_wh = await create_fowl(config, status_tracker)
+    fowl_wh.start()
 
-    @output_message.register(WormholeError)
-    def _(msg):
-        print(f"ERROR: {msg.message}")
-        print(msg)
-
-    @output_message.register(CodeAllocated)
-    def _(msg):
-        print(f"Secret code: {msg.code}")
-
-    @output_message.register(PeerConnected)
-    def _(msg):
-        nice_verifier = " ".join(
-            msg.verifier[a:a+4]
-            for a in range(0, len(msg.verifier), 4)
+    # testing a TUI style output UI, maybe optional?
+    def render():
+        return render_status(
+            status_tracker.current_status,
+            reactor.seconds(),
+            show_logo=not config.no_logo
         )
-        print(f"Peer is connected.\nVerifier: {nice_verifier}")
+    from rich.console import Console
+    console = Console(force_terminal=True)
+    live = Live(get_renderable=render, console=console)
 
-    @output_message.register(Listening)
-    def _(msg):
-        print(f"Listening: {msg.listen}")
-
-    @output_message.register(RemoteListeningSucceeded)
-    def _(msg):
-        print(f"Peer is listening: {msg.listen}")
-
-    @output_message.register(RemoteListeningFailed)
-    def _(msg):
-        print(f"Peer failed to listen: {msg.listen}: {msg.reason}")
-
-    @output_message.register(IncomingConnection)
-    def _(msg):
-        connections[msg.id] = Connection(msg.endpoint, 0, 0)
-
-    @output_message.register(RemoteConnectFailed)
-    def _(msg):
-        print("Forwarding to {} failed: {}".format(connections[msg.id].endpoint, msg.reason))
-        # we will get an OutgoingDone(msg.id) for this one too, so do not delete here!
-        # (XXX should maybe mark it as "failed" somehow?)
-        ##del connections[msg.id]
-
-    @output_message.register(IncomingLost)
-    def _(msg):
-        try:
-            del connections[msg.id]
-            print(f"Lost: {msg.id}: {msg.reason}")
-        except KeyError:
-            print("WEIRD: got IncomingLost(id={}) but don't have that connection".format(msg.id))
-
-    @output_message.register(IncomingDone)
-    def _(msg):
-        try:
-            del connections[msg.id]
-            print(f"{msg.id}: closed")
-        except KeyError:
-            print("WEIRD: got IncomingDone(id={}) but don't have that connection".format(msg.id))
-
-    @output_message.register(OutgoingLost)
-    def _(msg):
-        try:
-            del connections[msg.id]
-            print(f"Lost: {msg.id}: {msg.reason}")
-        except KeyError:
-            print("WEIRD: got OutgoingLost(id={}) but don't have that connection".format(msg.id))
-
-    @output_message.register(OutgoingDone)
-    def _(msg):
-        try:
-            del connections[msg.id]
-            print(f"{msg.id}: closed")
-        except KeyError:
-            print("WEIRD: got OutgoingDone(id={}) but don't have that connection".format(msg.id))
-
-    @output_message.register(OutgoingConnection)
-    def _(msg):
-        connections[msg.id] = Connection(msg.endpoint, 0, 0)
-
-    @output_message.register(BytesIn)
-    def _(msg):
-        print(msg)
-        connections[msg.id] = Connection(
-            connections[msg.id].endpoint,
-            connections[msg.id].i + msg.bytes,
-            connections[msg.id].o,
-        )
-
-    @output_message.register(BytesOut)
-    def _(msg):
-        connections[msg.id] = Connection(
-            connections[msg.id].endpoint,
-            connections[msg.id].i,
-            connections[msg.id].o + msg.bytes,
-        )
-
-    @output_message.register(WormholeClosed)
-    def _(msg):
-        print(f"Closed: {msg.result}")
-        print("doing callback", we_closed_d)
-        we_closed_d.callback(None)
-
-    @output_message.register(Welcome)
-    def _(msg):
-        print("Connected.")
-        if "motd" in msg.welcome:
-            print(textwrap.fill(msg.welcome["motd"].strip(), 80, initial_indent="    ", subsequent_indent="    "))
-
-    @output_message.register(GotMessageFromPeer)
-    def _(msg):
-        print(f"Message from peer: {msg}")
-        if json.loads(msg.message) == {"closing": True}:
-            print("  -> closing!")
-            w.send_message(json.dumps({"closed": True}).encode("utf8"))
-            ##w.close()  # --> actually want to tell mainloop to exit
-            when_explicitly_closed_d.callback(None)
-            w.close()
-        if json.loads(msg.message) == {"closed": True}:
-            print("  -> closed!")
-            w.send_message(json.dumps({"closed": True}).encode("utf8"))
-            when_explicitly_closed_d.callback(None)
-
-    daemon = FowlDaemon(reactor, config, output_message)
-    w = await wormhole_from_config(reactor, config)
-    wh = FowlWormhole(reactor, w, daemon, config)
-    wh.start()
-
-    ##@daemon.set_trace
-    def _(o, i, n):
-        print("{} --[ {} ]--> {}".format(o, i, n))
-
-    async def disconnect_session():
-        ##print("disconnecting nicely, sending closing=True")
-        w.send_message(json.dumps({"closing": True}).encode("utf8"))
-        # XXX we want to wait for "the other side's" phase=closing message {"closed": True}
-        # (what would {"closed": False} even mean, though?)
-        ##print("waiting for explicitly_closed_d")  # ...but with brief timeout?
-        # XXX (what's a good timeout here? "until user gets bored?")
-        await race([
-            when_explicitly_closed_d,
-            deferLater(reactor, 5.1, lambda: None),
-        ])
-        ##print("explicitly closed!")
-        try:
-            await w.close()
-        except wormhole_errors.LonelyError:
-            # maybe just say nothing? why does the user care about
-            # this? (they probably hit ctrl-c anyway, how else can you get here?)
-            print("Wormhole closed without peer")
-    reactor.addSystemEventTrigger("before", "shutdown", lambda: ensureDeferred(disconnect_session()))
-
-    kind = "invite" if config.code is None else "accept"
-    if config.debug_file:
-        w.debug_set_trace(kind, which="B N M S O K SK R RC L C T", file=config.debug_file)
+    ### XXX use PleaseCloseWormhole, approximately
+    reactor.addSystemEventTrigger("before", "shutdown", lambda: ensureDeferred(fowl_wh.disconnect_session()))
 
     if config.code is not None:
-        wh.command(
+        fowl_wh.command(
             SetCode(config.code)
         )
     else:
-        wh.command(
+        fowl_wh.command(
             AllocateCode(config.code_length)
         )
 
-    for command in config.commands:
-        wh.command(command)
+    async def issue_commands():
+        await fowl_wh.when_connected()
+        for command in config.commands:
+            fowl_wh.command(command)
+    d = ensureDeferred(issue_commands())
 
-    last_displayed = None
-    while not we_closed_d.called:
-        await deferLater(reactor, 1, lambda: None)
-        if connections and last_displayed != set(connections.values()):
-            for ident in sorted(connections.keys()):
-                conn = connections[ident]
-                print(f"{ident}: {humanize.naturalsize(conn.i)} in, {humanize.naturalsize(conn.o)} out")
-            last_displayed = set(connections.values())
+    @d.addErrback
+    def command_issue_failed(f):
+        print(f"Failed to issue command: {f}")
+
+    done_d = fowl_wh.when_done()
+
+    # debugging: "rich" is decent at showing you stuff printed out,
+    # but for reasons unknown to me it doesn't show "unhandled error"
+    # from Twisted -- replace "with live:" here with "if 1:" to see
+    # more error stuff (but of course no TUI)
+    #if 1:
+    with live:
+        while not done_d.called:
+            await deferLater(reactor, 0.25, lambda: None)
 
 
-async def forward(reactor, config):
+class FowlNearToFar(Protocol):
     """
-    Set up a wormhole and process commands relating to forwarding.
-    """
-    w = await wormhole_from_config(reactor, config)
-    if config.debug_file:
-        w.debug_set_trace("forward", which="B N M S O K SK R RC L C T", file=config.debug_file)
+    This is the side of the protocol that was listening .. so a local
+    connection has come in, creating an instance of this protocol.
 
-    try:
-        # if we succeed, we are done and should close
-        await _forward_loop(reactor, config, w)
-        await w.close()  # waits for ack
-
-    except Exception:
-        # if we catch an error, we should close and then return the original
-        # error (the close might give us an error, but it isn't as important
-        # as the original one)
-        try:
-            await w.close()  # might be an error too?
-        except Exception as e:
-            print("moar error", e)
-            pass
-        raise
-
-
-class SubchannelForwarder(Protocol):
-    """
-    This is the side of the protocol that was listening .. so it has
-    opened a subchannel and sent the initial message. So the
+    In ``connectionMade`` we send the initial message. So the
     state-machine here is waiting for the reply before forwarding
     data.
 
@@ -484,12 +352,16 @@ class SubchannelForwarder(Protocol):
         Confirm to the other side that we've connected.
         """
         self.factory.other_proto.transport.resumeProducing()
-        self.factory.other_proto._maybe_drain_queue()
+        # we _had_ a queue in this, but nothing ever put anything into
+        # it ..
+        # self.factory.other_proto._maybe_drain_queue()
 
     @m.output()
     def emit_remote_failed(self, reason):
-        self.factory.message_out(
-            RemoteConnectFailed(self.factory.conn_id, reason)
+        # print("bad", reason)
+        self.factory.coop._status_tracker.outgoing_lost(
+            self.factory.conn_id,
+            reason,
         )
 
     @m.output()
@@ -511,14 +383,11 @@ class SubchannelForwarder(Protocol):
         """
         Send bytes to the other side
         """
-        max_noise = 65000
-        while len(data):
-            d = data[:max_noise]
-            data = data[max_noise:]
-            self.factory.message_out(
-                BytesOut(self.factory.conn_id, len(d))
-            )
-            self.factory.other_proto.transport.write(d)
+        self.factory.other_proto.transport.write(data)
+        self.factory.coop._status_tracker.bytes_out(
+            self.factory.conn_id,
+            len(data),
+        )
 
 #    @m.output()
 #    def emit_incoming_lost(self):
@@ -548,7 +417,7 @@ class SubchannelForwarder(Protocol):
     await_confirmation.upon(
         subchannel_closed,
         enter=finished,
-        outputs=[],####emit_incoming_lost],
+        outputs=[],  # used to emit_incoming_lost, do we need to handle something here?
     )
 
     evaluating.upon(
@@ -586,40 +455,64 @@ class SubchannelForwarder(Protocol):
     do_trace = m._setTrace
 
     def connectionMade(self):
+        # might be "better state-machine" to do the message-sending in
+        # an @output and use this method to send "connected()" @input
+        # or similar?
+        self.transport.registerProducer(self, True)
         self._buffer = b""
         # self.do_trace(lambda o, i, n: print("{} --[ {} ]--> {}".format(o, i, n)))
 
         self.local = self.factory.other_proto
         self.factory.other_proto.remote = self
-        msg = msgpack.packb({
-            "local-destination": self.factory.endpoint_str,
-        })
-        prefix = struct.pack("!H", len(msg))
-        self.transport.write(prefix + msg)
+        self.transport.write(
+            _pack_netstring(
+                msgpack.packb({
+                    "unique-name": self.factory.unique_name,
+                })
+            )
+        )
 
-        self.factory.message_out(
-            OutgoingConnection(self.factory.conn_id, self.factory.endpoint_str)
+        self.factory.coop._status_tracker.outgoing_connection(
+            self.factory.unique_name,
+            self.factory.conn_id,
         )
 
         # MUST wait for reply first -- queueing all data until
         # then
         self.factory.other_proto.transport.pauseProducing()
 
+    def pauseProducing(self):
+        ##print(f"{type(self)} -> pauseProducing")
+        # remove ourselves from the reactor
+        self.factory.coop._reactor.removeReader(self.factory.other_proto.transport)
+        self.factory.coop._reactor.removeWriter(self.factory.other_proto.transport)
+
+    def resumeProducing(self):
+        ##print(f"{type(self)} -> resumeProducing")
+        # add back to the reactor
+        self.factory.coop._reactor.addReader(self.factory.other_proto.transport)
+        self.factory.coop._reactor.addWriter(self.factory.other_proto.transport)
+
     def dataReceived(self, data):
         self.got_bytes(data)
 
     def connectionLost(self, reason):
-        if isinstance(reason, ConnectionDone):
-            self.factory.message_out(
-                OutgoingDone(self.factory.conn_id)
-            )
-        else:
-            self.factory.message_out(
-                OutgoingLost(self.factory.conn_id, str(reason))
-            )
+        # XXX we get exception if we do this (keyerror) so I don't
+        # think we need to? todo: double-check what happens in this
+        # path
+        ##self.transport.unregisterProducer()
         self.subchannel_closed(str(reason))
         if self.factory.other_proto:
             self.factory.other_proto.transport.loseConnection()
+        if isinstance(reason, ConnectionDone):
+            self.factory.coop._status_tracker.outgoing_done(
+                self.factory.conn_id,
+            )
+        else:
+            self.factory.coop._status_tracker.outgoing_lost(
+                self.factory.conn_id,
+                str(reason),
+            )
 
 
 class ConnectionForward(Protocol):
@@ -661,14 +554,11 @@ class ConnectionForward(Protocol):
 
         This will be from the 'actual server' side to our local client
         """
-        max_noise = 65000
-        while len(data):
-            d = data[:max_noise]
-            data = data[max_noise:]
-            self.factory.message_out(
-                BytesIn(self.factory.conn_id, len(d))
-            )
-            self.factory.other_proto.transport.write(d)
+        self.factory.other_proto.transport.write(data)
+        self.factory.coop._status_tracker.bytes_in(
+            self.factory.conn_id,
+            len(data),
+        )
 
     @m.output()
     def close_other_side(self, reason):
@@ -678,17 +568,6 @@ class ConnectionForward(Protocol):
         except Exception:
             pass
 
-    @m.output()
-    def emit_incoming_done(self, reason):
-        if isinstance(reason.value, ConnectionDone):
-            self.factory.message_out(
-                IncomingDone(self.factory.conn_id)
-            )
-        else:
-            self.factory.message_out(
-                IncomingLost(self.factory.conn_id, str(reason))
-            )
-
     forwarding_bytes.upon(
         got_bytes,
         enter=forwarding_bytes,
@@ -697,7 +576,7 @@ class ConnectionForward(Protocol):
     forwarding_bytes.upon(
         stream_closed,
         enter=finished,
-        outputs=[emit_incoming_done, close_other_side]
+        outputs=[close_other_side]
     )
 
     def connectionMade(self):
@@ -710,51 +589,32 @@ class ConnectionForward(Protocol):
         self.stream_closed(reason)
 
 
-class LocalServer(Protocol):
+class LocalServerFarSide(Protocol):
     """
-    Listen on an endpoint. On every connection: open a subchannel,
-    follow the protocol from _forward_loop above (ultimately
-    forwarding data).
     """
 
     def connectionMade(self):
-        self.queue = []
         self.remote = None
-        self._conn_id = allocate_connection_id()
-
-        # XXX refactor into SubchannelForwarder.onOpen or whatever, since that exists anyway?
-        def got_proto(proto):
-            return proto
+        self.conn_id = allocate_connection_id()
 
         # XXX do we need registerProducer somewhere here?
-        factory = Factory.forProtocol(SubchannelForwarder)
+        # XXX make a real Factory subclass instead
+        factory = Factory.forProtocol(FowlNearToFar)
         factory.other_proto = self
-        factory.conn_id = self._conn_id
-        factory.endpoint_str = self.factory.endpoint_str
-        factory.config = self.factory.config
-        factory.message_out = self.factory.message_out
-        # Note: connect_ep here is the Wormhole provided
-        # IClientEndpoint that lets us create new subchannels -- not
-        # to be confused with the endpoint created from the "local
-        # endpoint string"
-        d = self.factory.connect_ep.connect(factory)
-        d.addCallback(got_proto)
+        factory.conn_id = self.conn_id
+        factory.unique_name = self.factory.unique_name
+        factory.coop = self.factory.coop
+
+        connect_ep = self.factory.coop.subchannel_connector()
+#XXXX we want "a local connection" endpoint
+        d = ensureDeferred(connect_ep.connect(factory))
 
         def err(f):
-            self.factory.message_out(
-                WormholeError(
-                    str(f.value),
-                    # extra={"id": self._conn_id}
-                )
+            self.factory.coop._status_tracker.error(
+                str(f.value),
             )
         d.addErrback(err)
         return d
-
-    def _maybe_drain_queue(self):
-        while self.queue:
-            msg = self.queue.pop(0)
-            self.remote.transport.write(msg)
-        self.queue = None
 
     def connectionLost(self, reason):
         # XXX causes duplice local_close 'errors' in magic-wormhole ... do we not want to do this?)
@@ -762,13 +622,44 @@ class LocalServer(Protocol):
             self.remote.transport.loseConnection()
 
     def dataReceived(self, data):
-        self.factory.message_out(
-            BytesIn(self._conn_id, len(data))
+        self.factory.coop._status_tracker.bytes_in(
+            self.conn_id,
+            len(data),
         )
         self.remote.transport.write(data)
 
 
-class Incoming(Protocol):
+class FowlSubprotocolListener(Factory):
+
+    def __init__(self, reactor, coop, status):
+        self.reactor = reactor
+        self.coop = coop
+        self.status = status
+        super(FowlSubprotocolListener, self).__init__()
+
+    def buildProtocol(self, addr):
+        # 'addr' is a SubchannelAddress
+        assert addr.subprotocol == "fowl", f"unknown subprotocol name: {addr}"
+        p = FowlFarToNear()  # XXX cross-the-road joke in the naming? plz??
+        p.factory = self
+        return p
+
+
+def _pack_netstring(data):
+    """
+    :param bytes data: data to length-prefix
+
+    :returns: a binary 'netstring' with a length prefix encoded as a
+    unsigned 16-bit integer.
+    """
+    if len(data) >= 2**16:
+        raise ValueError("Too many bytes to encode in 16-bit integer")
+    prefix = struct.pack("!H", len(data))
+    return prefix + data
+
+
+
+class FowlFarToNear(Protocol):
     """
     Handle an incoming Dilation subchannel. This will be from a
     listener on the other end of the wormhole.
@@ -795,9 +686,6 @@ class Incoming(Protocol):
     receives a reply from this side. This side (the connecting
     side) may deny the connection for any reason (e.g. it might
     not even try, if policy says not to).
-
-    XXX want some opt-in / permission on this side, probably? (for
-    now: anything goes)
     """
 
     m = automat.MethodicalMachine()
@@ -807,6 +695,12 @@ class Incoming(Protocol):
     def await_message(self):
         """
         The other side must send us a message
+        """
+
+    @m.state()
+    def local_policy_check(self):
+        """
+        A connection has come in; we must check our policy
         """
 
     @m.state()
@@ -827,6 +721,18 @@ class Incoming(Protocol):
         """
         Completed the task of forwarding (e.g. client closed connection,
         subchannel closed, fatal error, etc)
+        """
+
+    @m.input()
+    def policy_bad(self, msg):
+        """
+        The local policy check has failed (not allowed)
+        """
+
+    @m.input()
+    def policy_ok(self, msg):
+        """
+        The local policy check has succeeded (allowed)
         """
 
     @m.input()
@@ -871,6 +777,10 @@ class Incoming(Protocol):
         """
         We wish to close this subchannel
         """
+        # there isn't currently a great way to pass on "why" we closed
+        # to the Subchannel -- this will end up with "exited
+        # normally", approximately, but it would be ideal if we could
+        # pass along this reason somehow.
         self.transport.loseConnection()
 
     @m.output()
@@ -886,8 +796,9 @@ class Incoming(Protocol):
         assert self._buffer is None, "Internal error: still buffering"
         assert self._local_connection is not None, "expected local connection by now"
         self._local_connection.transport.write(data)
-        self.factory.message_out(
-            BytesOut(self._conn_id, len(data))
+        self.factory.coop._status_tracker.bytes_out(
+            self.conn_id,
+            len(data),
         )
 
     @m.output()
@@ -907,11 +818,10 @@ class Incoming(Protocol):
                 self._buffer = None
                 # there should be no "leftover" data
                 if bsize > 2 + expected_size:
-                    ##raise RuntimeError("protocol error: more than opening message sent")
                     self.too_much_data("Too many bytes sent")
                     return
                 # warning: recursive state-machine message
-                self.got_initial_message(first_msg)
+                self.got_initial_message(msgpack.unpackb(first_msg))
 
     @m.output()
     def send_negative_reply(self, reason):
@@ -919,22 +829,20 @@ class Incoming(Protocol):
         Tell our peer why we're closing them
         """
         self._negative(reason)
-
-    @m.output()
-    def send_negative_reply_subchannel(self):
-        """
-        Tell our peer local policy doesn't let the connection happen.
-        """
-        pass#self._negative("XXXAgainst local policy")
+        self.factory.coop._status_tracker.incoming_lost(
+            self.conn_id,
+            reason,
+        )
 
     def _negative(self, reason):
-        print("negative", reason)
-        msg = msgpack.packb({
-            "connected": False,
-            "reason": reason,
-        })
-        prefix = struct.pack("!H", len(msg))
-        self.transport.write(prefix + msg)
+        self.transport.write(
+            _pack_netstring(
+                msgpack.packb({
+                    "connected": False,
+                    "reason": reason,
+                })
+            )
+        )
 
 
     @m.output()
@@ -942,51 +850,80 @@ class Incoming(Protocol):
         """
         Reply to the other side that we've connected properly
         """
-        # XXX there's other sections like this; factor to pack_netstring() or something
-        msg = msgpack.packb({
-            "connected": True,
-        })
-        prefix = struct.pack("!H", len(msg))
-        self.transport.write(prefix + msg)
+        self.transport.write(
+            _pack_netstring(
+                msgpack.packb({
+                    "connected": True,
+                })
+            )
+        )
+
+    @m.output()
+    def emit_incoming_connection(self, msg):
+        self.factory.coop._status_tracker.incoming_connection(
+            msg.get("unique-name", None),
+            self.conn_id,
+        )
+
+    @m.output()
+    def do_policy_check(self, msg):
+        # note: do this policy check after the IncomingConnection
+        # message is emitted (otherwise there will be cases where we
+        # emit _just_ a IncomingLost which is confusing)
+        name = msg.get("unique-name", None)
+        if name is None or name not in self.factory.coop._services:
+            self.policy_bad(f'No service "{name}"')
+            return
+        channel = self.factory.coop._services[name]
+        port = msg.get("listen-port", None)
+        if port is not None:
+            if channel.listen_port != port:
+                self.policy_bad(
+                    f'Remote specified {port} for service {name} but '
+                    'we have {channel.listen_port} here.'
+                )
+                return
+        self.policy_ok(msg)
+
+    @m.output()
+    def local_disconnect(self):
+        self._negative("Against local policy")
+        self.transport.loseConnection()
+
+    @m.output()
+    def emit_incoming_lost(self, msg):
+        self.factory.coop._status_tracker.incoming_lost(
+            self.conn_id,
+            f"Incoming connection against local policy: {msg}",
+        )
+
+    @m.output()
+    def emit_incoming_done(self, reason):
+        if isinstance(reason, ConnectionDone):
+            self.factory.coop._status_tracker.incoming_done(
+                self.conn_id,
+            )
+        else:
+            self.factory.coop._status_tracker.incoming_lost(
+                self.conn_id,
+                str(reason),
+            )
 
     @m.output()
     def establish_local_connection(self, msg):
         """
-        FIXME
+        For a given service, establish our outgoing local connection
         """
-        data = msgpack.unpackb(msg)
-        ep = clientFromString(reactor, data["local-destination"])
+        ep = self.factory.coop.local_connect_endpoint(msg["unique-name"])
 
         factory = Factory.forProtocol(ConnectionForward)
         factory.other_proto = self
-        factory.config = self.factory.config
-        factory.conn_id = self._conn_id
-        factory.message_out = self.factory.message_out
-
-        self.factory.message_out(
-            IncomingConnection(self._conn_id, data["local-destination"])
-        )
-
-        # note: do this policy check after the IncomingConnection
-        # message is emitted (otherwise there will be cases where we
-        # emit _just_ a IncomingLost which is confusing)
-        if self.factory.config.connect_policy is not None:
-            if not self.factory.config.connect_policy.can_connect(ep):
-                # XXX error -- do we send an error message back first?
-                # (like "against local policy")
-                self._negative("Against local policy")
-                self.transport.loseConnection()
-                return
+        factory.coop = self.factory.coop
+        factory.conn_id = self.conn_id
 
         d = ep.connect(factory)
 
         def bad(fail):
-            self.factory.message_out(
-                WormholeError(
-                    fail.getErrorMessage(),
-                    # extra={"id": self._conn_id}
-                )
-            )
             reactor.callLater(0, lambda: self.connection_failed(fail.getErrorMessage()))
             return None
 
@@ -1013,13 +950,25 @@ class Incoming(Protocol):
     )
     await_message.upon(
         got_initial_message,
+        enter=local_policy_check,
+        outputs=[emit_incoming_connection, do_policy_check]
+    )
+
+    local_policy_check.upon(
+        policy_ok,
         enter=local_connect,
         outputs=[establish_local_connection]
     )
+    local_policy_check.upon(
+        policy_bad,
+        enter=finished,
+        outputs=[local_disconnect, emit_incoming_lost]
+    )
+
     await_message.upon(
         subchannel_closed,
         enter=finished,
-        outputs=[],
+        outputs=[emit_incoming_done],
     )
     local_connect.upon(
         connection_made,
@@ -1046,7 +995,7 @@ class Incoming(Protocol):
     forwarding_bytes.upon(
         subchannel_closed,
         enter=finished,
-        outputs=[close_local_connection]
+        outputs=[close_local_connection, emit_incoming_done]
     )
 
     finished.upon(
@@ -1068,14 +1017,36 @@ class Incoming(Protocol):
         """
         Twisted API
         """
-        self._conn_id = allocate_connection_id()
+        self.conn_id = allocate_connection_id()
         # XXX first message should tell us where to connect, locally
         # (want some kind of opt-in on this side, probably)
         self._buffer = b""
         self._local_connection = None
+        # note: we could delay registration until we make the local
+        # connection, but seems more clear here (and we check anyway
+        # in pauseProducing etc)
+        self.transport.registerProducer(self, True)
         # def tracer(o, i, n):
         #     print("{} --[ {} ]--> {}".format(o, i, n))
         # self.set_trace(tracer)
+
+    # todo: can use --reverse on the client iperf3 side to stimulate this
+    # code-path but an automated test would be ideal
+    def pauseProducing(self):
+        ###print(f"??? {type(self)} -> pauseProducing")
+        # remove our local connection from the reactor
+        if self._local_connection is not None:
+            t = self._local_connection.transport
+            self.factory.coop._reactor.removeReader(t)
+            self.factory.coop._reactor.removeWriter(t)
+
+    def resumeProducing(self):
+        ###print(f"??? {type(self)} -> resumeProducing")
+        # add back our local connection to the reactor
+        if self._local_connection is not None:
+            t = self._local_connection.transport
+            self.factory.coop._reactor.addWriter(t)
+            self.factory.coop._reactor.addReader(t)
 
     def connectionLost(self, reason):
         """
@@ -1093,53 +1064,50 @@ class Incoming(Protocol):
         self.got_bytes(data)
 
 
-##XXX needs a shutdown path
-## this is currently via "cancel"
-## so need a "await FowlDaemon.shutdown()" or similar which can do
-## async stuff like shut down all listeners, etc etc
-
-## refactoring _forward_loop etc
-##XXX doesn't exist yet but ... @implementer(IWormholeDelegate)
-
-
 class FowlWormhole:
     """
     Does I/O related to a wormhole connection.
     Co-ordinates between the wormhole, user I/O and the daemon state-machine.
     """
 
-    def __init__(self, reactor, wormhole, daemon, config):
+    def __init__(self, reactor, wormhole, coop):
         self._reactor = reactor
-        self._listening_ports = []
         self._wormhole = wormhole
-        self._config = config
-        self._daemon = daemon
         self._done = When() # we have shut down completely
         self._connected = When()  # our Peer has connected
         self._got_welcome = When()  # we received the Welcome from the server
-        self.connect_ep = self.control_proto = None
+
+        self._we_sent_closing = False
+        self._did_disconnect = False
+        self._got_closing_from_peer_d = Deferred()
+        self._peer_connected = False
+        self._dilated = None  # DilatedWormhole instance from wh.dilate()
+        self._coop = coop
 
     # XXX wants to be an IService?
     async def stop(self):
-        for port in self._listening_ports:
-            # note to self port.stopListening and port.loseConnection are THE SAME
-            port.stopListening()
-        if self.control_proto is not None:
-            self.control_proto.transport.loseConnection()
-            await self.control_proto.when_done()
+        await self._stop_listening()
+        await self._close_active_connections()
+        await self._wormhole.close()
+        # XXX put "session ending" code here, if it's useful
 
-    # XXX wants to be an IService?
+    async def _stop_listening(self):
+        self._coop._clean_roosts()
+
+    async def _close_active_connections(self):
+        pass
+
+    # XXX maybe wants to be an IService?
     def start(self):
-
-        # tie "we got a code" into the state-machine
+        # pick up code for the status
         ensureDeferred(self._wormhole.get_code()).addCallbacks(
-            self._daemon.code_allocated,
+            self._coop._status_tracker.code_allocated,
             self._handle_error,
         )
 
         # pass on the welcome message
         ensureDeferred(self._wormhole.get_welcome()).addCallbacks(
-            lambda hello: self._daemon.got_welcome(hello),
+            self._coop._status_tracker.welcomed,
             self._handle_error,
         )
 
@@ -1148,7 +1116,7 @@ class FowlWormhole:
         # (note that wormhole will "error" these Deferreds when the
         # wormhole shuts down early, e.g. with LonelyError -- but we
         # handle that elsewhere, so ignore errors here)
-        results_d = DeferredList(
+        peer_connected_d = DeferredList(
             [
                 self._wormhole.get_verifier(),
                 self._wormhole.get_versions(),
@@ -1156,8 +1124,8 @@ class FowlWormhole:
             consumeErrors=True,
         )
 
-        @results_d.addCallback
-        def got_results(results):
+        @peer_connected_d.addCallback
+        def peer_is_verified(results):
             for ok, exc in results:
                 if not ok:
                     self._handle_error(exc)
@@ -1165,15 +1133,34 @@ class FowlWormhole:
             verifier = results[0][1]
             versions = results[1][1]
 
-            d = self._do_dilate()
+            d = ensureDeferred(self._do_dilate())
+
             @d.addCallback
             def did_dilate(arg):
-                self._daemon.peer_connected(verifier, versions)
+                hex_verifier = binascii.hexlify(verifier).decode("utf8")
+                self._coop._status_tracker.peer_connected(hex_verifier, versions)
+                self._peer_connected = True
+                # could / is partially alreayd done by FowlCoop
                 return arg
 
-        # hook up "incoming message" to input
+        # hook up "incoming message" to input; this is async
+        # tail-recursion basically -- we keep asking for "the next
+        # message" from the wormhole. These kinds of messages come via
+        # the Mailbox!
+
+        # (this is basically a prototype of what "could / should" be
+        # in Wormhole itself for graceful shutdown)
         def got_message(plaintext):
-            self._daemon.got_message(plaintext)
+            try:
+                js = json.loads(plaintext)
+                if "closing" in js:
+                    self._got_closing_from_peer_d.callback(int(js["closing"]))
+                    if not self._we_sent_closing:
+                        d = ensureDeferred(self.disconnect_session())
+                        d.addErrback(self._handle_error)
+            except Exception as e:
+                print("a bad thing?", e)
+                pass
             ensureDeferred(self._wormhole.get_message()).addCallback(
                 got_message,
             ).addErrback(self._handle_error)
@@ -1181,7 +1168,9 @@ class FowlWormhole:
             got_message,
         ).addErrback(self._handle_error)
 
-        # hook up wormhole closed to input
+        # hook up wormhole closed to input -- this can be for a
+        # variety of reasons (and note we're cheating a bit here and
+        # hooking this as both the callback and errback)
         def was_closed(why):
             if isinstance(why, str):
                 reason = why
@@ -1192,10 +1181,120 @@ class FowlWormhole:
             else:
                 reason = str(why)
             self._done.trigger(self._reactor, reason)
-            self._daemon.shutdown(reason)
+            self._coop._status_tracker.wormhole_closed(reason)
         ensureDeferred(self._wormhole._closed_observer.when_fired()).addBoth(was_closed)
 
     # public API methods
+
+    # XXX moved from elsewhere, unify with close_wormhole()
+    async def disconnect_session(self):
+        """
+        Nicely disconnect the session, by communicating with our peer.
+
+        This is a PoC / test of a more robust "Mailbox closing"
+        mechanism. The main idea is that we have a "half-closed"
+        state, such that we can be sure the other side has gotten all
+        our messages (and vice versa).
+
+        Two peer computers, "Laptop" and "Desktop", are connected.
+
+        When Laptop's human is done their session, Laptop sends a
+        {"closing": True} message to Desktop. This indicates that
+        Laptop is "done" and will send no other RemoteListen etc
+        requests. Laptop now waits for Desktop to finish.
+
+        When Desktop receives the {"closing": True} message from
+        Laptop, it knows that human is done. Regardless of what UX
+        Desktop implements, at some point it too is "done". It then
+        sends a {"closing": True} message as well.
+
+        Once both sides have sent a {"closing": True} message, it is
+        safe to close the wormhole. Thus, when a side has both
+        "decided it is done" (and send its {"closing": True}) then it
+        waits for the other side's {"closing": True} message -- once
+        this is received, the wormhole may be closed and the program
+        exits.
+        """
+        # FIXME: all these messages should probably be via 'status' or
+        # similar, in case we're using all this as a library.
+
+        if self._did_disconnect:
+            return
+        self._did_disconnect = True
+
+        # before we emit "closing", we must ensure we won't start
+        # any new channels.
+        await self._stop_listening()
+        self._wormhole.send_message(json.dumps({
+            "closing": self._wormhole._boss._next_tx_phase,
+        }).encode("utf8"))
+        self._we_sent_closing = True
+
+        # this can take "forever" if the other side isn't
+        # responding at all, so we want to just hit the "race"
+        # codepath anyway
+        _ = ensureDeferred(self._close_active_connections())
+
+        async def wait_for_user():
+
+            def user_got_bored_waiting(*args):
+                """
+                If the user presses ctrl-C again while we're waiting for the peer
+                message, we shut down right away.
+                """
+                # add back original handler, probably Twisted's
+                signal.signal(signal.SIGINT, old_handler)
+                self._got_closing_from_peer_d.callback(-1)
+            old_handler = signal.signal(signal.SIGINT, user_got_bored_waiting)
+
+            start = self._reactor.seconds()
+            delay = 0.5
+
+            # we have sent our 'closing' message. two cases:
+            #
+            # 1: if we never connected to our peer, there's no
+            # point waiting for them.
+            #
+            # 2: if we _did_ ever connect to our peer we wait for
+            # a return closing message, printing messages (should
+            # be via status?) so the user isn't bored.
+            if self._peer_connected:
+                while not self._got_closing_from_peer_d.called:
+                    await deferLater(reactor, delay, lambda: None)
+                    delay = delay * 2
+                    if delay > 10.0:
+                        delay = 10.0
+                    delta = humanize.naturaldelta(reactor.seconds() - start)
+                    print(f'Waited {delta} for "closing" message from peer')
+
+        which, result = await race([
+            self._got_closing_from_peer_d,
+            ensureDeferred(wait_for_user()),
+        ])
+        if which == 0:
+            # XXX result can be None here if we never hit 'ready'
+            # notification, needs proper test ..
+            if result is not None and result >= 0:
+                print(f"Clean close; peer saw phase={result}")
+            else:
+                print("Never got closing message from peer")
+
+        try:
+            await self.close_wormhole()
+        except wormhole_errors.LonelyError:
+            # maybe just say nothing? why does the user care about
+            # this? (they probably hit ctrl-c anyway, how else can you get here?)
+            print("Wormhole closed without peer.")
+        print("Done.")
+
+    async def close_wormhole(self):
+        """
+        Shut down the wormhole
+        """
+        # XXX see also the whole "how to shutdown half-close etc"
+        await self._wormhole.close()
+        # once the wormhole "actually" closes, the state-machine will
+        # trigger our "stop" codepath
 
     def command(self, command: FowlCommandMessage) -> None:
         """
@@ -1219,40 +1318,42 @@ class FowlWormhole:
 
         @cmd.register(LocalListener)
         async def _(msg):
-            await self.when_connected()
-            assert self.connect_ep is not None, "need connect ep"
-            await _local_to_remote_forward(self._reactor, self._config, self.connect_ep, self._listening_ports.append, self._daemon._message_out, msg)
-            # XXX cheating? private access (_daemon._message_out)
+            from .api import _LocalListeningEndpoint
+            self._coop.roost(
+                msg.name,
+                _LocalListeningEndpoint(reactor, msg.local_listen_port, msg.bind_interface),
+                msg.remote_connect_port,
+            )
+            await self._coop.when_roosted(msg.name)
 
         @cmd.register(RemoteListener)
         async def _(msg):
-            await self.when_connected()
-            assert self.control_proto is not None, "need control_proto"
-            msg = await _remote_to_local_forward(self.control_proto, msg)
-            self._daemon._message_out(msg)
-            # XXX cheating? private access (_daemon._message_out)
-
-        @cmd.register(GrantPermission)
-        async def _(msg):
-            self._config.connect_policy.ports.extend(msg.connect)
-            self._config.listen_policy.ports.extend(msg.listen)
-            print(
-                "Permission granted. Listen={}, Connect={}".format(
-                    self._config.listen_policy,
-                    self._config.connect_policy,
-                ),
-                file=self._config.stderr,
-                flush=True,
+            # if remote_connect_port is specified .. what does that even mean?
+            # (is this like "the only permission check we'll need?")
+            await ensureDeferred(
+                self._coop.fledge(
+                    msg.name,
+                    msg.local_connect_port,
+                    msg.remote_listen_port,
+                    msg.connect_address,
+                )
             )
 
-        @cmd.register(DangerDisablePermissionCheck)
+        @cmd.register(Ping)
         async def _(msg):
-            try:
-                self._config.connect_policy = AnyConnectPolicy()
-                self._config.listen_policy = AnyListenPolicy()
-                print("DANGER. All connect / listen endpoints allowed.", file=self._config.stderr, flush=True)
-            except Exception as e:
-                print("BAD", type(e))
+            if hasattr(self._wormhole, "_boss"):
+                if hasattr(self._wormhole._boss, "_D"):
+                    if self._wormhole._boss._D._manager is not None:
+                        def got_pong(round_trip):
+                            #XXX FIXME TODO
+                            self._daemon._message_out(Pong(msg.ping_id, round_trip))
+                        self._wormhole._boss._D._manager.send_ping(msg.ping_id, got_pong)
+                    else:
+                        raise Exception("Cannot send ping: not in Dilation")
+                else:
+                    raise Exception("Cannot send ping: no Dilation manager")
+            else:
+                raise Exception("Cannot send ping: no boss")
 
         ensureDeferred(cmd(command)).addErrback(self._handle_error)
 
@@ -1274,13 +1375,20 @@ class FowlWormhole:
         """
         return self._connected.when_triggered()
 
-    def _do_dilate(self):
-        self.control_ep, self.connect_ep, self.listen_ep = self._wormhole.dilate(
-            transit_relay_location="tcp:magic-wormhole-transit.debian.net:4001",
+    async def _do_dilate(self):
+        # XXX move FowlWormhole do its own module so imports aren't broken
+        self._dilated = await self._coop.dilate(
+            transit_relay_location=TRANSIT_RELAY,
         )
-        d = ensureDeferred(self._post_dilation_setup())
-        d.addErrback(self._handle_error)
-        return d
+        # the "FowlCoop.dilate" method already listens for commands,
+        # incoming connections
+
+        await self._wormhole.get_unverified_key()
+        verifier_bytes = await self._wormhole.get_verifier()  # might WrongPasswordError
+
+        await self._dilated.when_dilated()
+        self._connected.trigger(self._reactor, verifier_bytes)
+        return None
 
     def _handle_error(self, f):
         # hmm, basically any of the "wormhole callbacks" we asked for
@@ -1294,45 +1402,7 @@ class FowlWormhole:
             self._report_error(f.value)
 
     def _report_error(self, e):
-        self._daemon._message_out(
-            WormholeError(str(e))
-        )
-
-    async def _post_dilation_setup(self):
-        # listen for commands from the other side on the control channel
-        assert self.control_ep is not None, "Need control connection"
-        fac = Factory.forProtocol(Commands)
-        fac.config = self._config
-        fac.message_out = self._daemon._message_out  # XXX
-        fac.reactor = self._reactor
-        fac.connect_ep = self.connect_ep  # so we can pass it command handlers
-        self.control_proto = await self.control_ep.connect(fac)
-
-        # listen for incoming subchannel OPENs
-        in_factory = Factory.forProtocol(Incoming)
-        in_factory.config = self._config
-        in_factory.connect_ep = self.connect_ep
-        in_factory.message_out = self._daemon._message_out
-        listen_port = await self.listen_ep.listen(in_factory)
-        self._listening_ports.append(listen_port)
-
-        await self._wormhole.get_unverified_key()
-        verifier_bytes = await self._wormhole.get_verifier()  # might WrongPasswordError
-        self._connected.trigger(self._reactor, verifier_bytes)
-
-
-
-# FowlDaemon is the state-machine
-#  - ultimately, it goes some notifications from 'the wormhole' but only via the I/O thing
-#  - no "async def" / Deferred-returning methods
-#  - no I/O
-#
-# FowlWormhole is "the I/O thing"
-#  - can do async
-#  - can do I/O
-#  - proxies I/O and async'ly things
-
-from .daemon import FowlDaemon  # noqa: E402
+        self._coop._status_tracker.error(str(e))
 
 
 def maybe_int(i):
@@ -1375,24 +1445,22 @@ def fowld_command_to_json(msg: FowlCommandMessage) -> dict:
     @output_command.register(LocalListener)
     def _(msg):
         js["kind"] = "local"
-        js["listen"] = msg.listen
-        js["connect"] = msg.connect
 
     @output_command.register(RemoteListener)
     def _(msg):
         js["kind"] = "remote"
-        js["listen"] = msg.listen
-        js["connect"] = msg.connect
 
     @output_command.register(AllocateCode)
     def _(msg):
         js["kind"] = "allocate-code"
-        js["length"] = getattr(msg, "length", None)
 
     @output_command.register(SetCode)
     def _(msg):
         js["kind"] = "set-code"
-        js["code"] = msg.code
+
+    @output_command.register(Ping)
+    def _(msg):
+        js["kind"] = "ping"
 
     output_command(msg)
     return js
@@ -1426,6 +1494,8 @@ def parse_fowld_command(json_str: str) -> FowlCommandMessage:
         return parse
 
     def is_valid_port(port):
+        if port is None:
+            return
         if isinstance(port, int) and port >= 1 and port < 65536:
             return port
         raise ValueError(f"Invalid port: {port}")
@@ -1440,10 +1510,27 @@ def parse_fowld_command(json_str: str) -> FowlCommandMessage:
     kind_to_message = {
         "allocate-code": parser(AllocateCode, [], [("length", maybe_int)]),
         "set-code": parser(SetCode, [("code", None)], []),
-        "local": parser(LocalListener, [("listen", None), ("connect", None)], []),
-        "remote": parser(RemoteListener, [("listen", None), ("connect", None)], []),
+        "local": parser(
+            LocalListener,
+            [("name", str)],
+            [
+                ("local_listen_port", is_valid_port),
+                ("remote_connect_port", is_valid_port),
+                ("bind_interface", None),  # XXX wants like is_valid_ip_address or so
+            ],
+        ),
+        "remote": parser(
+            RemoteListener,
+            [("name", str)],
+            [
+                ("remote_listen_port", is_valid_port),
+                ("local_connect_port", is_valid_port),
+                ("connect_address", None),  # wants is_valid_address() or similar?
+            ],
+        ),
         "grant-permission": parser(GrantPermission, [("listen", port_list), ("connect", port_list)], []),
-        "danger-disable-permission-check": parser(DangerDisablePermissionCheck, [], [])
+        "danger-disable-permission-check": parser(DangerDisablePermissionCheck, [], []),
+        "ping": parser(Ping, [("ping_id", None)], []),
     }
     return kind_to_message[kind](cmd)
 
@@ -1462,8 +1549,8 @@ def fowld_output_to_json(msg: FowlOutputMessage) -> dict:
         CodeAllocated: "code-allocated",
         PeerConnected: "peer-connected",
         Listening: "listening",
-        RemoteListeningFailed: "remote-listening-failed",
-        RemoteListeningSucceeded: "remote-listening-succeeded",
+        ListeningFailed: "listening-failed",
+        AwaitingConnect: "awaiting-connect",
         RemoteConnectFailed: "remote-connect-failed",
         OutgoingConnection: "outgoing-connection",
         OutgoingLost: "outgoing-lost",
@@ -1474,6 +1561,7 @@ def fowld_output_to_json(msg: FowlOutputMessage) -> dict:
         BytesIn: "bytes-in",
         BytesOut: "bytes-out",
         WormholeError: "error",
+        Pong: "pong",
     }[type(msg)]
     return js
 
@@ -1508,25 +1596,102 @@ def parse_fowld_output(json_str: str) -> FowlOutputMessage:
         "set-code": parser(SetCode, [("code", None)]),
         "code-allocated": parser(CodeAllocated, [("code", None)]),
         "peer-connected": parser(PeerConnected, [("verifier", binascii.unhexlify), ("versions", None)]),
-        "listening": parser(Listening, [("listen", None), ("connect", None)]),
-        "remote-listening-failed": parser(RemoteListeningFailed, [("listen", None), ("reason", None)]),
-        "remote-listening-succeeded": parser(RemoteListeningSucceeded, [("listen", None)]),
+        "listening": parser(Listening, [("name", None), ("listening_port", None)]),
+        "listening-failed": parser(ListeningFailed, [("reason", None)]),
+        "awaiting-connect": parser(AwaitingConnect, [("name", None), ("local_port", int)]),
         "remote-connect-failed": parser(RemoteConnectFailed, [("id", int), ("reason", None)]),
-        "outgoing-connection": parser(OutgoingConnection, [("id", int), ("endpoint", None)]),
-##        "outgoing-lost": parser(),
-        "outgoing-done": parser(OutgoingDone, [("id", int)]),
-        "incoming-connection": parser(IncomingConnection, [("id", int), ("endpoint", None)]),
+        "outgoing-connection": parser(OutgoingConnection, [("id", int), ("service_name", None)]),
+        "outgoing-done": parser(OutgoingDone, [("service_name", str)]),
+        "incoming-connection": parser(IncomingConnection, [("id", int), ("service_name", None)]),
         "incoming-lost": parser(IncomingLost, [("id", int), ("reason", None)]),
         "incoming-done": parser(IncomingDone, [("id", int)]),
         "bytes-in": parser(BytesIn, [("id", int), ("bytes", int)]),
         "bytes-out": parser(BytesOut, [("id", int), ("bytes", int)]),
+        "closed": parser(WormholeClosed, [("result", str)]),
+        "pong": parser(Pong, [("ping_id", bytes), ("time_of_flight", float)]),
+        "error": parser(WormholeError, [("message", str)]),
     }
-    return kind_to_message[kind](cmd)
+    return kind_to_message[kind](cmd), cmd.get("timestamp", None)
 
 
-async def _forward_loop(reactor, config, w):
+async def create_fowl(config, fowl_status_tracker):
+
+    # can we make this "a status listener" instead?
+    start_time = reactor.seconds()
+    if config.output_debug_messages:
+        def debug_message(msg):
+            try:
+                js = fowld_output_to_json(msg)
+                # don't leak our absolute time, more convenient anyway
+                js["timestamp"] = reactor.seconds() - start_time
+                config.output_debug_messages.write(
+                    json.dumps(js) + "\n"
+                )
+            except Exception as e:
+                print(e)
+        fowl_status_tracker.add_listener(debug_message)
+
+    if config.output_status:
+        def status(st):
+            try:
+                js = asdict(st)
+                # don't leak our absolute time, more convenient anyway
+                js["timestamp"] = reactor.seconds() - start_time
+                # process the subchannel stuff so the visualizer works out
+                for sc in js["subchannels"].values():
+                    sc["i"] = [
+                        [d, ts - start_time]
+                        for d, ts in sc["i"]
+                    ]
+                    sc["o"] = [
+                        [d, ts - start_time]
+                        for d, ts in sc["o"]
+                    ]
+                config.output_status.write(
+                    json.dumps(js) + "\n"
+                )
+            except Exception as e:
+                print(e)
+        fowl_status_tracker.add_status_listener(status)
+
+    def command_message(msg):
+        # XXX so if we try to shut down due to incompatible versions,
+        # we hit this .. but this is insufficient, since now both
+        # sides will be "waiting for message from peer" since they DID
+        # connect via wormhole ... although maybe in this case we want
+        # to just unilaterally shut down? because who knows?
+        from .messages import Ready
+        if isinstance(msg, PleaseCloseWormhole):
+            d = ensureDeferred(fowl.close_wormhole())
+            d.addErrback(lambda f: print(f"Error closing: {f.value}"))
+        elif isinstance(msg, Ready):
+            fowl._coop._set_ready()
+        else:
+            print(msg)
+
+    # XXX FIXME hook in "output_wrapper" as a listener on the status_tracker
+
+    w = await wormhole_from_config(reactor, config, fowl_status_tracker.wormhole_status)
+
+    if config.debug_file:
+        kind = "invite" if config.code is None else "accept"
+        w.debug_set_trace(kind, which="B N M S O K SK R RC L C T", file=config.debug_file)
+
+    from .api import create_coop
+    coop = create_coop(reactor, w, fowl_status_tracker)
+
+#    @sm.set_trace
+#    def _(start, edge, end):
+#        print(f"trace: {start} --[ {edge} ]--> {end}")
+    fowl = FowlWormhole(reactor, w, coop)
+    return fowl
+
+
+async def forward(reactor, config):
     """
-    Run the main loop of the forward:
+    Set up a wormhole and process commands relating to forwarding.
+
+    That is, run the main loop of the forward:
        - perform setup (version stuff etc)
        - wait for commands (as single-line JSON messages) on stdin
        - write results to stdout (as single-line JSON messages)
@@ -1534,7 +1699,6 @@ async def _forward_loop(reactor, config, w):
 
     See docs/messages.rst for more
     """
-
     def output_fowl_message(msg):
         js = fowld_output_to_json(msg)
         print(
@@ -1543,12 +1707,10 @@ async def _forward_loop(reactor, config, w):
             flush=True,
         )
 
-    sm = FowlDaemon(reactor, config, output_fowl_message)
+    status_tracker = _StatusTracker()
+    status_tracker.add_listener(output_fowl_message)
 
-#    @sm.set_trace
-    def _(start, edge, end):
-        print(f"trace: {start} --[ {edge} ]--> {end}")
-    fowl = FowlWormhole(reactor, w, sm, config)
+    fowl = await create_fowl(config, status_tracker)
     fowl.start()
 
     # arrange to read incoming commands from stdin
@@ -1556,188 +1718,172 @@ async def _forward_loop(reactor, config, w):
     dispatch = LocalCommandDispatch(config, fowl)
     create_stdio(dispatch)
 
-    # if config.code:
-    #     sm.set_code(config.code)
-    # else:
-    #     sm.allocate_code(config.code_length)
-
     try:
-        await fowl.when_done()
-    except Exception:
-        # XXXX okay, this fixes it .. but how to hook in cleanup etc "properly"
-        # (probably via state-machine etc)
+        await Deferred()
+    except CancelledError:
         await fowl.stop()
-        ###sm.control_proto.transport.loseConnection()
-        raise
 
 
-async def _local_to_remote_forward(reactor, config, connect_ep, on_listen, on_message, cmd):
+class _SendFowlCommand(Protocol):
     """
-    Listen locally, and for each local connection create an Outgoing
-    subchannel which will connect on the other end.
+    Protocol spoken when we are asking our peer to open a listener, a
+    request-response style interaction.
+
+    use `await p.send_command(...)` to make a request, which will
+    yield once the response is received. Cannot do overlapping
+    requests (make another subchannel for that).
     """
-    # XXX these lines are "uncovered" but we clearly run them ... so
-    # something wrong with subprocess coverage?? again???
-    ep = serverFromString(reactor, cmd.listen)
+    # XXX could / should use a DeferredSemaphore to _enforce_ the "no
+    # overlapping requests" part?
 
-    if config.listen_policy is not None:
-        if not config.listen_policy.can_listen(ep):
-            raise ValueError('Policy doesn\'t allow listening on "{}"'.format(ep._port))
+    def __init__(self):
+        # can a "Protocol" be an attrs @define?
+        self._when_connected = When()
+        self._message = Next()
 
-    factory = Factory.forProtocol(LocalServer)
-    factory.config = config
-    factory.endpoint_str = cmd.connect
-    factory.connect_ep = connect_ep
-    factory.message_out = on_message
-    port = await ep.listen(factory)
-    on_listen(port)
-    on_message(Listening(cmd.listen, cmd.connect))
+    async def send_command(self, unique_name, remote_listen_port=None):
+        """
+        Ask the peer to open a service called `unique_name`, possibly
+        asking for an exact port to listen on (avoid doing this
+        whenever possible, as it's easier to succeed on a random
+        port).
+
+        However, things like Web services often need identitcal ports
+        on both peers. If `remote_listen_port` is specified, it is an
+        error if the peer cannot use that port.
+
+        Use `next_message()` to await the reply
+        """
+        await self.when_connected()
+        self.transport.write(
+            _pack_netstring(
+                    msgpack.packb({
+                        "kind": "request-listener",
+                        "unique-name": unique_name,
+                        "listen-port": remote_listen_port,
+                    })
+            )
+        )
+        msg = await self.next_message()
+        return msg
+
+    # users typically don't need to call any of these
+
+    def when_connected(self):
+        return self._when_connected.when_triggered()
+
+    def next_message(self):
+        return self._message.next_item()
+
+    # IProtocol API methods / overrides
+
+    def connectionMade(self):
+        self._when_connected.trigger(self.factory._reactor, None)
+
+    def dataReceived(self, data):
+        self._message.trigger(self.factory._reactor, data)
 
 
-async def _remote_to_local_forward(control_proto, cmd):
+# When() doesn't support this ...
+#    def connectionLost(self, reason):
+#        self._done.trigger(self.factory.reactor, None)
+
+
+class FowlCommands(Protocol):
     """
-    Ask the remote side to listen on a port, forwarding back here
-    (where our Incoming subchannel will be told what to connect
-    to).
-    """
-    reply = await control_proto.request_forward(cmd)
-    return reply
-
-
-class Commands(Protocol):
-    """
-    Listen for (and send) commands over the command subchannel
+    Listen for commands from the peer
     """
 
     def __init__(self, *args, **kw):
         super().__init__(*args, **kw)
         self._ports = []
-        self._done = When()
         # outstanding requests, awaiting replies
         self._remote_requests = dict()
-        self._local_requests = dict()
-        self._create_request_id = count(1)
-
-    def request_forward(self, cmd):
-        rid = next(self._create_request_id)
-        msg = msgpack.packb({
-            "kind": "remote-to-local",
-            "listen-endpoint": cmd.listen,
-            "connect-endpoint": cmd.connect,
-            "reply-id": rid,
-        })
-        d = Deferred()
-        self._local_requests[rid] = d, cmd
-        prefix = struct.pack("!H", len(msg))
-        self.transport.write(prefix + msg)
-        return d
-
-    def when_done(self):
-        return self._done.when_triggered()
 
     def dataReceived(self, data):
-        # XXX can we depend on data being "one message"? or do we need length-prefixed?
+        # magic-wormhole abuses the API a little and always sends an
+        # entire "message" per dataReceived() call
         bsize = len(data)
         assert bsize >= 2, "expected at least 2 bytes"
         expected_size, = struct.unpack("!H", data[:2])
         assert bsize == expected_size + 2, "data has more than the message: {} vs {}: {}".format(bsize, expected_size + 2, repr(data[:55]))
         msg = msgpack.unpackb(data[2:])
-        if msg["kind"] == "listener-response":
-            rid = int(msg["reply-id"])
-            d, original_cmd = self._local_requests[rid]
-            del self._local_requests[rid]
+        if msg["kind"] == "request-listener":
+            unique_name = msg["unique-name"]
+            desired_port = msg.get("listen-port", None)
 
-            if msg["listening"]:
-                d.callback(RemoteListeningSucceeded(original_cmd.listen))
-            else:
-                d.callback(RemoteListeningFailed(original_cmd.listen, msg.get("reason", "Missing reason")))
+            # okay, so our peer is possibly requesting a port --
+            # that's fine, but only if _we_ didn't already specify one
+            try:
+                listen_ep = self.factory.coop._endpoint_for_service(unique_name, desired_port=desired_port)
+                # if _we_ cared about the other peer's port, it was via --local ...:remote-connect=...
+                remote_connect_port = self.factory.coop._roosts[unique_name].remote_connect_port
+            except RuntimeError as e:
+                self._reply_negative(unique_name, str(e))
+                self.factory.coop._status_tracker.error(
+                    f'Failed to listen on "{unique_name}": {e}',
+                )
+                return
 
-        elif msg["kind"] == "remote-to-local":
-            rid = int(msg["reply-id"])
-            assert rid >= 1 and rid < 2**53, "reply-id out of range"
-            self._remote_requests[rid] = None
-
-            listen_ep = serverFromString(reactor, msg["listen-endpoint"])
-
-            if self.factory.config.listen_policy is not None:
-                if not self.factory.config.listen_policy.can_listen(listen_ep):
-                    self._reply_negative(rid, "Against local policy")
-                    self.transport.loseConnection()
-                    return
-
-            factory = Factory.forProtocol(LocalServer)
-            factory.config = self.factory.config
-            factory.message_out = self.factory.message_out
-            factory.connect_ep = self.factory.connect_ep
-            factory.endpoint_str = msg["connect-endpoint"]
-
-            # XXX this can fail (synchronously) if address in use (e.g.)
-            d = listen_ep.listen(factory)
-            self._remote_requests[rid] = d
+            factory = Factory.forProtocol(LocalServerFarSide)
+            factory.coop = self.factory.coop
+            factory.unique_name = unique_name
+            # XXX this can fail (synchronously) if address in use, for example
+            d = ensureDeferred(listen_ep.listen(factory))
 
             def got_port(port):
-                self._reply_positive(rid)
-                self.factory.message_out(
-                    Listening(
-                        msg["listen-endpoint"],
-                        msg["connect-endpoint"],
-                    )
+                self._reply_positive(unique_name, remote_connect_port)
+                channel = self.factory.coop._did_listen_locally(unique_name, port)
+                self.factory.coop._status_tracker.added_remote_service(
+                    unique_name,
+                    channel.connect_port,
                 )
                 self._ports.append(port)
                 return port
 
             def error(f):
-                self._reply_negative(rid, f.getErrorMessage())
-                self.factory.message_out(
-                    WormholeError(
-                        'Failed to listen on "{}": {}'.format(
-                            msg["listen-endpoint"],
-                            f.value,
-                        )
-                    )
+                self._reply_negative(unique_name, f.getErrorMessage())
+                self.factory.coop._status_tracker.error(
+                    f'Failed to listen on "{unique_name}": {f.value}',
                 )
             d.addCallback(got_port)
             d.addErrback(error)
             # XXX should await port.stopListening() somewhere...at the appropriate time
         else:
-            self.factory.message_out(
-                WormholeError(
-                    "Unknown control command: {msg[kind]}",
-                )
+            self.factory.coop._status_tracker.error(
+                f"Unknown control command: {msg['kind']}",
             )
 
-    def _reply_positive(self, rid):
+    def _reply_positive(self, unique_name, desired_port):
         """
         Send a positive reply to a remote request
         """
-        return self._reply_generic(rid, listening=True)
+        return self._reply_generic(listening=True, unique_name=unique_name, desired_port=desired_port)
 
-    def _reply_negative(self, rid, reason=None):
+    def _reply_negative(self, unique_name, reason=None):
         """
         Send a negative reply to a remote request
         """
-        return self._reply_generic(rid, listening=False, reason=reason)
+        return self._reply_generic(listening=False, unique_name=unique_name, reason=reason)
 
-    def _reply_generic(self, rid, listening, reason=None):
+    def _reply_generic(self, listening, reason=None, unique_name=None, desired_port=None):
         """
         Send a positive or negative reply to a remote request
         """
-        if rid in self._remote_requests:
-            content = {
-                "kind": "listener-response",
-                "reply-id": rid,
-                "listening": bool(listening),
-            }
-            if reason is not None and not listening:
-                content["reason"] = str(reason)
-            reply = msgpack.packb(content)
-            prefix = struct.pack("!H", len(reply))
-            self.transport.write(prefix + reply)
-            del self._remote_requests[rid]
-        else:
-            raise ValueError(
-                "Replied to '{}' but it is not outstanding".format(rid)
+        content = {
+            "kind": "listener-response",
+            "unique-name": unique_name,
+            "listening": bool(listening),
+        }
+        if desired_port is not None:
+            content["desired-port"] = desired_port
+        if reason is not None and not listening:
+            content["reason"] = str(reason)
+        self.transport.write(
+            _pack_netstring(
+                msgpack.packb(content)
             )
+        )
 
     async def _unregister_ports(self):
         unreg = self._ports
@@ -1754,6 +1900,19 @@ class Commands(Protocol):
         @d.addCallback
         def _(_):
             self._done.trigger(self.factory.reactor, None)
+
+
+class FowlCommandsListener(Factory):
+    """
+    The subprotocol registered under the name 'fowl-commands'.
+    """
+    protocol = FowlCommands
+
+    def __init__(self, reactor, coop, status):
+        self.reactor = reactor
+        self.coop = coop
+        self.status = status
+        super(FowlCommandsListener, self).__init__()
 
 
 class LocalCommandDispatch(LineReceiver):

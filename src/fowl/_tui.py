@@ -1,8 +1,9 @@
-
 import curses
 import textwrap
 import functools
 from typing import Optional
+from base64 import b16encode  # for ping/pong
+from os import urandom
 
 import humanize
 
@@ -16,7 +17,7 @@ from wormhole.errors import LonelyError
 import attr
 
 from .observer import Next, When
-from ._proto import wormhole_from_config, FowlDaemon, FowlWormhole
+from ._proto import wormhole_from_config, create_fowl
 from .messages import (
     Welcome,
     CodeAllocated,
@@ -30,18 +31,22 @@ from .messages import (
     BytesIn,
     BytesOut,
     IncomingConnection,
+    IncomingDone,
     IncomingLost,
     OutgoingConnection,
+    OutgoingDone,
     WormholeError,
     GrantPermission,
+    Ping,
+    Pong,
 )
-
 
 
 @attr.frozen
 class Connection:
     i: int = 0
     o: int = 0
+    listener_id: str = None  # Maybe<str>; Nothing if incoming connection
 
 
 @attr.frozen
@@ -50,6 +55,7 @@ class State:
     connected: bool = False
     verifier: Optional[str] = None
     listeners: list = attr.Factory(list)
+    remote_listeners: list = attr.Factory(list)
     connections: dict[int, Connection] = attr.Factory(dict)
 
     @property
@@ -62,29 +68,49 @@ class State:
 
 
 async def frontend_tui(reactor, config):
+    print("Coming (back) soon!")
+    return
+
     print(f"Connecting: {config.relay_url}")
 
     @functools.singledispatch
     def output_message(msg):
-        print(f"unhandled output: {msg}")
+        print(f"\b\b\b\bunhandled output: {msg}")
+
+    @output_message.register(Pong)
+    def _(msg):
+        print(f"\b\b\b  <- Pong({b16encode(msg.ping_id).decode('utf8')}): {msg.time_of_flight}s\n>>> ", end="")
 
     @output_message.register(WormholeError)
     def _(msg):
-        print(f"ERROR: {msg.message}")
+        print(f"\b\b\b\bERROR: {msg.message}")
 
     @output_message.register(Listening)
     def _(msg):
-        print(f"Listening: {msg.listen}")
-        replace_state(attr.evolve(state[0], listeners=state[0].listeners + [msg.listen]))
+        print(f"\b\b\b\bListening: {msg.listen}")
+        replace_state(attr.evolve(state[0], listeners=state[0].listeners + [msg]))
+
+        #XXX fixme
+    def _(msg):
+        print(f"\b\b\b\bRemote side is listening: {msg.listen}")
+        replace_state(attr.evolve(state[0], remote_listeners=state[0].remote_listeners + [msg]))
 
     @output_message.register(IncomingConnection)
     def _(msg):
         conn = state[0].connections
-        conn[msg.id] = Connection(0, 0)
+        conn[msg.id] = Connection(0, 0, msg.listener_id)
+        replace_state(attr.evolve(state[0], connections=conn))
+
+    @output_message.register(IncomingDone)
+    def _(msg):
+        print(f"\b\b\b\bClosed: {msg.id}")
+        conn = state[0].connections
+        del conn[msg.id]
         replace_state(attr.evolve(state[0], connections=conn))
 
     @output_message.register(IncomingLost)
     def _(msg):
+        print(f"\b\b\b\bLost: {msg.id}: {msg.reason}")
         conn = state[0].connections
         del conn[msg.id]
         replace_state(attr.evolve(state[0], connections=conn))
@@ -92,30 +118,34 @@ async def frontend_tui(reactor, config):
     @output_message.register(OutgoingConnection)
     def _(msg):
         conn = state[0].connections
-        conn[msg.id] = Connection(0, 0)
+        conn[msg.id] = Connection(0, 0, msg.listener_id)
+        replace_state(attr.evolve(state[0], connections=conn))
+
+    @output_message.register(OutgoingDone)
+    def _(msg):
+        conn = state[0].connections
+        print(f"\b\b\b\bClosed: {msg.id} from {conn[msg.id].listener_id}")
+        del conn[msg.id]
         replace_state(attr.evolve(state[0], connections=conn))
 
     @output_message.register(BytesIn)
     def _(msg):
         conn = state[0].connections
-        conn[msg.id] = Connection(
-            conn[msg.id].i + msg.bytes,
-            conn[msg.id].o,
-        )
+        conn[msg.id] = attr.evolve(conn[msg.id], i=conn[msg.id].i + msg.bytes)
         replace_state(attr.evolve(state[0], connections=conn))
 
     @output_message.register(BytesOut)
     def _(msg):
         conn = state[0].connections
-        conn[msg.id] = Connection(
-            conn[msg.id].i,
-            conn[msg.id].o + msg.bytes,
-        )
+        conn[msg.id] = attr.evolve(conn[msg.id], o=conn[msg.id].o + msg.bytes)
         replace_state(attr.evolve(state[0], connections=conn))
 
     @output_message.register(WormholeClosed)
     def _(msg):
-        print(f"{msg.result}...", end="", flush=True)
+        print(f"Closed({msg.result})...", end="", flush=True)
+        # close our standard input, so the human can't give us more
+        # commands -- because we're done
+        command_reader.transport.loseConnection()
 
     @output_message.register(Welcome)
     def _(msg):
@@ -125,12 +155,10 @@ async def frontend_tui(reactor, config):
             print(textwrap.fill(msg.welcome["motd"].strip(), 80, initial_indent="    ", subsequent_indent="    "))
         print(">>> ", end="", flush=True)
 
-    daemon = FowlDaemon(reactor, config, output_message)
-    w = await wormhole_from_config(reactor, config)
-    wh = FowlWormhole(reactor, w, daemon, config)
+    fowl_wh = await create_fowl(config, output_message)
 
     # make into IService?
-    wh.start()
+    fowl_wh.start()
 
     state = [State()]
 
@@ -167,10 +195,9 @@ async def frontend_tui(reactor, config):
 
     print(">>> ", end="", flush=True)
     while True:
-        wc = ensureDeferred(command_reader.when_closed())
         what, result = await race([
             ensureDeferred(command_reader.next_command()),
-            wc,
+            ensureDeferred(command_reader.when_closed()),
         ])
         if what == 0:
             cmd_line = result
@@ -188,7 +215,7 @@ async def frontend_tui(reactor, config):
                     print(">>> ", end="", flush=True)
                     continue
                 # XXX should be passing "high level" FowlWormhole thing, not Wormhole direct
-                await cmd_fn(reactor, wh, state[0], *cmd[1:])
+                await cmd_fn(reactor, fowl_wh, state[0], *cmd[1:])
             else:
                 print(">>> ", end="", flush=True)
         elif what == 1:
@@ -196,7 +223,7 @@ async def frontend_tui(reactor, config):
 
     print("\nClosing mailbox...", end="", flush=True)
     try:
-        await w.close()
+        await fowl_wh.stop()
     except LonelyError:
         pass
     print("done.")
@@ -359,6 +386,46 @@ async def _cmd_allow_listen(reactor, wh, state, *args):
     )
 
 
+async def _cmd_ping(reactor, wh, state, *args):
+    """
+    Send a ping (through the Mailbox Server)
+    """
+    ping_id = None
+    if len(args) != 0:
+        raise Exception("No argument accepted to ping")
+    ping_id = urandom(4)
+    print(f"  -> Ping({b16encode(ping_id).decode('utf8')})\n>>> ", end="")
+    wh.command(Ping(ping_id))
+
+
+async def _cmd_status(reactor, wh, state, *args):
+    print("status")
+    peer = "disconnected"
+    if state.connected:
+        peer = "yes"
+    if state.verifier:
+        peer += f" verifier={state.verifier}"
+    else:
+        print(f"  code: {state.code}")
+    print(f"  peer: {peer}")
+    if state.listeners:
+        print("  listeners:")
+        for listener in state.listeners:
+            print(f"    {listener.listener_id.lower()}: {listener.listen} -> {listener.connect}")
+    if state.remote_listeners:
+        print("  remote listeners:")
+        for listener in state.remote_listeners:
+            print(f"    {listener.listener_id}: {listener.connect} <- {listener.listen}")
+    if state.connections:
+        print("  connections:")
+        for conn_id, conn in state.connections.items():
+            listener = ""
+            if conn.listener_id is not None:
+                listener = f"  (via {conn.listener_id})"
+            print(f"    {conn_id}: {conn.i} bytes in / {conn.o} bytes out{listener}")
+    print(">>> ", end="", flush=True)
+
+
 class CommandReader(LineReceiver):
     """
     Wait for incoming commands from the user
@@ -483,6 +550,13 @@ commands = {
 
     "allow": _cmd_allow,
     "allow-listen": _cmd_allow_listen,
+
+    "ping": _cmd_ping,
+    "p": _cmd_ping,
+
+    "status": _cmd_status,
+    "st": _cmd_status,
+    "s": _cmd_status,
 
     "help": _cmd_help,
     "h":_cmd_help,

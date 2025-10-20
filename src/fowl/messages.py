@@ -1,5 +1,6 @@
 from typing import Optional
 from attrs import frozen
+from ipaddress import IPv4Address, IPv6Address
 
 
 class FowlOutputMessage:
@@ -14,6 +15,11 @@ class FowlCommandMessage:
     """
 
 
+class FowlInternalControl:
+    "A message from the state-machine to outside, basically?"
+    pass
+
+
 # if we had ADT / Union types, these would both be that -- is this as
 # close as we can get in Python?
 
@@ -24,8 +30,8 @@ class Welcome(FowlOutputMessage):
     We have connected to the Mailbox Server and received the
     Welcome message.
     """
-    url: str  # server address
     # open-ended information from the server
+    url: str
     welcome: dict
 
 
@@ -92,50 +98,65 @@ class DangerDisablePermissionCheck(FowlCommandMessage):
 @frozen
 class LocalListener(FowlCommandMessage):
     """
-    We wish to open a local listener.
+    We wish to open a local listener. (That means the daemon-style
+    software is on the other side)
     """
-    listen: str  # Twisted server-type endpoint string
-    connect: str  # Twisted client-type endpoint string
+    name: str  # unique name for this service
+    local_listen_port: Optional[int] = None  # port to listen locally (or select randomly)
+    remote_connect_port: Optional[int] = None
+    bind_interface: Optional[IPv4Address | IPv6Address] = None
 
 
 @frozen
 class RemoteListener(FowlCommandMessage):
     """
-    We wish to open a listener on the peer.
+    We wish to open a listener on the peer. (That is, the daemon-style
+    software will run here)
     """
-    listen: str  # Twisted server-type endpoint string
-    connect: str  # Twisted client-type endpoint string
+    name: str  # Unique name for this service
+    remote_listen_port: Optional[int] = None  # port to listen on (or let peer select)
+    local_connect_port: Optional[int] = None  # port to connect here on
+    connect_address: Optional[IPv4Address|IPv6Address] = None
+
+
+@frozen
+class Ping(FowlCommandMessage):
+    ping_id: int
 
 
 @frozen
 class Listening(FowlOutputMessage):
     """
-    We have opened a local listener.
+    We have opened a listener for a service
 
     Any connections to this listener will result in a subchannel and a
-    connect on the other side (to "connected_endpoint"). This message
-    may result from a LocalListener or a RemoteListener command. This
-    message will always appear on the side that's actually listening.
+    connect on the other side. This message may result from a
+    LocalListener or a RemoteListener command.
+
+    This message will always appear on the side that's actually
+    listening.
     """
-    listen: str  # Twisted server-type endpoint string
-    connect: str  # Twisted client-type endpoint string
+    name: str  # unique name for this service
+    listening_port: int
 
 
 @frozen
-class RemoteListeningFailed(FowlOutputMessage):
+class ListeningFailed(FowlOutputMessage):
     """
     We have failed to open a listener on the remote side.
     """
-    listen: str  # Twisted server-type endpoint string
+    name: str  # unique name for this service
     reason: str
 
 
 @frozen
-class RemoteListeningSucceeded(FowlOutputMessage):
+class AwaitingConnect(FowlOutputMessage):
     """
-    The remote peer suceeded at fulfilling our listen request.
+    We will be connecting on a port (whenever a stream comes from our
+    remote peer for this service).
     """
-    listen: str  # Twisted server-type endpoint string
+    name: str  # unique name for this service
+    local_port: int  # where we connect locally
 
 
 @frozen
@@ -153,9 +174,8 @@ class OutgoingConnection(FowlOutputMessage):
     Something has connected to one of our listeners (and we are making
     an outgoing subchannel to the other peer).
     """
-    id: int
-    endpoint: str  # connection to here on far side
-    # XXX local_listener: str ??
+    service_name: str
+    id: str
 
 
 @frozen
@@ -163,7 +183,7 @@ class OutgoingLost(FowlOutputMessage):
     """
     We have lost one of our connections
     """
-    id: int
+    service_name: str
     reason: str
 
 
@@ -172,7 +192,7 @@ class OutgoingDone(FowlOutputMessage):
     """
     We have lost one of our connections
     """
-    id: int
+    service_name: str
 
 
 @frozen
@@ -180,8 +200,8 @@ class IncomingConnection(FowlOutputMessage):
     """
     The other side is requesting we open a connection
     """
-    id: int
-    endpoint: str
+    service_name: str
+    id: str
 
 
 @frozen
@@ -216,6 +236,22 @@ class BytesOut(FowlOutputMessage):
 @frozen
 class WormholeError(FowlOutputMessage):
     message: str
+
+
+@frozen
+class PleaseCloseWormhole(FowlInternalControl):
+    reason: str
+
+
+@frozen
+class Ready(FowlInternalControl):
+    pass
+
+
+@frozen
+class Pong(FowlOutputMessage):
+    ping_id: int
+    time_of_flight: float
 
 
 #XXX these aren't really used; why state-machine has them?

@@ -1,17 +1,10 @@
-import sys
-import json
-from collections import defaultdict
 
 import pytest_twisted
-from twisted.internet.interfaces import ITransport
-from twisted.internet.protocol import ProcessProtocol, Factory, Protocol
-from twisted.internet.task import deferLater
-from twisted.internet.error import ProcessExitedAlready, ProcessDone
+from twisted.internet.protocol import Factory, Protocol
 from twisted.internet.defer import Deferred
 from twisted.internet.endpoints import serverFromString, clientFromString
-from attrs import define
 
-from util import run_service, fowld
+from util import fowld
 
 from fowl.messages import *
 
@@ -93,31 +86,23 @@ async def test_happy_remote(reactor, request, wormhole):
     await f0.protocol.next_message(PeerConnected)
     await f1.protocol.next_message(PeerConnected)
 
-    # remote side will fail to listen if we don't authorize permissions
-    f0.protocol.send_message({
-        "kind": "grant-permission",
-        "listen": [1111],
-        "connect": [],
-    })
-    f1.protocol.send_message({
-        "kind": "grant-permission",
-        "listen": [],
-        "connect": [8888],
-    })
-
     # open a listener of some sort
+    f0.protocol.send_message({
+        "kind": "local",
+        "name": "a unique service name",
+    })
     f1.protocol.send_message({
         "kind": "remote",
-        "listen": "tcp:1111:interface=localhost",
-        "connect": "tcp:localhost:8888",
+        "name": "a unique service name",
+        "remote_listen_port": 1111,
+        "local_connect_port": 8888,
     })
 
     # f1 sent a remote-listen request, so f0 should receive it
     msg = await f0.protocol.next_message(Listening)
-    assert msg == Listening(
-        listen="tcp:1111:interface=localhost",
-        connect="tcp:localhost:8888",
-    )
+    assert isinstance(msg, Listening)
+    assert msg.name == "a unique service name"
+    assert msg.listening_port == 1111
 
     ep0 = serverFromString(reactor, "tcp:8888:interface=localhost")
     ep1 = clientFromString(reactor, "tcp:localhost:1111")
@@ -144,21 +129,23 @@ async def test_happy_local(reactor, request, wormhole):
     ``kind="local"`` command.
     """
     f0 = await fowld(reactor, request, mailbox=wormhole.url)
-    f0.protocol.send_message({"kind": "danger-disable-permission-check"})
     f0.protocol.send_message({"kind": "allocate-code"})
     code_msg = await f0.protocol.next_message(CodeAllocated)
-
 
     # normally the "code" is shared via human interaction
 
     f1 = await fowld(reactor, request, mailbox=wormhole.url)
-    f1.protocol.send_message({"kind": "danger-disable-permission-check"})
     f1.protocol.send_message({"kind": "set-code", "code": code_msg.code})
     # open a listener of some sort
     f1.protocol.send_message({
         "kind": "local",
-        "listen": "tcp:8888:interface=localhost",
-        "connect": "tcp:localhost:1111",
+        "name": "service0",
+        "remote_connect_port": 1111,
+        "local_listen_port": 8888,
+    })
+    f0.protocol.send_message({
+        "kind": "remote",
+        "name": "service0",
     })
 
     await f0.protocol.next_message(PeerConnected)
@@ -166,10 +153,9 @@ async def test_happy_local(reactor, request, wormhole):
 
     # f1 send a remote-listen request, so f0 should receive it
     msg = await f1.protocol.next_message(Listening)
-    assert msg == Listening(
-        listen="tcp:8888:interface=localhost",
-        connect="tcp:localhost:1111",
-    )
+    assert isinstance(msg, Listening)
+    assert msg.name == "service0"
+    assert msg.listening_port == 8888
 
     ep0 = serverFromString(reactor, "tcp:1111:interface=localhost")
     ep1 = clientFromString(reactor, "tcp:localhost:8888")

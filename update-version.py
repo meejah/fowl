@@ -17,6 +17,7 @@ author = "meejah <meejah@meejah.ca>"
 import sys
 import time
 import itertools
+import subprocess
 from datetime import datetime
 
 from dulwich.repo import Repo
@@ -63,6 +64,10 @@ async def main(reactor):
     if "--no-tag" in sys.argv:
         print(v)
         return
+
+    subprocess.check_call(["hatch", "version", str(v)])
+    subprocess.check_call(["git", "add", "-u"])
+    subprocess.check_call(["git", "commit", "-m", "update version"])
 
     print("Existing tags: {}".format(" ".join(existing_tags(git))))
     print("New tag will be {}".format(v))

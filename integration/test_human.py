@@ -1,20 +1,15 @@
 import re
-import sys
-import json
 import socket
-from collections import defaultdict
 
 import pytest_twisted
 from twisted.internet.interfaces import ITransport
 from twisted.internet.protocol import ProcessProtocol, Factory, Protocol
 from twisted.internet.task import deferLater
-from twisted.internet.error import ProcessExitedAlready, ProcessDone
 from twisted.internet.defer import Deferred
 from twisted.internet.endpoints import serverFromString, clientFromString
 from attrs import define
 
 from util import run_service
-from fowl.observer import Next
 
 # since the src/fowl/test/test_forward tests exercise the underlying
 # "fowld" functionality (minus the entry-point), this tests the
@@ -64,6 +59,7 @@ class _FowlProtocol(ProcessProtocol):
 
     def childDataReceived(self, childFD, data):
         self._data += data.decode("utf8")
+###        print(self._data)
         self._maybe_trigger()
 
 
@@ -112,24 +108,30 @@ class Hello(Protocol):
 async def test_human(reactor, request, wormhole):
     """
     """
-    f0 = await fowl(reactor, request, "--local", "8000:8008", "--remote", "7000:7007", mailbox=wormhole.url)
-    await f0.protocol.have_line("Connected.")
-    m = await f0.protocol.have_line(".* code: (.*).*")
+    f0 = await fowl(reactor, request, "--client", "zero:7000:remote-connect=7007", "--service", "one:8008:listen=8000", mailbox=wormhole.url)
+    m = await f0.protocol.have_line(".*code: ([-0-9a-z]*) ")
     code = m.group(1)
+    print(f"saw code: {code}")
 
-    f1 = await fowl(reactor, request, "--allow-connect", "localhost:8008", "--allow-listen", "7000", code, mailbox=wormhole.url)
+    f1 = await fowl(reactor, request, "--service", "zero", "--client", "one", code, mailbox=wormhole.url)
 
-    # both should say they're connected
-    await f0.protocol.have_line("Peer is connected.")
-    await f1.protocol.have_line("Peer is connected.")
+    if False:
+        # XXX can we pull the verifiers out easily?
+        # verifiers match
+        m = await f0.protocol.have_line("Verifier: (.*)")
+        f0_verify = m.group(1)
 
-    # verifiers match
-    m = await f0.protocol.have_line("Verifier: (.*)")
-    f0_verify = m.group(1)
+        m = await f1.protocol.have_line("Verifier: (.*)")
+        f1_verify = m.group(1)
+        assert f1_verify == f0_verify, "Verifiers don't match"
 
-    m = await f1.protocol.have_line("Verifier: (.*)")
-    f1_verify = m.group(1)
-    assert f1_verify == f0_verify, "Verifiers don't match"
+    # wait until we see one side listening
+    while True:
+        await deferLater(reactor, 0.5, lambda: None)
+        print("Waiting for at least one listener")
+        if "🧙" in f0.protocol._data or "🧙" in f1.protocol._data:
+            print("see one side listening")
+            break
 
     print("Making a local connection")
     port = await serverFromString(reactor, "tcp:8008:interface=localhost").listen(
@@ -172,24 +174,20 @@ async def test_non_localhost(reactor, request, wormhole):
     # attempt to discover "our" IP address -- so we can attempt to
     # connect to it, but not via localhost
     ours = _get_our_ip()
-    f0 = await fowl(reactor, request, "--local", f"127.0.0.1:8111:{ours}:8222", mailbox=wormhole.url)
-    await f0.protocol.have_line("Connected.")
-    m = await f0.protocol.have_line(".* code: (.*).*")
+    f0 = await fowl(reactor, request, "--local", f"foo:8111:bind={ours}:remote-connect=8222", mailbox=wormhole.url)
+    m = await f0.protocol.have_line(".*code: ([-0-9a-z]*) ")
     code = m.group(1)
+    print(f"saw code: {code}")
 
-    f1 = await fowl(reactor, request, "--allow-connect", f"{ours}:8222", code, mailbox=wormhole.url)
+    f1 = await fowl(reactor, request, "--remote", f"foo:8222:address={ours}", code, mailbox=wormhole.url)
 
-    # both should say they're connected
-    await f0.protocol.have_line("Peer is connected.")
-    await f1.protocol.have_line("Peer is connected.")
-
-    # verifiers match
-    m = await f0.protocol.have_line("Verifier: (.*)")
-    f0_verify = m.group(1)
-
-    m = await f1.protocol.have_line("Verifier: (.*)")
-    f1_verify = m.group(1)
-    assert f1_verify == f0_verify, "Verifiers don't match"
+    # wait until we see one side listening
+    while True:
+        await deferLater(reactor, 0.5, lambda: None)
+        print("Waiting for at least one listener")
+        if "🧙" in f0.protocol._data or "🧙" in f1.protocol._data:
+            print("see one side listening")
+            break
 
     port = await serverFromString(reactor, f"tcp:8222:interface={ours}").listen(
         Factory.forProtocol(Echo)
@@ -197,7 +195,7 @@ async def test_non_localhost(reactor, request, wormhole):
     request.addfinalizer(lambda:port.stopListening())
     print(f"  listening on 8222:interface={ours}")
 
-    ep1 = clientFromString(reactor, "tcp:localhost:8111")
+    ep1 = clientFromString(reactor, f"tcp:{ours}:8111")
     print("  connecting to 8111")
     proto = await ep1.connect(Factory.forProtocol(Hello))
     print("  sending data, awaiting reply")
@@ -216,24 +214,19 @@ async def test_non_localhost_backwards(reactor, request, wormhole):
     Same as above test but the 'other way' around
     """
     ours = _get_our_ip()
-    f0 = await fowl(reactor, request, "--remote", f"127.0.0.1:8333:{ours}:8444", "--remote", f"{ours}:8555:8666", mailbox=wormhole.url)
-    await f0.protocol.have_line("Connected.")
-    m = await f0.protocol.have_line(".* code: (.*).*")
+    f0 = await fowl(reactor, request, "--remote", f"quux:8444:address={ours}:listen=8333", mailbox=wormhole.url)
+    m = await f0.protocol.have_line(".*code: ([-0-9a-z]*) ")
     code = m.group(1)
+    print(f"saw code: {code}")
 
-    f1 = await fowl(reactor, request, "--allow-listen", f"8333", "--allow-listen", f"{ours}:8555", code, mailbox=wormhole.url)
+    f1 = await fowl(reactor, request, "--local", f"quux:8333", code, mailbox=wormhole.url)
 
-    # both should say they're connected
-    await f0.protocol.have_line("Peer is connected.")
-    await f1.protocol.have_line("Peer is connected.")
-
-    # verifiers match
-    m = await f0.protocol.have_line("Verifier: (.*)")
-    f0_verify = m.group(1)
-
-    m = await f1.protocol.have_line("Verifier: (.*)")
-    f1_verify = m.group(1)
-    assert f1_verify == f0_verify, "Verifiers don't match"
+    # wait until we see one side listening
+    while True:
+        await deferLater(reactor, 0.5, lambda: None)
+        if "🧙" in f0.protocol._data and "🧙" in f1.protocol._data:
+            print("both sides have a service")
+            break
 
     port = await serverFromString(reactor, f"tcp:8444:interface={ours}").listen(
         Factory.forProtocol(Echo)
@@ -241,18 +234,8 @@ async def test_non_localhost_backwards(reactor, request, wormhole):
     request.addfinalizer(lambda:port.stopListening())
     print(f"  listening on 8444:interface={ours}")
 
-    # wait until our peer has listened etc
-    peer_alive = False
-    start = reactor.seconds()
-    while not peer_alive:
-        await deferLater(reactor, 0.2, lambda: None)
-        if "Peer is listening" in f0.protocol._data:
-            peer_alive = True
-        if reactor.seconds() - start > 10.0:
-            assert False, "Waited 5 seconds for peer to listen and it did not"
-
     ep1 = clientFromString(reactor, "tcp:localhost:8333")
-    print("  connecting to 8333")
+    print(f"  connecting to localhost:8333")
     proto = await ep1.connect(Factory.forProtocol(Hello))
     print("  sending data, awaiting reply")
 

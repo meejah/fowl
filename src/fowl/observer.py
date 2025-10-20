@@ -65,7 +65,7 @@ class Next:
     """
 
     _awaiters: list = Factory(list)
-    _unheard_result: object = _UNSET
+    _unheard_results: list = Factory(list)
 
     def next_item(self):
         """
@@ -73,9 +73,9 @@ class Next:
             triggered. This will always be 'in the future' even if we've
             triggered more than zero times already.
         """
-        if self._unheard_result is not _UNSET:
-            d = succeed(self._unheard_result)
-            self._unheard_result = None
+        if self._unheard_results:
+            x = self._unheard_results.pop(0)
+            d = succeed(x)
         else:
             d = Deferred()
             self._awaiters.append(d)
@@ -90,13 +90,13 @@ class Next:
             for d in listeners:
                 reactor.callLater(0, d.callback, result)
         else:
-            self._unheard_result = result
+            self._unheard_results.append(result)
 
 
 @define
 class When:
     """
-    An observerable event that can by async-ly listened for and
+    An observerable event that can be async-ly listened for and
     triggers exactly once.
 
     Used for implementing the a ``when_thing()`` style of method.

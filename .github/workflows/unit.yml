@@ -13,11 +13,11 @@ jobs:
         os:
           - runs-on: ubuntu-latest
         python-version:
-          - "3.9"
           - "3.10"
           - "3.11"
           - "3.12"
-#          - "3.13-dev"  # "greenlet" doesn't build? (req'd by pytest_twisted)
+          - "3.13"
+          - "3.14"
     runs-on: ${{ matrix.os.runs-on }}
     steps:
     - name: Check out source code
@@ -40,8 +40,11 @@ jobs:
         python -m pip install --upgrade pip
         pip install --editable .[test]
 
+    - name: basic sanity
+      run: python -m pytest --version
+
     - name: pytest
-      run: python -m pytest --disable-warnings --cov=fowl -s -v src/fowl/test/
+      run: timeout --signal=TERM 60 python -m pytest --assert=plain --disable-warnings --cov=fowl -s -v src/fowl/test/
 
     - name: Coverage graph
       shell: bash

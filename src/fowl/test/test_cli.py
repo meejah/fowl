@@ -1,21 +1,24 @@
+import re
 
+import pytest
 import pytest_twisted
 
 #from twisted.internet.protocol import ProtocolBase
 from zope.interface import implementer
 from twisted.internet.interfaces import IProcessProtocol
 from twisted.internet.protocol import ProcessProtocol
-from twisted.internet.defer import DeferredList
 from twisted.internet.endpoints import serverFromString, clientFromString
-from hypothesis.strategies import integers, sampled_from, one_of, ip_addresses
-from hypothesis import given
+from twisted.internet.task import deferLater
+from hypothesis.strategies import integers, one_of, ip_addresses, text
+from hypothesis import given, assume
 import click
 import sys
 import os
 import signal
 from fowl.observer import When, Framer
 from fowl.test.util import ServerFactory, ClientFactory
-from fowl.cli import _to_port, _specifier_to_tuples
+from fowl.cli import _to_port, RemoteSpecifier
+from fowl.messages import RemoteListener
 
 
 @implementer(IProcessProtocol)
@@ -67,19 +70,19 @@ async def test_happy_path(reactor, request, mailbox):
         [
             "python", "-u", "-m", "fowl.cli",
             "--mailbox", mailbox.url,
-            # redundant "--allow-connect", "2121",
-            "--remote", "2222:2121",
+            "--remote", "test:2121:listen=2222",
         ],
         env=os.environ,
     )
-    request.addfinalizer(lambda:invite.signalProcess(signal.SIGTERM))
+    request.addfinalizer(lambda:invite.signalProcess(signal.SIGKILL))
 
-    line = await invite_proto.next_line()
-    assert line == "Connected."
-
-    line = await invite_proto.next_line()
-    assert line.startswith("Secret code: "), "Expected secret code"
-    code = line.split(":")[1].strip()
+    code_matcher = re.compile(b"code: ([-0-9a-z]*) ")
+    code = None
+    while not code:
+        await deferLater(reactor, .4, lambda: None)
+        if m := code_matcher.search(invite_proto._streams[1]):
+            code = m.group(1).decode("utf8")
+            code = code.strip()
 
     print(f"Detected code: {code}")
 
@@ -90,25 +93,27 @@ async def test_happy_path(reactor, request, mailbox):
         [
             "python", "-u", "-m", "fowl.cli",
             "--mailbox", mailbox.url,
-            "--allow-listen", "2222",
+            "--local", "test:2222",
             code,
         ],
         env=os.environ,
     )
-    request.addfinalizer(lambda:accept.signalProcess(signal.SIGTERM))
+    request.addfinalizer(lambda:accept.signalProcess(signal.SIGKILL))
 
     print("Starting accept side")
 
-    while True:
-        result, who = await DeferredList(
-            [invite_proto.next_line(), accept_proto.next_line()],
-            fireOnOneCallback=True,
-        )
-        who = "ACC" if who == 1 else "INV"
-        print(f"   {who}: {result.strip()}")
-        if "Listening:" in result:
-            print("  one side is listening")
+    for i in range(5):
+        await deferLater(reactor, 2.5, lambda: None)
+        if "🧙".encode("utf8") in invite_proto._streams[1] \
+           and "🧙".encode("utf8") in accept_proto._streams[1]:
+            print("both sides set up")
             break
+        if False:
+            # debug actual output
+            os.write(0, invite_proto._streams[1])
+            os.write(0, accept_proto._streams[1])
+    else:
+        assert False, "failed to see both sides set up"
 
     # now that they are connected, and one side is listening -- we can
     # ourselves listen on the "connect" port and connect on the
@@ -147,60 +152,68 @@ def test_helper_to_port_invalid(port):
         pass
 
 
-@given(integers(min_value=1, max_value=65535))
-def test_specifiers_one_port(port):
-    cmd = f"{port}"
-    assert _specifier_to_tuples(cmd) == ("localhost", port, "localhost", port)
+@given(
+    text(min_size=1),
+    integers(min_value=1, max_value=65535),
+)
+def test_specifiers_one_port(name, port):
+    assume('[' not in name)
+    assume(']' not in name)
+    assume(':' not in name)
+    spec = RemoteSpecifier.parse(f"{name}:{port}")
+    assert spec.to_remote() == RemoteListener(
+        name=name,
+        local_connect_port=port,
+    )
 
 
 @given(
+    text(min_size=1),
     integers(min_value=1, max_value=65535),
     integers(min_value=1, max_value=65535),
 )
-def test_specifiers_two_ports(port0, port1):
-    cmd = f"{port0}:{port1}"
-    assert _specifier_to_tuples(cmd) == ("localhost", port0, "localhost", port1)
+def test_specifiers_two_ports(name, port0, port1):
+    assume('[' not in name)
+    assume(']' not in name)
+    assume(':' not in name)
+    spec = RemoteSpecifier.parse(f"{name}:{port0}:listen={port1}")
+    assert spec.to_remote() == RemoteListener(
+        name=name,
+        local_connect_port=port0,
+        remote_listen_port=port1,
+    )
 
 
 @given(
+    text(min_size=1),
     integers(min_value=1, max_value=65535),
     integers(min_value=1, max_value=65535),
     ip_addresses(v=4),  # do not support IPv6 yet
 )
-def test_specifiers_two_ports_one_ip(port0, port1, ip):
+def test_specifiers_two_ports_one_ip(name, port0, port1, ip):
+    assume('[' not in name)
+    assume(']' not in name)
+    assume(':' not in name)
     if ip.version == 4:
-        cmd = f"{ip}:{port0}:{port1}"
+        cmd = f"{name}:{port0}:listen={port1}:address={ip}"
     else:
-        cmd = f"[{ip}]:{port0}:{port1}"
-    assert _specifier_to_tuples(cmd) == (str(ip), port0, "localhost", port1)
+        cmd = f"{name}:{port0}:listen={port1}:address=[{ip}]"
+    spec = RemoteSpecifier.parse(cmd)
+    assert spec.to_remote() == RemoteListener(
+        name=name,
+        local_connect_port=port0,
+        remote_listen_port=port1,
+        connect_address=str(ip),
+    )
 
 
 @given(
-    integers(min_value=1, max_value=65535),
-    integers(min_value=1, max_value=65535),
-    ip_addresses(v=4),  # do not support IPv6 yet
-    ip_addresses(v=4),  # do not support IPv6 yet
-)
-def test_specifiers_two_ports_two_ips(port0, port1, ip0, ip1):
-    cmd = f"{ip0}:{port0}:{ip1}:{port1}"
-    assert _specifier_to_tuples(cmd) == (str(ip0), port0, str(ip1), port1)
-
-
-@given(
+    text(min_size=1),
     integers(min_value=1, max_value=65535),
     integers(min_value=1, max_value=65535),
     ip_addresses(v=6),
-    ip_addresses(v=6),
-    sampled_from([True, False]),
 )
-def test_specifiers_unsupported_v6(port0, port1, ip0, ip1, wrap):
-    if wrap:
-        cmd = f"[{ip0}]:{port0}:[{ip1}]:{port1}"
-    else:
-        cmd = f"{ip0}:{port0}:{ip1}:{port1}"
-    try:
-        assert _specifier_to_tuples(cmd) == (str(ip0), port0, str(ip1), port1)
-    except RuntimeError:
-        pass
-    except ValueError:
-        pass
+def test_specifiers_unsupported_v6(name, port0, port1, ip):
+    cmd = f"{name}:{port0}:listen={port1}:address=[{ip}]"
+    with pytest.raises(RuntimeError):
+        assert RemoteSpecifier.parse(cmd)
