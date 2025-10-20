@@ -897,11 +897,6 @@ class FowlFarToNear(Protocol):
             f"Incoming connection against local policy: {msg}",
         )
 
-    # hrmmm .. okay so this is "the server of iperf3 dropped our
-    # _server_ connection" but we haven't yet gotten that information
-    # out to wormhole / dilation, so it continues to accept incoming
-    # bytes ... so we should do this status-tracker thing somewhere
-    # else (i.e. so Dilation stops feeding us bytes)
     @m.output()
     def emit_incoming_done(self, reason):
         if isinstance(reason, ConnectionDone):
