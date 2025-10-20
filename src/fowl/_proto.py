@@ -24,6 +24,7 @@ from twisted.internet.protocol import Factory, Protocol
 from twisted.internet.error import ConnectionDone
 from twisted.internet.stdio import StandardIO
 from twisted.protocols.basic import LineReceiver
+from twisted.python.failure import Failure
 from zope.interface import directlyProvides
 from wormhole.cli.public_relay import RENDEZVOUS_RELAY as PUBLIC_MAILBOX_URL, TRANSIT_RELAY
 import wormhole.errors as wormhole_errors
@@ -32,10 +33,9 @@ from .observer import When, Next
 from .messages import (
     SetCode,
     AllocateCode,
-    GrantPermission,
-    DangerDisablePermissionCheck,
     RemoteListener,
     LocalListener,
+    SessionClose,
 
     Welcome,
     Listening,
@@ -1187,7 +1187,7 @@ class FowlWormhole:
     # public API methods
 
     # XXX moved from elsewhere, unify with close_wormhole()
-    async def disconnect_session(self):
+    async def disconnect_session(self, interactive=True):
         """
         Nicely disconnect the session, by communicating with our peer.
 
@@ -1265,7 +1265,8 @@ class FowlWormhole:
                     if delay > 10.0:
                         delay = 10.0
                     delta = humanize.naturaldelta(reactor.seconds() - start)
-                    print(f'Waited {delta} for "closing" message from peer')
+                    if interactive:
+                        print(f'Waited {delta} for "closing" message from peer')
 
         which, result = await race([
             self._got_closing_from_peer_d,
@@ -1275,17 +1276,21 @@ class FowlWormhole:
             # XXX result can be None here if we never hit 'ready'
             # notification, needs proper test ..
             if result is not None and result >= 0:
-                print(f"Clean close; peer saw phase={result}")
+                if interactive:
+                    print(f"Clean close; peer saw phase={result}")
             else:
-                print("Never got closing message from peer")
+                if interactive:
+                    print("Never got closing message from peer")
 
         try:
             await self.close_wormhole()
         except wormhole_errors.LonelyError:
             # maybe just say nothing? why does the user care about
             # this? (they probably hit ctrl-c anyway, how else can you get here?)
-            print("Wormhole closed without peer.")
-        print("Done.")
+            if interactive:
+                print("Wormhole closed without peer.")
+        if interactive:
+            print("Done.")
 
     async def close_wormhole(self):
         """
@@ -1338,6 +1343,40 @@ class FowlWormhole:
                     msg.connect_address,
                 )
             )
+
+        @cmd.register(SessionClose)
+        async def _(msg):
+            """
+            Initiate a smooth session shutdown.
+
+            This is similar to what the human CLI does when ctrl-c is
+            pressed: sends a 'close' to the other side, and then waits
+            for their answer.
+
+            A difference is that we wait for 'timeout' seconds and
+            then end the session anyways.
+
+            The daemon will exit when this process is concluded (with
+            an error-code if we hit the timeout).
+            """
+            # if we are not connected to a peer, we can just close and exit
+            if not self._peer_connected:
+                await self.close_wormhole()
+                self._reactor.stop()
+                return
+
+            # we do have a peer -- send them a close, but also honour
+            # the timeout our controller asked for (default: 10s)
+            timeout = deferLater(self._reactor, msg.timeout)
+            disconn = ensureDeferred(self.disconnect_session(interactive=False))
+            idx, _ = await race((timeout, disconn))
+            if idx == 0:
+                # it was the timeout, set exit-code to non-zero. this
+                # is returned from react() ultimately, see forward()
+                self._done.trigger(self._reactor, Failure(SystemExit(1)))
+            else:
+                # we're still done, but standard exit is good
+                self._done.trigger(self._reactor, None)
 
         @cmd.register(Ping)
         async def _(msg):
@@ -1434,14 +1473,6 @@ def fowld_command_to_json(msg: FowlCommandMessage) -> dict:
     def output_command(msg):
         raise RuntimeError(f"Unhandled message: {msg}")
 
-    @output_command.register(GrantPermission)
-    def _(msg):
-        js["kind"] = "grant-permission"
-
-    @output_command.register(DangerDisablePermissionCheck)
-    def _(msg):
-        js["kind"] = "danger-disable-permission-check"
-
     @output_command.register(LocalListener)
     def _(msg):
         js["kind"] = "local"
@@ -1457,6 +1488,10 @@ def fowld_command_to_json(msg: FowlCommandMessage) -> dict:
     @output_command.register(SetCode)
     def _(msg):
         js["kind"] = "set-code"
+
+    @output_command.register(SessionClose)
+    def _(msg):
+        js["kind"] = "session-close"
 
     @output_command.register(Ping)
     def _(msg):
@@ -1528,9 +1563,8 @@ def parse_fowld_command(json_str: str) -> FowlCommandMessage:
                 ("connect_address", None),  # wants is_valid_address() or similar?
             ],
         ),
-        "grant-permission": parser(GrantPermission, [("listen", port_list), ("connect", port_list)], []),
-        "danger-disable-permission-check": parser(DangerDisablePermissionCheck, [], []),
         "ping": parser(Ping, [("ping_id", None)], []),
+        "session-close": parser(SessionClose, [], [("timeout", int)]),
     }
     return kind_to_message[kind](cmd)
 
@@ -1719,7 +1753,7 @@ async def forward(reactor, config):
     create_stdio(dispatch)
 
     try:
-        await Deferred()
+        await fowl.when_done()
     except CancelledError:
         await fowl.stop()
 

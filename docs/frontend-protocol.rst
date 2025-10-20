@@ -122,52 +122,20 @@ Any connection to that will open a near-side connection to port 80 via TCP.
 The far-side ``fowld`` will issue a ``kind: listening`` message (on its side) when it has started listening.
 
 
-Input: ``kind: grant-permission``
----------------------------------
+Input: ``kind: session-close``
+------------------------------
 
-Each peer needs to have the ability to control what sorts of listeners are opened, and what sort of client-style connections are opened from its network interfaces.
+Keys allowed:
 
-The wire protocol spoken between Peers has the opportunity to approve or deny every listener, and every connection.
-These are known as the "permissions" hooks in the state-machine.
+- ``timeout`` (optional): an integer number of seconds
 
-When `fowld` starts, with no other option, no listeners and no connections will be allowed.
+Initiate an orderly shutdown.
+We ask our peer to close their conection; if they do, we also close ours and exit.
+If we do not hear back from the peer, we give up after ``"timeout"`` seconds and exit.
 
-Messages can be sent to expand what is allowed.
-Only "``localhost``" (or ``::1``) interfaces (or destinations) are allowed.
+That is, regardless of what our peer does, we exit.
+If we did not hear back from the peer we exit with exit-status 1, otherwise exit-status 0.
 
-There are two kinds of policy: "listen" policy and "connect" policy.
-These apply to the two kinds of things we may care about: a new listener (governed by the "listen" policy) or a new forwarded connection that needs to open a new client-stype connection (governed by the "connect" policy).
-
-.. code-block:: json
-
-    {
-        "kind": "grant-permission",
-        "listen": [8080],
-        "connect": [443, 4321]
-    }
-
-This will allow a listener on port 8080 (whether initiated remotely or locally), and allow connections to ``localhost:443`` and ``localhost:4321`` for any incoming forwarded connections.
-
-This is a simple, easy-to-use API but does not reveal all that is possible technically; if the above doesn't fit your use-case, please get in touch by `creating a new Issue <>_`.
-
-
-Input: ``kind: danger-disable-permission-check``
-------------------------------------------------
-
-To facilitate experimentation or other use-cases not available via any other permission API, checking can be turned off entirely.
-
-.. DANGER::
-
-   Please understand the implications before enabling this, especially if you do not control both peer computers.
-   This allows the OTHER peer to open any listener or any connection they like on your machine -- very useful, but easily abused if either side is malicious in any way.
-
-If you understand that you want this anyway for your side of the connection, send this message
-
-.. code-block:: json
-
-    {
-        "kind": "danger-disable-permission-check",
-    }
 
 
 Output: ``kind: listening``
