@@ -44,7 +44,7 @@ jobs:
       run: python -m pytest --version
 
     - name: pytest
-      run: python -m pytest --assert=plain --disable-warnings --cov=fowl -s -v src/fowl/test/
+      run: timeout --signal=INT 60 python -m pytest --assert=plain --disable-warnings --cov=fowl -s -v src/fowl/test/
 
     - name: Coverage graph
       shell: bash
