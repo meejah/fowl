@@ -18,6 +18,10 @@ Unlike ``ssh``, reconnection is invisible to the forwarded applications.
 
 Sound interesting? Read on!
 
+- Documentation: `fowl.readthedocs.io <https://fowl.readthedocs.io/en/latest>`_
+- Source code: `github.com/meejah/fowl <https://github.com/meejah/fowl>`_
+- Releases: `pypi.org/project/fowl <https://pypi.org/project/fowl/#history>`_
+
 .. toctree::
    :maxdepth: 2
 
