@@ -43,7 +43,7 @@ dependencies = [
     "msgpack",
     "humanize",
     "twisted",
-    "autobahn != 25.9.1",
+    "autobahn < 25.9.1",
     "magic-wormhole[dilate] >= 0.20.0",
     "rich",
     "ipaddress",
