@@ -12,6 +12,11 @@ Unreleased
 ----------
 
 * (Put new changelog items here)
+
+
+25.10.0: October 23, 2025
+-------------------------
+
 * Add --version option to fowl and fowld
 * Do not fragment on Noise limits; wormhole does this
 * Keep closed streams around for a few seconds so
