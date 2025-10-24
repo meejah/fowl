@@ -19,6 +19,7 @@ import time
 import itertools
 import subprocess
 from datetime import datetime
+import pysequoia
 
 from dulwich.repo import Repo
 from dulwich.porcelain import (
@@ -81,6 +82,13 @@ async def main(reactor):
             time.struct_time((s.tm_year, s.tm_mon, s.tm_mday, 0, 0, 0, 0, s.tm_yday, 0))
         )
     )
+    keyid = "9D5A2BD5688ECB889DEBCD3FC2602803128069A7"
+    args = ["sq", "key", "export", "--cert", keyid]
+    certdata = subprocess.check_output(args)
+    cert = pysequoia.Cert.from_bytes(certdata)
+    passphrase = input("passphrase:")
+    signer = cert.secrets.signer(passphrase)
+
     tag_create(
         repo=git,
         tag=v.encode("utf8"),
@@ -88,7 +96,7 @@ async def main(reactor):
         message="Release {}".format(v).encode("utf8"),
         annotated=True,
         objectish=b"HEAD",
-        sign=author.encode("utf8"),
+        sign=signer,
         tag_time=ts,
         tag_timezone=0,
     )

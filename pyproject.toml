@@ -43,7 +43,6 @@ dependencies = [
     "msgpack",
     "humanize",
     "twisted",
-    "autobahn != 25.9.1, != 25.10.1",
     "magic-wormhole[dilate] >= 0.20.0",
     "rich",
     "ipaddress",
@@ -63,7 +62,7 @@ dev = [
     "twine",
     "sphinx",
     "dulwich",
-    "gpg",  # should use isis lovecruft's version?
+    "pysequoia",
     "pip-tools",
     "hatch",
     "readme-renderer",
