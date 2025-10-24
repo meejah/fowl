@@ -4,7 +4,8 @@ lint:
 	ruff check src/fowl
 
 pin:
-	pip-compile --upgrade --allow-unsafe --generate-hashes --resolver=backtracking --output-file requirements-pinned.txt
+	rm requirements-pinned.txt
+	pip-compile --upgrade --allow-unsafe --generate-hashes --resolver=backtracking --output-file requirements-pinned.txt pyproject.toml
 	git add -u
 	git commit -m "upgrade pins"
 
