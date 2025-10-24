@@ -62,7 +62,7 @@ dev = [
     "twine",
     "sphinx",
     "dulwich",
-    "gpg",  # should use isis lovecruft's version?
+    "pysequoia",
     "pip-tools",
     "hatch",
     "readme-renderer",
