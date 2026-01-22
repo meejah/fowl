@@ -27,7 +27,7 @@ from .messages import (
     RemoteListener,
 )
 from ._tui import frontend_tui
-from .visual import littlebitspace_big_logo, littlebitspace_word_logo, title_big_font
+from .visual import littlebitspace_big_logo, littlebitspace_word_logo
 
 
 @click.option(
@@ -276,12 +276,6 @@ def fowl(ip_privacy, mailbox, debug, local, remote, code_length, code, readme, i
             c.print(
                 Text.from_ansi(
                     littlebitspace_word_logo,
-                    style=Style(bgcolor="#002b36"),
-                )
-            )
-            c.print(
-                Text.from_ansi(
-                    title_big_font,
                     style=Style(bgcolor="#002b36"),
                 )
             )

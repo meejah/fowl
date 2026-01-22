@@ -44,16 +44,6 @@ littlebitspace_big_logo = r"""[0m                      _       .[1;33m,,[0m.
   `[1;33m""[0m'     [1m`"²Y?%%%%²"'[0m"""
 
 
-title_big_font = r"""[0m  [1m▄[0m                         ▄
- [1m█[0m  ▄▀▄ █▀▄ █   █ ▀▀▄ █▀▄ █▀█   [1m▄▀▄[0m █ █ ▄▀▄ █▀▄
- [1m█▀[0m █ █ █▀▄ █▄▀▄█ █▀█ █▀▄ █ █   [1m█[0m [1m█[0m █▄█ █▀▀ █▀▄
- [1m█[0m   ▀  ▀ ▀ ▀   ▀  ▀▀ ▀ ▀  ▀▀    [1m▀[0m   ▀   ▀▀ ▀ ▀
-                              ▄
-          [1m█[0m   [1m█[0m ▄▀▄ █▀▄ █▄ ▄█ █▀▄ ▄▀▄ █  ▄▀▄      [1m█[0m  ▄▀▄ ▄▀▄ ▀▀▄ █  █  █ █
-          [1m█▄▀▄█[0m █ █ █▀▄ █ ▀ █ █ █ █ █ █  █▀▀      [1m█[0m  █ █ █ ▄ █▀█ █  █  ▀▄█
-          [1m▀[0m   [1m▀[0m  ▀  ▀ ▀ ▀   ▀ ▀ ▀  ▀  ▀▀  ▀▀ █[1m    ▀▀[0m  ▀   ▀   ▀▀ ▀▀ ▀▀ ▄▄▀
-"""
-
 def render_status(st: FowlStatus, time_now, show_logo=True) -> Table:  # Panel? seomthing else
     """
     Render the given fowl status to a Rich thing
