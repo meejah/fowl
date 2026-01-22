@@ -130,6 +130,9 @@ def render_status(st: FowlStatus, time_now, show_logo=True) -> Table:  # Panel? 
             Text("{}".format(' ' if data.remote else '🧙'), justify="center"),
         )
 
+    # show a row for each of our subchannels with a bytes graph and
+    # counter. recently-finished streams show as greyed out for 10s
+
     for id_, data in st.subchannels.items():
         if data.done_at is not None:
             if time_now - data.done_at > 10.0:
