@@ -35,8 +35,16 @@ jobs:
       run: |
         cd pyapp-latest && cargo build --release
 
-    - name: Upload the Artifact
+    - name: Upload the Artifact (unix)
+      if: ${{ !contains(matrix.os, 'windows') }}
       uses: actions/upload-artifact@v4
       with:
-        name: fowl-${{ matrix.os.runs-on }}
+        name: fowl-${{ matrix.os }}
         path: pyapp-latest/target/release/pyapp
+
+    - name: Upload the Artifact (exe)
+      if: ${{ contains(matrix.os, 'windows') }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: fowl-${{ matrix.os }}
+        path: pyapp-latest/target/release/pyapp.exe
