@@ -345,8 +345,19 @@ class RemoteSpecifier:
             "listen": None,
             "address": None,
         }
-        for spec in specs:
-            n, v = spec.split('=')
+        for idx, spec in enumerate(specs):
+            try:
+                n, v = spec.split('=')
+            except ValueError:
+                hint = ""
+                try:
+                    v = int(spec)
+                    hint = f' (try with "listen={v}")'
+                except ValueError:
+                    hint = f' (try with "address={spec}")'
+                raise click.UsageError(
+                        f'"{spec}": keyword arguments need an = symbol{hint}'
+                    )
             named[n] = v
             if n not in ["listen", "address"]:
                 raise click.UsageError(
