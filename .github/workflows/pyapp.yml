@@ -17,6 +17,7 @@ jobs:
              python-version: "3.13"
            - os: windows-latest
              python-version: "3.13"
+    runs-on: ${{ matrix.os }}
     # fixme: figure out version automatically? can we "run-on" tags only?
     env:
       PYAPP_EXEC_SPEC: fowl.cli:fowl
