@@ -20,9 +20,9 @@ jobs:
     runs-on: ${{ matrix.os.runs-on }}
     # fixme: figure out version automatically? can we "run-on" tags only?
     env:
-      PYAPP_EXEC_SPEC=fowl.cli:fowl
-      PYAPP_PROJECT_NAME=fowl
-      PYAPP_PROJECT_VERSION=25.10.0
+      PYAPP_EXEC_SPEC: fowl.cli:fowl
+      PYAPP_PROJECT_NAME: fowl
+      PYAPP_PROJECT_VERSION: 25.10.0
     steps:
     - name: Install PyApp
       run: |
