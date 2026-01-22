@@ -1,0 +1,42 @@
+name: Unit Testing
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  pyapp:
+    strategy:
+      matrix:
+        os:
+          - runs-on:
+            - ubuntu-latest
+            - macOS
+            - windows-latest
+        python-version:
+          - "3.13"
+    runs-on: ${{ matrix.os.runs-on }}
+    # fixme: figure out version automatically? can we "run-on" tags only?
+    env:
+      PYAPP_EXEC_SPEC=fowl.cli:fowl
+      PYAPP_PROJECT_NAME=fowl
+      PYAPP_PROJECT_VERSION=25.10.0
+    steps:
+    - name: Install PyApp
+      run: |
+        curl https://github.com/ofek/pyapp/releases/latest/download/source.tar.gz -Lo pyapp-source.tar.gz
+        tar -xzf pyapp-source.tar.gz
+        mv pyapp-v* pyapp-latest
+        cd pyapp-latest
+
+    - name: Build fowl via PyApp
+      run: |
+        cd pyapp-latest && cargo build --release
+
+    - name: Upload the Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: fowl-${{ matrix.os.runs-on }}
+        path: pyapp-latest/target/release/pyapp
