@@ -10,14 +10,13 @@ jobs:
   pyapp:
     strategy:
       matrix:
-        os:
-          - runs-on:
-            - ubuntu-latest
-            - macOS
-            - windows-latest
-        python-version:
-          - "3.13"
-    runs-on: ${{ matrix.os.runs-on }}
+        include:
+           - os: macos-latest
+             python-version: "3.13"
+           - os: ubuntu-latest
+             python-version: "3.13"
+           - os: windows-latest
+             python-version: "3.13"
     # fixme: figure out version automatically? can we "run-on" tags only?
     env:
       PYAPP_EXEC_SPEC: fowl.cli:fowl
