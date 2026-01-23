@@ -198,8 +198,10 @@ def fowl(ip_privacy, mailbox, debug, local, remote, code_length, code, readme, i
 
     For example, a traditional Web service might look like this:
 
+    \b
         laptop: fowl --service web:8080
-        desktop: fowl --client web:8080
+        laptop: <displays code>
+        desktop: fowl --client web:8080 <code>
 
     The "laptop" computer is the initiator, and allocates a new
     code. The human running the laptop communicates the code
@@ -212,9 +214,14 @@ def fowl(ip_privacy, mailbox, debug, local, remote, code_length, code, readme, i
 
     In the above example, we could run the actual services:
 
+    \b
         laptop: twist web --path ./
         desktop: curl http://localhost:8080/
 
+    The "curl" command will contact a fowl listener on localhost port
+    8080, and open a new subchannel to the laptop. The fowl on that
+    side will see the incoming request and make a client connection to
+    localhost port 8080 (contacting the Twisted Web server).
     Each peer must "opt in" to particular services, and must also
     agree on ports used (if the ports are not randomly allocated).
 
@@ -279,9 +286,17 @@ def fowl(ip_privacy, mailbox, debug, local, remote, code_length, code, readme, i
                     style=Style(bgcolor="#002b36"),
                 )
             )
+        # Click uses \b to indicate a "newline preserving" area, but
+        # that shows up as two newlines in here; filter those lines out
+        def filter_backspace(s):
+            return "\n".join([
+                line
+                for line in s.splitlines()
+                if '\b' not in line
+            ])
         click.echo_via_pager(
             capture.get() +
-            fowl.__doc__ +
+            filter_backspace(fowl.__doc__) +
             "\nYou must specify at least one --service or --client option" +
             "\n\nFor complete option documentation: fowl --help"
         )
