@@ -22,8 +22,11 @@ jobs:
     env:
       PYAPP_EXEC_SPEC: fowl.cli:fowl
       PYAPP_PROJECT_NAME: fowl
-      PYAPP_PROJECT_VERSION: 25.10.0
+      PYAPP_PROJECT_PATH: ../dist/fowl-25.10.0.tar.gz
     steps:
+    - name: Build Fowl sdist
+      run: |
+        hatchling build
     - name: Install PyApp
       run: |
         curl https://github.com/ofek/pyapp/releases/latest/download/source.tar.gz -Lo pyapp-source.tar.gz
