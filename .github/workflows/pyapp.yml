@@ -13,8 +13,14 @@ jobs:
         include:
            - os: macos-latest
              python-version: "3.13"
-           - os: ubuntu-latest
+
+# counter-intuitively, we want the *oldest* linux runner so that we
+# get the oldest GLIBC version for wider compatibility (since we can't
+# actually statically-link rust)
+
+           - os: ubuntu-22.04
              python-version: "3.13"
+
            - os: windows-latest
              python-version: "3.13"
     runs-on: ${{ matrix.os }}
