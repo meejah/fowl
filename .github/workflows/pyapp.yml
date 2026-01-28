@@ -26,7 +26,7 @@ jobs:
     steps:
     - name: Build Fowl sdist
       run: |
-        hatchling build
+        python -m hatchling build
     - name: Install PyApp
       run: |
         curl https://github.com/ofek/pyapp/releases/latest/download/source.tar.gz -Lo pyapp-source.tar.gz
