@@ -26,6 +26,7 @@ jobs:
     steps:
     - name: Build Fowl sdist
       run: |
+        python -m pip install -e .[dev]
         python -m hatchling build
     - name: Install PyApp
       run: |
