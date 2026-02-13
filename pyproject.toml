@@ -53,7 +53,7 @@ test = [
     "pytest",
     "pytest-twisted",
     "pytest-cov",
-    "magic-wormhole-mailbox-server",
+    "magic-wormhole-mailbox-server >= 0.6.0",
     "cuvner",
     "hypothesis",
     "ruff",
