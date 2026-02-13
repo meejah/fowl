@@ -1,12 +1,9 @@
 import os
 import sys
 import shutil
-import re
 import json
 from functools import partial
-from twisted.internet.protocol import Factory
 from twisted.internet.protocol import ProcessProtocol
-from twisted.internet.endpoints import TCP4ServerEndpoint
 from twisted.internet.interfaces import IProcessProtocol
 from twisted.internet.task import deferLater
 from zope.interface import implementer
@@ -14,7 +11,6 @@ import pytest
 import pytest_twisted
 
 from fowl.observer import When, Framer
-from fowl.tcp import allocate_tcp_port
 from fowl._proto import parse_fowld_output, fowld_command_to_json
 from fowl import messages
 from .util import _MagicTextProtocol, _cleanup_service_process
@@ -153,7 +149,7 @@ async def test_performance(reactor, request, mailbox, iperf3_server):
 
     print("start iperf3 client")
     start = reactor.seconds()
-    logs = await iperf3_client(reactor, request)
+    _logs = await iperf3_client(reactor, request)
     elapsed = reactor.seconds() - start
     print("elapsed", elapsed)
     bps = 1*1024*1024*1024 / elapsed
