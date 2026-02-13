@@ -43,10 +43,10 @@ littlebitspace_big_logo = r"""[0m                      _       .[1;33m,,[0m.
   l[1;33mMM[0ml   [1m`Y%?88?%%%%%?8%²'[34m8P²'[0m
   `[1;33m""[0m'     [1m`"²Y?%%%%²"'[0m"""
 
-meejah_wordmark = r"""[0m[1;33;47m▐█[40m▀▀▀[0m [1;33m▄█▀▀▄[0m [1;33;47m▐[40m█[0m   [1;33m█[36m [33;47m▐[40m█[0m     [1mForward Over Wormhole, Locally[0m
-[1;33;47m▐█[40m▄▄[0m  [1;33m██[0m  [1;33m█[0m [1;33;47m▐[40m█[0m   [1;33m█[36m [33;47m▐[40m█[0m     [31m···[37m [31m─────────┤ ☼ ├──────── ···[37m
-[1;33;47m▐█[0m    [1;33m██[0m  [1;33m█[0m [1;33;47m▐[40m█[36m [33m█[0m [1;33m█[36m [33;47m▐[40m█[0m     streams encrypted directly to your peer
-[1;33;47m▐█[0m    [1;33m▀█▄▄▀[36m  [33m▀▄▀▄▀[0m [1;33;47m▐[40m█▄▄▄[0m  server sees no content"""
+meejah_wordmark = r"""[49m[1;33;47m▐█[49m▀▀▀[49m [1;33m▄█▀▀▄[49m [1;33;47m▐[40m█[49m   [1;33m█[36m [33;47m▐[40m█[49m     [1mForward Over Wormhole, Locally[49m           
+[1;33;47m▐█[49m▄▄[49m  [1;33m██[49m  [1;33m█[49m [1;33;47m▐[49m█[49m   [1;33m█[36m [33;47m▐[49m█[49m     [31m···[37m [31m─────────┤ ☼ ├──────── ···[37m           
+[1;33;47m▐█[49m    [1;33m██[49m  [1;33m█[49m [1;33;47m▐[49m█[36m [33m█[49m [1;33m█[36m [33;47m▐[49m█[49m     [31m♦[37m streams encrypted directly to your peer
+[1;33;47m▐█[49m    [1;33m▀█▄▄▀[36m  [33m▀▄▀▄▀[49m [1;33;47m▐[49m█▄▄▄[49m  [31m♦[37m server sees no content[49m                 """
 
 
 def render_status(st: FowlStatus, time_now, show_logo=True) -> Table:  # Panel? seomthing else
