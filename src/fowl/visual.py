@@ -96,7 +96,7 @@ def render_status(st: FowlStatus, time_now, show_logo=True) -> Table:  # Panel? 
     if st.code is not None:
         # only display code until we're connected
         if st.verifier is None:
-            message_text.append(Text("code: ") + Text(f"{st.code}", "bold"))
+            message_text.append(Text(f"code: {st.code} ", "bold"))
             if int(time_now) % 4 == 0:
                 message_text.append(Text("\n      ^-- (waiting for peer)"))
             else:
