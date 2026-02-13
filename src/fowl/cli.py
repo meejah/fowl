@@ -27,17 +27,7 @@ from .messages import (
     RemoteListener,
 )
 from ._tui import frontend_tui
-from .visual import littlebitspace_big_logo
-
-
-WOULD_DO_NOTHING_ERROR = """
-You have requested no listeners and allowed neither listening nor connecting.
-This would not do anything useful.
-
-You should use at least one of: --service or --client (or --remote or --local)
-For more information: fowl --help
-"""
-
+from .visual import littlebitspace_big_logo, littlebitspace_word_logo
 
 
 @click.option(
@@ -200,32 +190,49 @@ def fowl(ip_privacy, mailbox, debug, local, remote, code_length, code, readme, i
     This frontend is meant for humans -- if you want machine-parsable
     data and commands, use fowld (or 'python -m fowl')
 
-    This will create a new session (allocating a fresh code) by
-    default. To join an existing session (e.g. you've been given a
-    code) add the code as an (optional) argument on the command-line.
+    Fowl turns self-hostable client/server tools into easy-to-use and
+    secure peer to peer services. Every service has a unique name.
+    For each such service, one peer runs the server-style process (and
+    uses the option "--service") while the other peer runs the
+    client-style process (using "--client").
 
-    This only forwards named services; if *this* peer uses '--local
-    foo' then the other peer must use '--remote foo' and
-    vice-versa. Requesting a port must have corresponding 'permission'
-    on the other side. For example:
+    For example, a traditional Web service might look like this:
 
-        fowl --local chat:4444:1234
+    \b
+        laptop: fowl --service web:8080
+        laptop: <displays code>
+        desktop: fowl --client web:8080 <code>
 
-    ...must have a corresponding invocation with the *exact* same ports:
+    The "laptop" computer is the initiator, and allocates a new
+    code. The human running the laptop communicates the code
+    out-of-band to the human using the desktop computer (this could be
+    the same human).
 
-        fowl --remote chat:1234:4444
+    Only the "name" of the service is required -- but if you need to
+    use a particular port (as with a Web example) then it can be
+    specified. Otherwise, a random unused port is used.
 
-    Then, the first peer can run its own listening software (e.g. "nc
-    -l 4444") and the second peer can run connect-style software
-    (e.g. "telnet localhost 1234")
+    In the above example, we could run the actual services:
+
+    \b
+        laptop: twist web --path ./
+        desktop: curl http://localhost:8080/
+
+    The "curl" command will contact a fowl listener on localhost port
+    8080, and open a new subchannel to the laptop. The fowl on that
+    side will see the incoming request and make a client connection to
+    localhost port 8080 (contacting the Twisted Web server).
+    Each peer must "opt in" to particular services, and must also
+    agree on ports used (if the ports are not randomly allocated).
+
 
     We encourge specifying as little information as possible, with the
     minimum viable setup being just the service names. This will
     result in random ports (revealed only to the respective peer in
     their UI):
 
-        fowl --local chat
-        fowl --remote chat
+        fowl --service chat
+        fowl --client chat
 
     This form of invocation has the best chance of succeeding, as
     unused ports are chosen. The first peer still runs listening style
@@ -235,9 +242,10 @@ def fowl(ip_privacy, mailbox, debug, local, remote, code_length, code, readme, i
     UI. In this way, the peers don't know which port the other side is
     actually listening on.
 
-    Note that this can fail for things like Web servers which include
-    the port as part of the URI and the 'same-origin' check.
+    (In our Web example we specify ports because different client /
+    server ports can fail the 'same-origin' check).
     """
+
     if version:
         versions = _versions()
         print(f"    fowl: {versions['fowl']}")
@@ -270,7 +278,29 @@ def fowl(ip_privacy, mailbox, debug, local, remote, code_length, code, readme, i
     ]
 
     if not commands and not interactive:
-        raise click.UsageError(WOULD_DO_NOTHING_ERROR)
+        c = Console()
+        with c.capture() as capture:
+            c.print(
+                Text.from_ansi(
+                    littlebitspace_word_logo,
+                    style=Style(bgcolor="#002b36"),
+                )
+            )
+        # Click uses \b to indicate a "newline preserving" area, but
+        # that shows up as two newlines in here; filter those lines out
+        def filter_backspace(s):
+            return "\n".join([
+                line
+                for line in s.splitlines()
+                if '\b' not in line
+            ])
+        click.echo_via_pager(
+            capture.get() +
+            filter_backspace(fowl.__doc__) +
+            "\nYou must specify at least one --service or --client option" +
+            "\n\nFor complete option documentation: fowl --help"
+        )
+        return
 
     cfg = _Config(
         relay_url=WELL_KNOWN_MAILBOXES.get(mailbox, mailbox),
@@ -345,8 +375,19 @@ class RemoteSpecifier:
             "listen": None,
             "address": None,
         }
-        for spec in specs:
-            n, v = spec.split('=')
+        for idx, spec in enumerate(specs):
+            try:
+                n, v = spec.split('=')
+            except ValueError:
+                hint = ""
+                try:
+                    v = int(spec)
+                    hint = f' (try with "listen={v}")'
+                except ValueError:
+                    hint = f' (try with "address={spec}")'
+                raise click.UsageError(
+                        f'"{spec}": keyword arguments need an = symbol{hint}'
+                    )
             named[n] = v
             if n not in ["listen", "address"]:
                 raise click.UsageError(
