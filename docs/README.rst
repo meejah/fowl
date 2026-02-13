@@ -18,7 +18,7 @@ Get TCP streams from one computer to another, safely.
 -----------------
 
 There is lots of "self-hostable" networking software, with both the server and client available as FOSS.
-With Fowl, we turn that software into end-to-end-encrypted peer-to-peer software.
+With Fowl, we turn that software into end-to-end-encrypted peer-to-peer software. (**Note** for this use-case of using ``tty-share`` over wormhole, there is now `https://github.com/magic-wormhole/shwim <ShWiM>`_)
 
 Self-hosting services on a public IP address often takes "real work": setting things up on a VPS, worrying about attacks, doing updates, etc etc.
 With Fowl, we only worry about connections to one other peer.
