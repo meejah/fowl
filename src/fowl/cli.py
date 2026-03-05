@@ -185,7 +185,8 @@ def fowl(ip_privacy, mailbox, debug, local, remote, code_length, code, readme, i
     Forward Over Wormhole, Locally
 
     Bi-directional streaming data over secure and durable Dilated
-    magic-wormhole connections.
+    magic-wormhole connections. (That means a connection directly to
+    one peer, encrypted to them only, with multiple subchannels)
 
     This frontend is meant for humans -- if you want machine-parsable
     data and commands, use fowld (or 'python -m fowl')
