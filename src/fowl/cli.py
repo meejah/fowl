@@ -481,7 +481,6 @@ def _replay_visuals(cfg, messages):
     where_are_we = messages[0]["timestamp"]
 
     def current_time():
-        print(f"current {where_are_we}")
         return where_are_we
     status_tracker = _StatusTracker(time_provider=current_time)
 
@@ -509,7 +508,6 @@ def _replay_visuals(cfg, messages):
                     for kw in msg.subchannels.values()
                 },
             )
-            print(msg)
             # time is hard
             # intuitively, we want to trigger a redraw 4 times a second
             # ...but waiting 0.25s with time.sleep() isn't right,

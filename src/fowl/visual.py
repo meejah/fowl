@@ -64,12 +64,12 @@ def render_status(st: FowlStatus, time_now, show_logo=True) -> Table:  # Panel? 
         top.add_row(logo)
 
     from rich import box
-    t = Table(show_header=False, show_lines=True, box=box.HORIZONTALS) #title="Active Connections")
+    t = Table(show_header=False, show_lines=False, box=box.HORIZONTALS) #title="Active Connections")
     t.add_column(justify="left", width=8)
     t.add_column(justify="left", width=40)
     t.add_column(justify="left", width=8)
 
-    top.add_row(t)
+    top.add_row(t, end_section=True)
 
     status_local = Text(chicken.default[0])
     status_remote = Text(chicken.peer[0])
@@ -120,9 +120,9 @@ def render_status(st: FowlStatus, time_now, show_logo=True) -> Table:  # Panel? 
         # can/should we tell diff between "never connected" and
         # "reconnecting"?
         status_remote.stylize(color_connecting)
-        t.add_row(Text("hints"), Text("\n".join(st.hints)), None)
+        t.add_row(Text("hints"), Text("\n".join(st.hints)), None, end_section=True)
     else:
-        t.add_row(Text("hint"), Text("🐥 {}".format(st.peer_connected)), None)
+        t.add_row(Text("hint"), Text("🐥 {}".format(st.peer_connected)), None, end_section=True)
 
     # turn purple if we / they are closing
     if st.peer_closing:
@@ -133,16 +133,41 @@ def render_status(st: FowlStatus, time_now, show_logo=True) -> Table:  # Panel? 
     if random.choice("abcdefgh") == "a":
         status_local.plain = random.choice(chicken.default)
 
-    for id_, data in st.listeners.items():
+    # row for each listener we have locally
+    if st.listeners:
+        t.add_row(
+            Text("local", justify="center"),
+            Text("service name", justify="center"),
+            Text("remote", justify="center"),
+            end_section=True,
+        )
+    listeners = list(st.listeners.items())
+    for id_, data in listeners[:-1]:
         t.add_row(
             Text("{} {}".format('🧙' if data.remote else ' ', data.local_port)),
             Text("{} {}".format("-->" if data.remote else "<--", data.service_name)),
             Text("{}".format(' ' if data.remote else '🧙'), justify="center"),
         )
+    for id_, data in listeners[-1:]:
+        t.add_row(
+            Text("{} {}".format('🧙' if data.remote else ' ', data.local_port)),
+            Text("{} {}".format("-->" if data.remote else "<--", data.service_name)),
+            Text("{}".format(' ' if data.remote else '🧙'), justify="center"),
+            end_section=True,  # nicer way to add line after last listener?
+        )
+    if not st.listeners:
+        t.add_row("", Text("(no listeners)", justify="center"), "", end_section=True)
 
     # show a row for each of our subchannels with a bytes graph and
     # counter. recently-finished streams show as greyed out for 10s
 
+    if st.subchannels:
+        t.add_row(
+            Text("local", justify="center"),
+            Text("subchannel traffic", justify="center"),
+            Text("remote", justify="center"),
+            end_section=True,
+        )
     for id_, data in st.subchannels.items():
         if data.done_at is not None:
             if time_now - data.done_at > 10.0:
