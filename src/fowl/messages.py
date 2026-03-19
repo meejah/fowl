@@ -162,7 +162,7 @@ class OutgoingConnection(FowlOutputMessage):
     an outgoing subchannel to the other peer).
     """
     service_name: str
-    id: str
+    id: int
 
 
 @frozen
@@ -180,6 +180,7 @@ class OutgoingDone(FowlOutputMessage):
     We have lost one of our connections
     """
     service_name: str
+    id: int
 
 
 @frozen

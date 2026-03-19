@@ -1635,7 +1635,7 @@ def parse_fowld_output(json_str: str) -> FowlOutputMessage:
         "awaiting-connect": parser(AwaitingConnect, [("name", None), ("local_port", int)]),
         "remote-connect-failed": parser(RemoteConnectFailed, [("id", int), ("reason", None)]),
         "outgoing-connection": parser(OutgoingConnection, [("id", int), ("service_name", None)]),
-        "outgoing-done": parser(OutgoingDone, [("service_name", str)]),
+        "outgoing-done": parser(OutgoingDone, [("id", int), ("service_name", None)]),
         "incoming-connection": parser(IncomingConnection, [("id", int), ("service_name", None)]),
         "incoming-lost": parser(IncomingLost, [("id", int), ("reason", None)]),
         "incoming-done": parser(IncomingDone, [("id", int)]),
