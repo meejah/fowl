@@ -18,7 +18,7 @@ from rich.live import Live
 import msgpack
 import automat
 from twisted.internet import reactor
-from twisted.internet.defer import Deferred, ensureDeferred, DeferredList, race, CancelledError
+from twisted.internet.defer import Deferred, ensureDeferred, DeferredList, race, CancelledError, TimeoutError
 from twisted.internet.task import deferLater
 from twisted.internet.protocol import Factory, Protocol
 from twisted.internet.error import ConnectionDone
@@ -183,7 +183,7 @@ async def frontend_accept_or_invite(reactor, config):
 
     status_tracker = _StatusTracker()
 
-    fowl_wh = await create_fowl(config, status_tracker)
+    fowl_wh = await create_fowl(config, status_tracker, True)
     fowl_wh.start()
 
     # testing a TUI style output UI, maybe optional?
@@ -1070,12 +1070,13 @@ class FowlWormhole:
     Co-ordinates between the wormhole, user I/O and the daemon state-machine.
     """
 
-    def __init__(self, reactor, wormhole, coop):
+    def __init__(self, reactor, wormhole, coop, interactive):
         self._reactor = reactor
         self._wormhole = wormhole
         self._done = When() # we have shut down completely
         self._connected = When()  # our Peer has connected
         self._got_welcome = When()  # we received the Welcome from the server
+        self._interactive = interactive
 
         self._we_sent_closing = False
         self._did_disconnect = False
@@ -1187,7 +1188,7 @@ class FowlWormhole:
     # public API methods
 
     # XXX moved from elsewhere, unify with close_wormhole()
-    async def disconnect_session(self, interactive=True):
+    async def disconnect_session(self):
         """
         Nicely disconnect the session, by communicating with our peer.
 
@@ -1215,8 +1216,9 @@ class FowlWormhole:
         this is received, the wormhole may be closed and the program
         exits.
         """
-        # FIXME: all these messages should probably be via 'status' or
-        # similar, in case we're using all this as a library.
+        # FIXME: all these stdout / print messages should be via
+        # 'status' or similar, in case we're using all this as a
+        # library.
 
         if self._did_disconnect:
             return
@@ -1234,6 +1236,13 @@ class FowlWormhole:
         # responding at all, so we want to just hit the "race"
         # codepath anyway
         _ = ensureDeferred(self._close_active_connections())
+
+        # sometimes (in tests) the mailbox server goes away before a
+        # wormhole tries to shut down .. which means the message will
+        # never be delivered, so we can't wait forever (for
+        # non-interactive) for the peer message
+        async def wait_non_interactive():
+            await deferLater(reactor, 1.2, lambda: None)
 
         async def wait_for_user():
 
@@ -1265,21 +1274,25 @@ class FowlWormhole:
                     if delay > 10.0:
                         delay = 10.0
                     delta = humanize.naturaldelta(reactor.seconds() - start)
-                    if interactive:
+                    if self._interactive:
                         print(f'Waited {delta} for "closing" message from peer')
 
+        if self._interactive:
+            wait_how_long = ensureDeferred(wait_for_user())
+        else:
+            wait_how_long = ensureDeferred(wait_non_interactive())
         which, result = await race([
             self._got_closing_from_peer_d,
-            ensureDeferred(wait_for_user()),
+            wait_how_long,
         ])
         if which == 0:
             # XXX result can be None here if we never hit 'ready'
             # notification, needs proper test ..
             if result is not None and result >= 0:
-                if interactive:
+                if self._interactive:
                     print(f"Clean close; peer saw phase={result}")
             else:
-                if interactive:
+                if self._interactive:
                     print("Never got closing message from peer")
 
         try:
@@ -1287,17 +1300,27 @@ class FowlWormhole:
         except wormhole_errors.LonelyError:
             # maybe just say nothing? why does the user care about
             # this? (they probably hit ctrl-c anyway, how else can you get here?)
-            if interactive:
+            if self._interactive:
                 print("Wormhole closed without peer.")
-        if interactive:
+        if self._interactive:
             print("Done.")
 
-    async def close_wormhole(self):
+    async def close_wormhole(self, timeout=1.0):
         """
         Shut down the wormhole
         """
         # XXX see also the whole "how to shutdown half-close etc"
-        await self._wormhole.close()
+        d = self._wormhole.close()
+        # this is (somehow?) timing out (in test, when mailbox is shut
+        # down but connection(s) aren't yet) ... so we timeout pretty
+        # fast since local close() TCP socket should be quick?)
+        if timeout > 0.0:
+            d.addTimeout(timeout, self._reactor)
+        try:
+            await d
+        except TimeoutError:
+            pass
+
         # once the wormhole "actually" closes, the state-machine will
         # trigger our "stop" codepath
 
@@ -1362,13 +1385,15 @@ class FowlWormhole:
             # if we are not connected to a peer, we can just close and exit
             if not self._peer_connected:
                 await self.close_wormhole()
-                self._reactor.stop()
+                # note: don't call reactor.stop() here, that's rude
+                # .. if anything depends on that exit style we need
+                # to fix it differently
                 return
 
             # we do have a peer -- send them a close, but also honour
             # the timeout our controller asked for (default: 10s)
             timeout = deferLater(self._reactor, msg.timeout)
-            disconn = ensureDeferred(self.disconnect_session(interactive=False))
+            disconn = ensureDeferred(self.disconnect_session())
             idx, _ = await race((timeout, disconn))
             if idx == 0:
                 # it was the timeout, set exit-code to non-zero. this
@@ -1458,7 +1483,7 @@ def maybe_int(i):
 # - sans-io style (send "messages" in / out of _forward_loop or so)
 #
 # Would like the second; so we can interact in unit-tests (or here)
-# via parsed commands. e.g. we have an AGT union-type, and every
+# via parsed commands. e.g. we have an ADT union-type, and every
 # input-message is a class
 def fowld_command_to_json(msg: FowlCommandMessage) -> dict:
     """
@@ -1635,7 +1660,7 @@ def parse_fowld_output(json_str: str) -> FowlOutputMessage:
         "awaiting-connect": parser(AwaitingConnect, [("name", None), ("local_port", int)]),
         "remote-connect-failed": parser(RemoteConnectFailed, [("id", int), ("reason", None)]),
         "outgoing-connection": parser(OutgoingConnection, [("id", int), ("service_name", None)]),
-        "outgoing-done": parser(OutgoingDone, [("id", int), ("service_name", None)]),
+        "outgoing-done": parser(OutgoingDone, [("id", int), ("service_name", str)]),
         "incoming-connection": parser(IncomingConnection, [("id", int), ("service_name", None)]),
         "incoming-lost": parser(IncomingLost, [("id", int), ("reason", None)]),
         "incoming-done": parser(IncomingDone, [("id", int)]),
@@ -1648,7 +1673,7 @@ def parse_fowld_output(json_str: str) -> FowlOutputMessage:
     return kind_to_message[kind](cmd), cmd.get("timestamp", None)
 
 
-async def create_fowl(config, fowl_status_tracker):
+async def create_fowl(config, fowl_status_tracker, interactive):
 
     # can we make this "a status listener" instead?
     start_time = reactor.seconds()
@@ -1717,7 +1742,7 @@ async def create_fowl(config, fowl_status_tracker):
 #    @sm.set_trace
 #    def _(start, edge, end):
 #        print(f"trace: {start} --[ {edge} ]--> {end}")
-    fowl = FowlWormhole(reactor, w, coop)
+    fowl = FowlWormhole(reactor, w, coop, interactive)
     return fowl
 
 
@@ -1744,13 +1769,17 @@ async def forward(reactor, config):
     status_tracker = _StatusTracker()
     status_tracker.add_listener(output_fowl_message)
 
-    fowl = await create_fowl(config, status_tracker)
+    fowl = await create_fowl(config, status_tracker, False)
     fowl.start()
 
     # arrange to read incoming commands from stdin
     create_stdio = config.create_stdio or StandardIO
     dispatch = LocalCommandDispatch(config, fowl)
     create_stdio(dispatch)
+
+    async def shutdown():
+        await fowl.disconnect_session()
+    reactor.addSystemEventTrigger("before", "shutdown", lambda: ensureDeferred(shutdown()))
 
     try:
         await fowl.when_done()

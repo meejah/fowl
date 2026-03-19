@@ -10,7 +10,7 @@ pin:
 	git commit -m "upgrade pins"
 
 utest:
-	python -m pytest --cov= --cov-report= -sv -x src/fowl/test
+	python -m coverage run -m pytest -s -v src/fowl/test/
 	cuv graph
 
 test:

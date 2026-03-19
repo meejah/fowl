@@ -12,6 +12,7 @@ import pytest_twisted
 
 from fowl.observer import When, Framer
 from fowl._proto import parse_fowld_output, fowld_command_to_json
+from fowl.tcp import allocate_tcp_port
 from fowl import messages
 from .util import _MagicTextProtocol, _cleanup_service_process
 
@@ -48,9 +49,19 @@ class FowlD(ProcessProtocol):
         self._done.trigger(self._reactor, reason)
 
 
+@pytest.fixture()
+def server_port():
+    return allocate_tcp_port()
+
+
+@pytest.fixture()
+def client_port():
+    return allocate_tcp_port()
+
+
 @pytest_twisted.async_yield_fixture()
-async def iperf3_server(reactor, request):
-    args = ["iperf3", "-V", "-4", "-s", "localhost", "-p", "54321"]
+async def iperf3_server(reactor, request, server_port):
+    args = ["iperf3", "-V", "-4", "-s", "localhost", "-p", str(server_port)]
     logs = []
     protocol = _MagicTextProtocol("listening on", logs.append)
     exe = shutil.which("iperf3")
@@ -68,8 +79,8 @@ async def iperf3_server(reactor, request):
     yield protocol
 
 
-async def iperf3_client(reactor, request):
-    args = ["iperf3", "-4", "-c", "localhost", "-p", "12345", "-n", "1G"]
+async def iperf3_client(reactor, request, client_port):
+    args = ["iperf3", "-4", "-c", "localhost", "-p", str(client_port), "-n", "1G"]
     logs = []
     protocol = _MagicTextProtocol("iperf Done", logs.append)
     exe = shutil.which("iperf3")
@@ -91,7 +102,7 @@ async def iperf3_client(reactor, request):
 
 
 @pytest_twisted.ensureDeferred()
-async def test_performance(reactor, request, mailbox, iperf3_server):
+async def test_performance(reactor, request, mailbox, iperf3_server, client_port, server_port):
     """
     Start up an iperf3 test as per:
     https://github.com/magic-wormhole/fowl/issues/34
@@ -137,8 +148,8 @@ async def test_performance(reactor, request, mailbox, iperf3_server):
     m = await accept_proto.next_message()
     print("A: code", m.code)
 
-    invite_proto.write_message(messages.LocalListener("iperf", 12345))
-    accept_proto.write_message(messages.RemoteListener("iperf", local_connect_port=54321))
+    invite_proto.write_message(messages.LocalListener("iperf", client_port))
+    accept_proto.write_message(messages.RemoteListener("iperf", local_connect_port=server_port ))
 
     m = await invite_proto.next_message()
     print("I: peer", m.verifier)
@@ -149,7 +160,7 @@ async def test_performance(reactor, request, mailbox, iperf3_server):
 
     print("start iperf3 client")
     start = reactor.seconds()
-    _logs = await iperf3_client(reactor, request)
+    _logs = await iperf3_client(reactor, request, client_port)
     elapsed = reactor.seconds() - start
     print("elapsed", elapsed)
     bps = 1*1024*1024*1024 / elapsed

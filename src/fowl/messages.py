@@ -189,7 +189,7 @@ class IncomingConnection(FowlOutputMessage):
     The other side is requesting we open a connection
     """
     service_name: str
-    id: str
+    id: int
 
 
 @frozen
