@@ -279,3 +279,4 @@ See ``NEWS.rst`` for specific release information.
 - `meejah <https://meejah.ca>`_: main development
 - `shapr <https://www.scannedinavian.com/>`_: much feedback, pairing and feature development
 - `balejk <https://github.com/balejk>`_: early feedback, proof-reading, review and testing
+
