@@ -19,6 +19,7 @@ from fowl.observer import When, Framer
 from fowl.test.util import ServerFactory, ClientFactory
 from fowl.cli import _to_port, RemoteSpecifier
 from fowl.messages import RemoteListener
+from fowl.tcp import allocate_tcp_port
 
 
 @implementer(IProcessProtocol)
@@ -62,6 +63,8 @@ async def test_happy_path(reactor, request, mailbox):
     """
 
     print("Starting invite side", os.environ.get("COVERAGE_PROCESS_STARTUP", "no startup"))
+    port0 = allocate_tcp_port()
+    port1 = allocate_tcp_port()
 
     invite_proto = CollectStreams(reactor)
     invite = reactor.spawnProcess(
@@ -70,7 +73,7 @@ async def test_happy_path(reactor, request, mailbox):
         [
             "python", "-u", "-m", "fowl.cli",
             "--mailbox", mailbox.url,
-            "--remote", "test:2121:listen=2222",
+            "--remote", f"test:{port0}:listen={port1}",
         ],
         env=os.environ,
     )
@@ -93,7 +96,7 @@ async def test_happy_path(reactor, request, mailbox):
         [
             "python", "-u", "-m", "fowl.cli",
             "--mailbox", mailbox.url,
-            "--local", "test:2222",
+            "--local", f"test:{port1}",
             code,
         ],
         env=os.environ,
@@ -103,27 +106,33 @@ async def test_happy_path(reactor, request, mailbox):
     print("Starting accept side")
 
     for i in range(5):
+        print(f"waiting.. {i}")
         await deferLater(reactor, 2.5, lambda: None)
         if "🧙".encode("utf8") in invite_proto._streams[1] \
            and "🧙".encode("utf8") in accept_proto._streams[1]:
             print("both sides set up")
             break
-        if False:
-            # debug actual output
-            os.write(0, invite_proto._streams[1])
-            os.write(0, accept_proto._streams[1])
     else:
+        # this can happen if something is listening on 2222, we just
+        # fail to set up that connection and this times out
+
+        # debug actual output
+        click.echo(invite_proto._streams[1])
+        click.echo(accept_proto._streams[1])
+        # weird? in CI at least, this fails with "bad file descriptor"
+        #os.write(0, invite_proto._streams[1])
+        #os.write(0, accept_proto._streams[1])
         assert False, "failed to see both sides set up"
 
     # now that they are connected, and one side is listening -- we can
     # ourselves listen on the "connect" port and connect on the
-    # "listen" port -- that is, listen on 2121 (where there is no
-    # listener) and connect on 2222 (where this test is listening)
+    # "listen" port -- that is, listen on port0 (where there is no
+    # listener) and connect on port1 (where this test is listening)
 
     listener = ServerFactory(reactor)
-    await serverFromString(reactor, "tcp:2121:interface=localhost").listen(listener)  # returns server_port
+    await serverFromString(reactor, f"tcp:{port0}:interface=localhost").listen(listener)  # returns server_port
 
-    client = clientFromString(reactor, "tcp:localhost:2222")
+    client = clientFromString(reactor, f"tcp:localhost:{port1}")
     client_proto = await client.connect(ClientFactory(reactor))
     server = await listener.next_client()
 
