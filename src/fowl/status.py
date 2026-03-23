@@ -219,7 +219,12 @@ class _StatusTracker:
         # we get both an "outgoing_lost()" and then an "outgoing_done()"...
         self._current_status.subchannels[channel_id].done_at = self._time_provider()
         self._notify_listeners()
-        self._emit(OutgoingDone(channel_id))
+        self._emit(
+            OutgoingDone(
+                self._current_status.subchannels[channel_id].service_name,
+                channel_id,
+            )
+        )
         # todo: include a "summary" in OutgoingDone?
 
     def outgoing_lost(self, channel_id, reason):

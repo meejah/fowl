@@ -41,7 +41,7 @@ jobs:
         python -m pip install --editable .[test]
 
     - name: pytest
-      run: timeout --signal=TERM 60 python -m pytest --cov=fowl -s -v integration/
+      run: timeout --kill-after 65 --signal=TERM 60 python -m pytest --cov=fowl -s -v integration/
 
     - name: Coverage graph
       shell: bash
