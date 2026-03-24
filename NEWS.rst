@@ -14,6 +14,15 @@ Unreleased
 * (Put new changelog items here)
 
 
+26.3.0: March 24, 2026
+----------
+
+* Clean, proper shutdown of fowld
+* Fix an edge-case in shutdown when close() fails inside Twisted
+* Add an iperf3 test
+* Several UX improvements / polish
+
+
 25.10.0: October 23, 2025
 -------------------------
 
