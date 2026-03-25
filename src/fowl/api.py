@@ -392,10 +392,10 @@ class _FowlCoop:
             could use 192.168.2.3 or similar to function as a
             "jumpbox", forwarding traffic to another local machine.
         """
-        if unique_name in self._roosts:
-            raise ValueError(
-                f"fledge({unique_name}) when we already have a roost for that name"
-            )
+        # if unique_name in self._roosts:
+        #     raise ValueError(
+        #         f"fledge({unique_name}) when we already have a roost for that name"
+        #     )
         if unique_name in self._services:
             raise ValueError(
                 f'Supposedly unique "{unique_name}" already in our services'
