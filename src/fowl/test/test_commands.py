@@ -1,10 +1,11 @@
 import json
+from io import StringIO
 
 from hypothesis.strategies import one_of, integers, lists, sampled_from, builds, text, just
 from hypothesis import given
 
 
-from fowl._proto import parse_fowld_command, fowld_command_to_json
+from fowl._proto import _TimestampedWriter, parse_fowld_command, fowld_command_to_json
 
 
 def command_messages():
@@ -96,3 +97,26 @@ def test_roundtrip(og_cmd):
     """
     parsed_cmd = parse_fowld_command(json.dumps(fowld_command_to_json(og_cmd)))
     assert parsed_cmd == og_cmd, "Command mismatch"
+
+
+def test_timestamped_writer_prefixes_each_line():
+    class Reactor:
+        now = 123.0
+
+        def seconds(self):
+            return self.now
+
+    reactor = Reactor()
+    stream = StringIO()
+    writer = _TimestampedWriter(reactor, stream, start_time=123.0)
+
+    writer.write("first\nsecond")
+    reactor.now = 124.25
+    writer.write(" continued\n")
+    writer.write("third\n")
+
+    assert stream.getvalue() == (
+        "0.000 first\n"
+        "0.000 second continued\n"
+        "1.250 third\n"
+    )
