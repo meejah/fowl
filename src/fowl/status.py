@@ -100,17 +100,18 @@ class _StatusTracker:
 
     def _convert_wormhole_status(self, st: WormholeStatus) -> dict:
         kwargs = dict()
-        if isinstance(st.mailbox_connection, Connected):
-            kwargs["url"] = st.mailbox_connection.url
-            kwargs["is_connecting"] = False
-        elif isinstance(st.mailbox_connection, Connecting):
-            kwargs["url"] = st.mailbox_connection.url
-            kwargs["is_connecting"] = True
-        elif isinstance(st.mailbox_connection, (Disconnected, Failed, Closed)):
-            kwargs["url"] = None
-            kwargs["is_connecting"] = False
+        match st.mailbox_connection:
+            case Connected():
+                kwargs["url"] = st.mailbox_connection.url
+                kwargs["is_connecting"] = False
+            case Connecting():
+                kwargs["url"] = st.mailbox_connection.url
+                kwargs["is_connecting"] = True
+            case Disconnected() | Failed() | Closed():
+                kwargs["url"] = None
+                kwargs["is_connecting"] = False
 
-        if st.code == NoCode() or st.code == ConsumedCode() :
+        if st.code == NoCode() or st.code == ConsumedCode():
             kwargs["code"] = None
         # actual code comes from .get_code()
         return kwargs
