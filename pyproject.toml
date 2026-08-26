@@ -48,6 +48,10 @@ dependencies = [
     "ipaddress",
 ]
 
+# note: between ruff 0.15.7 and ruff 0.16.4 a lot of new default rules
+# were added, and we go from 0 to 417 failing lints.
+# for now, pinning to 0.15.7...
+
 [project.optional-dependencies]
 test = [
     "pytest",
