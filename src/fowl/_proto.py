@@ -1447,7 +1447,6 @@ class FowlWormhole:
         # the "FowlCoop.dilate" method already listens for commands,
         # incoming connections
 
-        await self._wormhole.get_unverified_key()
         verifier_bytes = await self._wormhole.get_verifier()  # might WrongPasswordError
 
         await self._dilated.when_dilated()
