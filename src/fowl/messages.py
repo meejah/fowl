@@ -1,4 +1,3 @@
-from typing import Optional
 from attrs import frozen
 from ipaddress import IPv4Address, IPv6Address
 
@@ -48,7 +47,7 @@ class AllocateCode(FowlCommandMessage):
     """
     Create a fresh code on the server
     """
-    length: Optional[int] = None
+    length: int | None = None
 
 
 @frozen
@@ -84,9 +83,9 @@ class LocalListener(FowlCommandMessage):
     software is on the other side)
     """
     name: str  # unique name for this service
-    local_listen_port: Optional[int] = None  # port to listen locally (or select randomly)
-    remote_connect_port: Optional[int] = None
-    bind_interface: Optional[IPv4Address | IPv6Address] = None
+    local_listen_port: int | None = None  # port to listen locally (or select randomly)
+    remote_connect_port: int | None = None
+    bind_interface: IPv4Address | IPv6Address | None = None
 
 
 @frozen
@@ -96,9 +95,9 @@ class RemoteListener(FowlCommandMessage):
     software will run here)
     """
     name: str  # Unique name for this service
-    remote_listen_port: Optional[int] = None  # port to listen on (or let peer select)
-    local_connect_port: Optional[int] = None  # port to connect here on
-    connect_address: Optional[IPv4Address|IPv6Address] = None
+    remote_listen_port: int | None = None  # port to listen on (or let peer select)
+    local_connect_port: int | None = None  # port to connect here on
+    connect_address: IPv4Address | IPv6Address | None = None
 
 
 @frozen

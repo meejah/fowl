@@ -1,6 +1,6 @@
 import time
 import json
-from typing import Dict, Optional, Callable
+from typing import Dict, Callable
 
 import attrs
 
@@ -16,7 +16,7 @@ class Subchannel:
     channel_id: str
     i: list
     o: list
-    done_at: Optional[int] = None # timestamp when ended, or None
+    done_at: int | None = None # timestamp when ended, or None
 
 
 @attrs.define
@@ -24,18 +24,18 @@ class Listener:
     service_name: str
     local_port: int
     remote: bool
-    remote_port: Optional[int] = None
+    remote_port: int | None = None
 
 
 @attrs.frozen
 class FowlStatus:
-    url: Optional[str] = None
+    url: str | None = None
     welcome: dict = {}
-    code: Optional[str] = None
-    verifier: Optional[str] = None
-    closed: Optional[str] = None  # closed status, "happy", "lonely" etc
+    code: str | None = None
+    verifier: str | None = None
+    closed: str | None = None  # closed status, "happy", "lonely" etc
     # todo: periodically flush old channels? (we only mark as done currently)
-    peer_connected: Optional[str] = None  # hint-description if connected
+    peer_connected: str | None = None  # hint-description if connected
     subchannels: Dict[str, Subchannel] = attrs.Factory(dict)
     listeners: Dict[str, Listener] = attrs.Factory(dict)
     peer_closing: bool = False

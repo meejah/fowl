@@ -2,7 +2,7 @@ import os
 import socket
 import struct
 from attr import define
-from typing import Optional, Any
+from typing import Any
 
 import msgpack
 from ipaddress import IPv4Address, IPv6Address
@@ -61,7 +61,7 @@ class FowlChannelDaemonThere:
     """
     unique_name: str  # (must be UNIQUE across all of this Fowl session)
     endpoint: IStreamServerEndpoint  # where we're listening locally
-    remote_connect_port: Optional[int] = None
+    remote_connect_port: int | None = None
     port: Any = None
 
     @property
@@ -314,8 +314,8 @@ class _FowlCoop:
     def roost(
             self,
             unique_name: str,
-            local_endpoint: Optional[IStreamServerEndpoint]=None,
-            remote_connect_port: Optional[int]=None,
+            local_endpoint: IStreamServerEndpoint | None=None,
+            remote_connect_port: int | None=None,
     ) -> FowlChannelDaemonThere:
         """
         This adds a named service that is permitted here.
@@ -362,9 +362,9 @@ class _FowlCoop:
     async def fledge(
             self,
             unique_name: str,
-            local_connect_port: Optional[int]=None,
-            remote_listen_port: Optional[int]=None,
-            local_connect_addr: Optional[IPv4Address | IPv6Address]=None,
+            local_connect_port: int | None=None,
+            remote_listen_port: int | None=None,
+            local_connect_addr: IPv4Address | IPv6Address | None=None,
     ) -> FowlChannelDaemonHere:
         """
         Thinking about networking as 'server' or 'client', this method
@@ -482,7 +482,7 @@ class _FowlCoop:
             if channel.port:
                 channel.port.stopListening()
 
-    def _endpoint_for_service(self, unique_name, desired_port: Optional[int]=None):
+    def _endpoint_for_service(self, unique_name, desired_port: int | None=None):
         try:
             ep = self._roosts[unique_name].endpoint
 
