@@ -9,6 +9,7 @@ filterwarnings = [
 
 [tool.ruff]
 line-length = 100
+target-version = "py310"
 [tool.ruff.lint]
 ignore = [
     "E712",  # at least in policy tests, I want to ensure API returns booleans
@@ -56,7 +57,7 @@ license = {file = "LICENSE"}
 authors = [
     { name = "meejah", email = "meejah@meejah.ca" },
 ]
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 keywords = [
     "cryptography",
     "forwarding",

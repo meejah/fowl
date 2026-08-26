@@ -1,7 +1,6 @@
 import curses
 import textwrap
 import functools
-from typing import Optional
 from base64 import b16encode  # for ping/pong
 from os import urandom
 
@@ -50,9 +49,9 @@ class Connection:
 
 @attr.frozen
 class State:
-    code: Optional[str] = None
+    code: str | None = None
     connected: bool = False
-    verifier: Optional[str] = None
+    verifier: str | None = None
     listeners: list = attr.Factory(list)
     remote_listeners: list = attr.Factory(list)
     connections: dict[int, Connection] = attr.Factory(dict)

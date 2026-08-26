@@ -1,7 +1,6 @@
 
 import click
 import attrs
-from typing import Optional
 from ipaddress import IPv4Address, IPv6Address
 from importlib import resources
 from rich.style import Style
@@ -337,9 +336,9 @@ def _to_port(arg):
 class RemoteSpecifier:
     # corresponds to roost()
     name: str
-    connect_port: Optional[int] = None
-    local_listen_port: Optional[int] = None
-    connect_address: Optional[IPv4Address|IPv6Address] = None
+    connect_port: int | None = None
+    local_listen_port: int | None = None
+    connect_address: IPv4Address | IPv6Address | None = None
 
     def to_remote(self):
         return RemoteListener(
@@ -404,9 +403,9 @@ class RemoteSpecifier:
 class LocalSpecifier:
     # corresponds to fledge()
     name: str
-    local_listen_port: Optional[int] = None
-    remote_connect_port: Optional[int] = None
-    bind_interface: Optional[IPv4Address | IPv6Address] = None
+    local_listen_port: int | None = None
+    remote_connect_port: int | None = None
+    bind_interface: IPv4Address | IPv6Address | None = None
 
     def to_local(self):
         return LocalListener(
