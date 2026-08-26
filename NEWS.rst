@@ -14,6 +14,17 @@ Unreleased
 * (Put new changelog items here)
 
 
+26.8.0: August 26, 2026
+-----------------------
+
+* Clean, proper shutdown of fowld
+* Fix an edge-case in shutdown when close() fails inside Twisted
+* Add an iperf3 test
+* Several UX improvements / polish
+* Target Python 3.10+ (only)
+* Use match+case to consume wormhole status API
+
+
 25.10.0: October 23, 2025
 -------------------------
 
