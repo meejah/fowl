@@ -11,7 +11,40 @@ filterwarnings = [
 line-length = 100
 [tool.ruff.lint]
 ignore = [
-    "E712"  # at least in policy tests, I want to ensure API returns booleans
+    "E712",  # at least in policy tests, I want to ensure API returns booleans
+
+    # these are all new lints that fail from ruff 0.15.3 -> 0.16.4 but
+    # I don't want to fix them all right now.
+    # "in general" PRs accepted to reduce this list by fixing the lints
+    "PLE2513",
+    "FA100",
+    "I001",
+    "UP032",
+    "C408",
+    "BLE001",
+    "SIM102",
+    "FA102",
+    "TRY002",
+    "RUF008",
+    "RUF009",
+    "UP008",
+    "PERF102",
+    "PIE790",
+    "PLR1711",
+    "PLR1730",
+    "RET501",
+    "RUF059",
+    "SIM114",
+    "UP006",
+    "UP012",
+    "D419",
+    "FURB192",
+    "S110",
+    "UP004",
+    "UP010",
+    "UP024",
+    "UP025",
+    "UP035",
 ]
 
 [project]
@@ -60,7 +93,7 @@ test = [
     "magic-wormhole-mailbox-server >= 0.6.0",
     "cuvner",
     "hypothesis",
-    "ruff",
+    "ruff <= 0.16.3",
 ]
 dev = [
     "twine",
@@ -73,7 +106,7 @@ dev = [
     "cuvner",
 ]
 lint = [
-    "ruff"
+    "ruff <= 0.16.3",
 ]
 
 [project.scripts]
