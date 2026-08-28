@@ -94,6 +94,34 @@ def _sequential_id():
 allocate_connection_id = partial(next, _sequential_id())
 
 
+class _TimestampedWriter:
+    """
+    Wrap a writable stream and prefix each line with elapsed time.
+    """
+
+    def __init__(self, reactor, writable, start_time):
+        self._reactor = reactor
+        self._writable = writable
+        self._start_time = start_time
+        self._at_line_start = True
+
+    def write(self, data):
+        written = 0
+        for chunk in data.splitlines(keepends=True):
+            if self._at_line_start:
+                elapsed = self._reactor.seconds() - self._start_time
+                written += self._writable.write(f"{elapsed:.3f} ")
+            written += self._writable.write(chunk)
+            self._at_line_start = chunk.endswith("\n")
+        return written
+
+    def flush(self):
+        return self._writable.flush()
+
+    def __getattr__(self, name):
+        return getattr(self._writable, name)
+
+
 #@frozen
 @define  ## could be @frozen, but for "policy" ... hmmm
 class _Config:
@@ -1733,7 +1761,11 @@ async def create_fowl(config, fowl_status_tracker, interactive):
 
     if config.debug_file:
         kind = "invite" if config.code is None else "accept"
-        w.debug_set_trace(kind, which="B N M S O K SK R RC L C T", file=config.debug_file)
+        w.debug_set_trace(
+            kind,
+            which="B N M S O K SK R RC L C T",
+            file=_TimestampedWriter(reactor, config.debug_file, start_time),
+        )
 
     from .api import create_coop
     coop = create_coop(reactor, w, fowl_status_tracker)

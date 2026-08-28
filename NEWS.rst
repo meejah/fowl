@@ -11,7 +11,7 @@ Integration with other programs should use ``fowld`` exclusively.
 Unreleased
 ----------
 
-* (Put new changelog items here)
+* Add elapsed timestamps to ``--debug`` state-machine trace output (#111)
 
 
 26.8.0: August 26, 2026
