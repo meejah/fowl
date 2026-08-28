@@ -184,7 +184,8 @@ def fowl(ip_privacy, mailbox, debug, local, remote, code_length, code, readme, i
     Forward Over Wormhole, Locally
 
     Bi-directional streaming data over secure and durable Dilated
-    magic-wormhole connections.
+    magic-wormhole connections. (That means a connection directly to
+    one peer, encrypted to them only, with multiple subchannels)
 
     This frontend is meant for humans -- if you want machine-parsable
     data and commands, use fowld (or 'python -m fowl')
@@ -480,7 +481,6 @@ def _replay_visuals(cfg, messages):
     where_are_we = messages[0]["timestamp"]
 
     def current_time():
-        print(f"current {where_are_we}")
         return where_are_we
     status_tracker = _StatusTracker(time_provider=current_time)
 
@@ -508,7 +508,6 @@ def _replay_visuals(cfg, messages):
                     for kw in msg.subchannels.values()
                 },
             )
-            print(msg)
             # time is hard
             # intuitively, we want to trigger a redraw 4 times a second
             # ...but waiting 0.25s with time.sleep() isn't right,
